@@ -36,7 +36,7 @@ import 'wrap/system_cache.dart';
 /// but may be the entrypoint when you're running its tests.
 class Entrypoint {
   /// The root package this entrypoint is associated with.
-  final Package root;
+  Package root;
 
   /// The system-wide cache which caches packages that need to be fetched over
   /// the network.
@@ -50,9 +50,10 @@ class Entrypoint {
   final _pendingGets = new Map<PackageId, Future<PackageId>>();
 
   /// Loads the entrypoint from a package at [rootDir].
-  Entrypoint(PathRep rootDir, SystemCache cache)
-      : root = new Package.load(null, rootDir.fullPath(), cache.sources),
-        cache = cache;
+  Entrypoint(PathRep rootDir, SystemCache cache) : cache = cache {
+    Package.load(null, rootDir.fullPath(), cache.sources).then(
+        (package) => root = package);
+  }
 
   // TODO(rnystrom): Make this path configurable.
   /// The path to the entrypoint's "packages" directory.

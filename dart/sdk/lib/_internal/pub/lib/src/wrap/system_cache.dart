@@ -1,3 +1,5 @@
+library pub.system_cache;
+
 import 'dart:async';
 
 import '../package.dart';

@@ -4,6 +4,7 @@
 
 library pub.package;
 
+import 'dart:async';
 import 'package:path/path.dart' as path;
 
 import 'io.dart';
@@ -81,10 +82,12 @@ class Package {
   /// Loads the package whose root directory is [packageDir]. [name] is the
   /// expected name of that package (e.g. the name given in the dependency), or
   /// `null` if the package being loaded is the entrypoint package.
-  Package.load(String name, String packageDir, SourceRegistry sources)
-      : dir = packageDir,
-        pubspec = new Pubspec.load(packageDir, sources, expectedName: name);
-
+  static Future<Package> load(String name,
+                              String packageDir,
+                              SourceRegistry sources) {
+    return Pubspec.load(packageDir, sources, expectedName: name).then(
+        (pubspec) => new Package._(packageDir, pubspec));
+  }
   /// Constructs a package with the given pubspec. The package will have no
   /// directory associated with it.
   Package.inMemory(this.pubspec)

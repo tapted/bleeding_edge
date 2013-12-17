@@ -1,13 +1,28 @@
+library pub.iowrap;
+
+import 'dart:async';
 import 'dart:convert';
+import 'path_rep.dart';
+import 'package:chrome_gen/chrome_app.dart' as chrome;
 
 class FileSystemEntity {
 
 }
 
 class File {
-  File(String path) {
 
+  chrome.FileEntry entry;
+
+  static Future<chrome.FileEntry> load(String filename,
+                                      {chrome.DirectoryEntry parent}) {
+    if (parent == null)
+      parent = workingDir;
+
+    return parent.getFile(filename);
   }
+
+  File(entry) : this.entry = entry;
+
   bool existsSync() {
     return false;
   }

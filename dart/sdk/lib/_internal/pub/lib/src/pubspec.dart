@@ -4,6 +4,7 @@
 
 library pub.pubspec;
 
+import 'dart:async';
 import 'package:yaml/yaml.dart';
 import 'package:path/path.dart' as path;
 
@@ -14,6 +15,7 @@ import 'source_registry.dart';
 import 'utils.dart';
 import 'version.dart';
 import 'wrap/barbackwrap.dart';
+import 'wrap/iowrap.dart' as io;
 
 /// The parsed contents of a pubspec file.
 ///
@@ -218,17 +220,17 @@ class Pubspec {
   ///
   /// If [expectedName] is passed and the pubspec doesn't have a matching name
   /// field, this will throw a [PubspecError].
-  factory Pubspec.load(String packageDir, SourceRegistry sources,
+  static Future<Pubspec> load(String packageDir, SourceRegistry sources,
       {String expectedName}) {
     var pubspecPath = path.join(packageDir, 'pubspec.yaml');
     var pubspecUri = path.toUri(pubspecPath);
-    if (!fileExists(pubspecPath)) {
-      throw new PubspecException(expectedName, pubspecUri,
-          'Could not find a file named "pubspec.yaml" in "$packageDir".');
-    }
 
-    return new Pubspec.parse(readTextFile(pubspecPath), sources,
-        expectedName: expectedName, location: pubspecUri);
+    return io.File.load("pubspec.yaml")
+      .then((fileEntry) => fileEntry.readText())
+      .then((text) => new Pubspec.parse(
+          text, sources, expectedName: expectedName, location: pubspecUri))
+      .catchError((e) => throw new PubspecException(expectedName, pubspecUri,
+          'Could not find a file named "pubspec.yaml" in "$packageDir".'));
   }
 
   Pubspec(this._name, this._version, this._dependencies, this._devDependencies,

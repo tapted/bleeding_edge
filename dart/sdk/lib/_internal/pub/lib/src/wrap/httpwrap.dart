@@ -1,4 +1,4 @@
-library http;
+library pub.http;
 
 class BaseClient {
 
