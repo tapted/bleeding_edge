@@ -5,10 +5,8 @@
 library pub.source.hosted;
 
 import 'dart:async';
-import 'dart:io' as io;
 import "dart:convert";
 
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
 import '../http.dart';
@@ -19,6 +17,8 @@ import '../pubspec.dart';
 import '../source.dart';
 import '../utils.dart';
 import '../version.dart';
+import '../wrap/httpwrap.dart';
+import '../wrap/iowrap.dart';
 
 /// A package source that gets packages from a package hosting site that uses
 /// the same API as pub.dartlang.org.

@@ -7,15 +7,14 @@ library pub.http;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:http/http.dart' as http;
 
 import 'io.dart';
 import 'log.dart' as log;
-import 'oauth2.dart' as oauth2;
 import 'sdk.dart' as sdk;
 import 'utils.dart';
+import 'wrap/httpwrap.dart' as http;
+import 'wrap/iowrap.dart';
+import 'wrap/oauth2wrap.dart';
 
 // TODO(nweiz): make this configurable
 /// The amount of time in milliseconds to allow HTTP requests before assuming

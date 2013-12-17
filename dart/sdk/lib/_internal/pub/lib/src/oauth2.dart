@@ -5,9 +5,7 @@
 library pub.oauth2;
 
 import 'dart:async';
-import 'dart:io';
 
-import 'package:oauth2/oauth2.dart';
 import 'package:path/path.dart' as path;
 
 import 'http.dart';
@@ -16,6 +14,8 @@ import 'log.dart' as log;
 import 'safe_http_server.dart';
 import 'system_cache.dart';
 import 'utils.dart';
+import 'wrap/iowrap.dart';
+import 'wrap/oauth2wrap.dart';
 
 export 'package:oauth2/oauth2.dart';
 

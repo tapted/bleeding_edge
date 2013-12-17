@@ -5,12 +5,11 @@
 /// Operations relative to the user's installed Dart SDK.
 library pub.sdk;
 
-import 'dart:io';
-
 import 'package:path/path.dart' as path;
 
 import 'io.dart';
 import 'version.dart';
+import 'wrap/iowrap.dart';
 
 /// Gets the path to the root directory of the SDK.
 String get rootDirectory {

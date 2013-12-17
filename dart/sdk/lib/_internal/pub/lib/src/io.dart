@@ -8,19 +8,19 @@ library pub.io;
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:path/path.dart' as path;
-import 'package:http/http.dart' show ByteStream;
 import 'package:stack_trace/stack_trace.dart';
 
 import 'error_group.dart';
+import 'wrap/iowrap.dart';
+import 'wrap/httpwrap.dart' show ByteStream;
 import 'log.dart' as log;
 import 'pool.dart';
 import 'sdk.dart' as sdk;
 import 'utils.dart';
 
-export 'package:http/http.dart' show ByteStream;
+export 'wrap/httpwrap.dart' show ByteStream;
 
 /// The pool used for restricting access to asynchronous operations that consume
 /// file descriptors.

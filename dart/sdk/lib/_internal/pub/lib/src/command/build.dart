@@ -6,7 +6,6 @@ library pub.command.build;
 
 import 'dart:async';
 
-import 'package:barback/barback.dart';
 import 'package:path/path.dart' as path;
 
 import '../barback/dart2js_transformer.dart';
@@ -17,6 +16,7 @@ import '../exit_codes.dart' as exit_codes;
 import '../io.dart';
 import '../log.dart' as log;
 import '../utils.dart';
+import '../wrap/barbackwrap.dart';
 
 final _arrow = getSpecial('\u2192', '=>');
 

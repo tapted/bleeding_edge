@@ -8,18 +8,13 @@ library pub.dart;
 import 'dart:async';
 import 'dart:isolate';
 
-import 'package:analyzer/analyzer.dart';
-import 'package:path/path.dart' as path;
-import 'package:stack_trace/stack_trace.dart';
-import '../../../compiler/compiler.dart' as compiler;
-import '../../../compiler/implementation/source_file_provider.dart'
-    show FormattingDiagnosticHandler, CompilerSourceFileProvider;
-import '../../../compiler/implementation/filenames.dart'
-    show appendSlash;
-
 import 'io.dart';
 import 'sdk.dart' as sdk;
 import 'utils.dart';
+import 'wrap/analyzerwrap.dart';
+import 'wrap/compilerwrap.dart';
+import 'wrap/source_file_providerwrap.dart';
+import 'wrap/filenameswrap.dart';
 
 /// Interface to communicate with dart2js.
 ///

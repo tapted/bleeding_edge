@@ -15,8 +15,9 @@ import 'log.dart' as log;
 import 'package.dart';
 import 'package_graph.dart';
 import 'solver/version_solver.dart';
-import 'system_cache.dart';
 import 'utils.dart';
+import 'wrap/path_rep.dart';
+import 'wrap/system_cache.dart';
 
 /// Pub operates over a directed graph of dependencies that starts at a root
 /// "entrypoint" package. This is typically the package where the current
@@ -49,8 +50,8 @@ class Entrypoint {
   final _pendingGets = new Map<PackageId, Future<PackageId>>();
 
   /// Loads the entrypoint from a package at [rootDir].
-  Entrypoint(String rootDir, SystemCache cache)
-      : root = new Package.load(null, rootDir, cache.sources),
+  Entrypoint(PathRep rootDir, SystemCache cache)
+      : root = new Package.load(null, rootDir.fullPath(), cache.sources),
         cache = cache;
 
   // TODO(rnystrom): Make this path configurable.
