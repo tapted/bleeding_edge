@@ -15,6 +15,17 @@ def CheckChangeOnUpload(input_api, output_api):
   """Checks that the main dart2js target has been run"""
   results = []
 
+  results += input_api.canned_checks.CheckLongLines(
+      input_api, output_api, 80)
+  results += input_api.canned_checks.CheckChangeHasNoCrAndHasOnlyOneEol(
+      input_api, output_api)
+  results += input_api.canned_checks.CheckChangeTodoHasOwner(
+      input_api, output_api)
+  results += input_api.canned_checks.CheckChangeHasNoStrayWhitespace(
+      input_api, output_api)
+  results += input_api.canned_checks.CheckChangeHasNoTabs(
+      input_api, output_api)
+
   try:
     subprocess.check_output(['make', 'app'])
   except subprocess.CalledProcessError:
