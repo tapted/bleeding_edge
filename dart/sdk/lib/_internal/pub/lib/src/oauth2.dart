@@ -14,8 +14,7 @@ import 'log.dart' as log;
 import 'safe_http_server.dart';
 import 'system_cache.dart';
 import 'utils.dart';
-import 'wrap/iowrap.dart';
-import 'wrap/oauth2wrap.dart';
+import 'wrap/oauth2_wrap.dart';
 
 export 'package:oauth2/oauth2.dart';
 

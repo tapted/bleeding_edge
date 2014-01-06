@@ -12,9 +12,8 @@ import 'io.dart';
 import 'log.dart' as log;
 import 'sdk.dart' as sdk;
 import 'utils.dart';
-import 'wrap/httpwrap.dart' as http;
-import 'wrap/iowrap.dart';
-import 'wrap/oauth2wrap.dart';
+import 'wrap/http_wrap.dart' as http;
+import 'wrap/oauth2_wrap.dart';
 
 // TODO(nweiz): make this configurable
 /// The amount of time in milliseconds to allow HTTP requests before assuming

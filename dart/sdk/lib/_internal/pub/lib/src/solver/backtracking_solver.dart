@@ -44,7 +44,8 @@ import '../sdk.dart' as sdk;
 import '../source_registry.dart';
 import '../utils.dart';
 import '../version.dart';
-import '../wrap/barbackwrap.dart' as barback;
+import '../wrap/sdk_wrap.dart';
+import '../wrap/barback_wrap.dart' as barback;
 import 'dependency_queue.dart';
 import 'version_queue.dart';
 import 'version_solver.dart';
@@ -129,7 +130,7 @@ class BacktrackingSolver {
       // Pre-cache the root package's known pubspec.
       cache.cache(new PackageId.root(root), root.pubspec);
 
-      _validateSdkConstraint(root.pubspec);
+      validateSdkConstraint(root.pubspec);
       return _traverseSolution();
     }).then((packages) {
       return new SolveResult.success(sources, root, lockFile, packages,
@@ -467,7 +468,7 @@ class Traverser {
     _visited.add(id);
 
     return _solver.cache.getPubspec(id).then((pubspec) {
-      _validateSdkConstraint(pubspec);
+      validateSdkConstraint(pubspec);
 
       var deps = pubspec.dependencies.toSet();
 
@@ -700,15 +701,4 @@ class Traverser {
 
     return package;
   }
-}
-
-/// Ensures that if [pubspec] has an SDK constraint, then it is compatible
-/// with the current SDK. Throws a [SolveFailure] if not.
-void _validateSdkConstraint(Pubspec pubspec) {
-  if (pubspec.environment.sdkVersion.allows(sdk.version)) return;
-
-  throw new BadSdkVersionException(pubspec.name,
-      'Package ${pubspec.name} requires SDK version '
-      '${pubspec.environment.sdkVersion} but the current SDK is '
-      '${sdk.version}.');
 }

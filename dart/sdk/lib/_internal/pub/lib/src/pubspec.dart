@@ -10,12 +10,12 @@ import 'package:path/path.dart' as path;
 
 import 'io.dart';
 import 'package.dart';
+import 'path_rep.dart';
 import 'source.dart';
 import 'source_registry.dart';
 import 'utils.dart';
 import 'version.dart';
-import 'wrap/barbackwrap.dart';
-import 'wrap/iowrap.dart' as io;
+import 'wrap/barback_wrap.dart';
 
 /// The parsed contents of a pubspec file.
 ///
@@ -220,13 +220,13 @@ class Pubspec {
   ///
   /// If [expectedName] is passed and the pubspec doesn't have a matching name
   /// field, this will throw a [PubspecError].
-  static Future<Pubspec> load(String packageDir, SourceRegistry sources,
+  static Future<Pubspec> load(PathRep packageDir, SourceRegistry sources,
       {String expectedName}) {
-    var pubspecPath = path.join(packageDir, 'pubspec.yaml');
-    var pubspecUri = path.toUri(pubspecPath);
+    var pubspecPath = packageDir.join('pubspec.yaml');
+    var pubspecUri = pubspecPath.toUri();
 
-    return io.File.load("pubspec.yaml")
-      .then((fileEntry) => fileEntry.readText())
+    return File.load(pubspecPath)
+      .then((file) => file.readAsString())
       .then((text) => new Pubspec.parse(
           text, sources, expectedName: expectedName, location: pubspecUri))
       .catchError((e) => throw new PubspecException(expectedName, pubspecUri,

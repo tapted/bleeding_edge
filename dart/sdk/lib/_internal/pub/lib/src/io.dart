@@ -8,19 +8,22 @@ library pub.io;
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:math' show Random;
 
 import 'package:path/path.dart' as path;
 import 'package:stack_trace/stack_trace.dart';
 
 import 'error_group.dart';
-import 'wrap/iowrap.dart';
-import 'wrap/httpwrap.dart' show ByteStream;
 import 'log.dart' as log;
+import 'path_rep.dart';
 import 'pool.dart';
 import 'sdk.dart' as sdk;
 import 'utils.dart';
+import 'wrap/http_wrap.dart' show ByteStream;
+import 'wrap/io_wrap.dart';
 
-export 'wrap/httpwrap.dart' show ByteStream;
+export 'wrap/http_wrap.dart' show ByteStream;
+export 'wrap/io_wrap.dart';
 
 /// The pool used for restricting access to asynchronous operations that consume
 /// file descriptors.
@@ -38,16 +41,27 @@ bool isBeneath(String entry, String dir) {
 }
 
 /// Determines if a file or directory exists at [path].
-bool entryExists(String path) =>
-  dirExists(path) || fileExists(path) || linkExists(path);
+Future<bool> entryExists(PathRep path) {
+  return Future.wait([dirExists(path),
+                      fileExists(path),
+                      linkExists(path)]).then((results) {
+    return results.any((elem) => elem);
+  });
+}
 
 /// Returns whether [link] exists on the file system. This will return `true`
 /// for any symlink, regardless of what it points at or whether it's broken.
-bool linkExists(String link) => new Link(link).existsSync();
+Future<bool> linkExists(PathRep link) =>
+  Link.load(link)
+      .then((_) => true)
+      .catchError((error) => false);
 
 /// Returns whether [file] exists on the file system. This will return `true`
 /// for a symlink only if that symlink is unbroken and points to a file.
-bool fileExists(String file) => new File(file).existsSync();
+Future<bool> fileExists(PathRep file) =>
+  File.load(file)
+      .then((_) => true)
+      .catchError((error) => false);
 
 /// Returns the canonical path for [pathString]. This is the normalized,
 /// absolute path, with symlinks resolved. As in [transitiveTarget], broken or
@@ -56,77 +70,8 @@ bool fileExists(String file) => new File(file).existsSync();
 /// This doesn't require [pathString] to point to a path that exists on the
 /// filesystem; nonexistent or unreadable path entries are treated as normal
 /// directories.
-String canonicalize(String pathString) {
-  var seen = new Set<String>();
-  var components = new Queue<String>.from(
-      path.split(path.normalize(path.absolute(pathString))));
-
-  // The canonical path, built incrementally as we iterate through [components].
-  var newPath = components.removeFirst();
-
-  // Move through the components of the path, resolving each one's symlinks as
-  // necessary. A resolved component may also add new components that need to be
-  // resolved in turn.
-  while (!components.isEmpty) {
-    seen.add(path.join(newPath, path.joinAll(components)));
-    var resolvedPath = resolveLink(
-        path.join(newPath, components.removeFirst()));
-    var relative = path.relative(resolvedPath, from: newPath);
-
-    // If the resolved path of the component relative to `newPath` is just ".",
-    // that means component was a symlink pointing to its parent directory. We
-    // can safely ignore such components.
-    if (relative == '.') continue;
-
-    var relativeComponents = new Queue<String>.from(path.split(relative));
-
-    // If the resolved path is absolute relative to `newPath`, that means it's
-    // on a different drive. We need to canonicalize the entire target of that
-    // symlink again.
-    if (path.isAbsolute(relative)) {
-      // If we've already tried to canonicalize the new path, we've encountered
-      // a symlink loop. Avoid going infinite by treating the recursive symlink
-      // as the canonical path.
-      if (seen.contains(relative)) {
-        newPath = relative;
-      } else {
-        newPath = relativeComponents.removeFirst();
-        relativeComponents.addAll(components);
-        components = relativeComponents;
-      }
-      continue;
-    }
-
-    // Pop directories off `newPath` if the component links upwards in the
-    // directory hierarchy.
-    while (relativeComponents.first == '..') {
-      newPath = path.dirname(newPath);
-      relativeComponents.removeFirst();
-    }
-
-    // If there's only one component left, [resolveLink] guarantees that it's
-    // not a link (or is a broken link). We can just add it to `newPath` and
-    // continue resolving the remaining components.
-    if (relativeComponents.length == 1) {
-      newPath = path.join(newPath, relativeComponents.single);
-      continue;
-    }
-
-    // If we've already tried to canonicalize the new path, we've encountered a
-    // symlink loop. Avoid going infinite by treating the recursive symlink as
-    // the canonical path.
-    var newSubPath = path.join(newPath, path.joinAll(relativeComponents));
-    if (seen.contains(newSubPath)) {
-      newPath = newSubPath;
-      continue;
-    }
-
-    // If there are multiple new components to resolve, add them to the
-    // beginning of the queue.
-    relativeComponents.addAll(components);
-    components = relativeComponents;
-  }
-  return newPath;
+PathRep canonicalize(PathRep path) {
+  return canonicalizeNative(path);
 }
 
 /// Returns the transitive target of [link] (if A links to B which links to C,
@@ -136,32 +81,41 @@ String canonicalize(String pathString) {
 /// return `"B"`).
 ///
 /// This accepts paths to non-links or broken links, and returns them as-is.
-String resolveLink(String link) {
-  var seen = new Set<String>();
-  while (linkExists(link) && !seen.contains(link)) {
-    seen.add(link);
-    link = path.normalize(path.join(
-        path.dirname(link), new Link(link).targetSync()));
-  }
-  return link;
+PathRep resolveLink(PathRep link) {
+  return link.target;
+}
+
+/// Creates a new symlink at path [symlink] that points to [target]. Returns a
+/// [Future] which completes to the path to the symlink file.
+///
+/// If [relative] is true, creates a symlink with a relative path from the
+/// symlink to the target. Otherwise, uses the [target] path unmodified.
+///
+/// Note that on Windows, only directories may be symlinked to.
+Future createSymlink(PathRep target, PathRep symlink,
+                     {bool relative: false}) {
+  return createSymlinkNative(target, symlink, relative: relative);
 }
 
 /// Reads the contents of the text file [file].
-String readTextFile(String file) =>
-    new File(file).readAsStringSync(encoding: UTF8);
+Future<String> readTextFile(PathRep file) =>
+    File.load(file).then((file) => file.readText());
 
 /// Reads the contents of the binary file [file].
-List<int> readBinaryFile(String file) {
+Future<List<int>> readBinaryFile(PathRep file) {
   log.io("Reading binary file $file.");
-  var contents = new File(file).readAsBytesSync();
-  log.io("Read ${contents.length} bytes from $file.");
-  return contents;
+  return File.load(file)
+      .then((file) => file.readBytes())
+      .then((contents) {
+        log.io("Read ${contents.length} bytes from $file.");
+        return contents;
+      });
 }
 
 /// Creates [file] and writes [contents] to it.
 ///
 /// If [dontLogContents] is true, the contents of the file will never be logged.
-String writeTextFile(String file, String contents,
+Future writeTextFile(PathRep file, String contents,
   {bool dontLogContents: false}) {
   // Sanity check: don't spew a huge file.
   log.io("Writing ${contents.length} characters to text file $file.");
@@ -169,31 +123,26 @@ String writeTextFile(String file, String contents,
     log.fine("Contents:\n$contents");
   }
 
-  new File(file).writeAsStringSync(contents);
-  return file;
+  return File.load(file).then((file) => file.writeText(contents));
 }
 
 /// Creates [file] and writes [contents] to it.
-String writeBinaryFile(String file, List<int> contents) {
+Future<File> writeBinaryFile(PathRep file, List<int> contents) {
   log.io("Writing ${contents.length} bytes to binary file $file.");
-  new File(file).openSync(mode: FileMode.WRITE)
-      ..writeFromSync(contents)
-      ..closeSync();
-  log.fine("Wrote text file $file.");
-  return file;
+  return File.create(file).then((file) => file..write(contents));
 }
 
 /// Writes [stream] to a new file at path [file]. Will replace any file already
 /// at that path. Completes when the file is done being written.
-Future<String> createFileFromStream(Stream<List<int>> stream, String file) {
+Future<String> createFileFromStream(Stream<List<int>> stream, PathRep file) {
   // TODO(nweiz): remove extra logging when we figure out the windows bot issue.
   log.io("Creating $file from stream.");
 
   return _descriptorPool.withResource(() {
-    return stream.pipe(new File(file).openWrite()).then((_) {
+    return stream.pipe(File.create(file).then((_) {
       log.fine("Created $file from stream.");
       return file;
-    });
+    }));
   });
 }
 
@@ -209,147 +158,90 @@ void copyFiles(Iterable<String> files, String baseDir, String destination) {
 }
 
 /// Copy a file from [source] to [destination].
-void copyFile(String source, String destination) {
-  writeBinaryFile(destination, readBinaryFile(source));
+Future copyFile(PathRep source, PathRep destination) {
+  return File.load(source).then((file) => file.copyTo(destination));
 }
 
 /// Creates a directory [dir].
-String createDir(String dir) {
-  new Directory(dir).createSync();
-  return dir;
-}
+Future<String> createDir(PathRep dir) =>
+    Directory.create(dir).then((_) => dir);
 
 /// Ensures that [dir] and all its parent directories exist. If they don't
 /// exist, creates them.
-String ensureDir(String dir) {
-  new Directory(dir).createSync(recursive: true);
-  return dir;
-}
+Future<String> ensureDir(PathRep dir) => createDir(dir);
 
 /// Creates a temp directory in [dir], whose name will be [prefix] with
 /// characters appended to it to make a unique name.
 /// Returns the path of the created directory.
-String createTempDir(String base, String prefix) {
-  var tempDir = new Directory(base).createTempSync(prefix);
-  log.io("Created temp directory ${tempDir.path}");
-  return tempDir.path;
+Future<String> createTempDir(PathRep dir, String prefix) {
+  return Directory.load(dir).then((parent) {
+    // TODO(pajamallama): Request a temp directory using HTML5 filesystem API.
+    var name = prefix + (new Random()).nextInt(10000).toString();
+    return parent.createDirectory(name);
+  }).then((dir) {
+    log.io("Created temp directory ${dir.name}");
+    return dir.name;
+  });
 }
 
 /// Creates a temp directory in the system temp directory, whose name will be
 /// 'pub_' with characters appended to it to make a unique name.
 /// Returns the path of the created directory.
-String createSystemTempDir() {
-  var tempDir = Directory.systemTemp.createTempSync('pub_');
-  log.io("Created temp directory ${tempDir.path}");
-  return tempDir.path;
-}
+// TODO(pajamallama): Actually place this in the system directory.
+Future<String> createSystemTempDir() =>
+    createTempDir(FileSystemEntity.workingDir.path, "pub_");
 
 /// Lists the contents of [dir]. If [recursive] is `true`, lists subdirectory
 /// contents (defaults to `false`). If [includeHidden] is `true`, includes files
 /// and directories beginning with `.` (defaults to `false`).
 ///
 /// The returned paths are guaranteed to begin with [dir].
-List<String> listDir(String dir, {bool recursive: false,
-    bool includeHidden: false}) {
-  List<String> doList(String dir, Set<String> listedDirectories) {
-    var contents = <String>[];
+Future<List<PathRep>> listDir(PathRep dir,
+                              {bool recursive: false,
+                               bool includeHidden: true,
+                               bool includePackages: true}) {
 
-    // Avoid recursive symlinks.
-    var resolvedPath = canonicalize(dir);
-    if (listedDirectories.contains(resolvedPath)) return [];
-
-    listedDirectories = new Set<String>.from(listedDirectories);
-    listedDirectories.add(resolvedPath);
-
-    log.io("Listing directory $dir.");
-
-    var children = <String>[];
-    for (var entity in new Directory(dir).listSync()) {
-      if (!includeHidden && path.basename(entity.path).startsWith('.')) {
-        continue;
-      }
-
-      contents.add(entity.path);
-      if (entity is Directory) {
-        // TODO(nweiz): don't manually recurse once issue 4794 is fixed.
-        // Note that once we remove the manual recursion, we'll need to
-        // explicitly filter out files in hidden directories.
-        if (recursive) {
-          children.addAll(doList(entity.path, listedDirectories));
-        }
-      }
-    }
-
-    log.fine("Listed directory $dir:\n${contents.join('\n')}");
-    contents.addAll(children);
-    return contents;
-  }
-
-  return doList(dir, new Set<String>());
+  return Directory.load(dir)
+      .then((dir) => dir.list(
+          recursive: recursive,
+          includeHidden: includeHidden,
+          includePackages: includePackages))
+      .then((entries) => entries.map((entry) => entry.path));
 }
 
 /// Returns whether [dir] exists on the file system. This will return `true` for
 /// a symlink only if that symlink is unbroken and points to a directory.
-bool dirExists(String dir) => new Directory(dir).existsSync();
+Future<bool> dirExists(PathRep dir) {
+  return Directory.load(dir)
+      .then((_) => true)
+      .catchError((error) => false);
+}
 
 /// Deletes whatever's at [path], whether it's a file, directory, or symlink. If
-/// it's a directory, it will be deleted recursively.
-void deleteEntry(String path) {
-  if (linkExists(path)) {
-    log.io("Deleting link $path.");
-    new Link(path).deleteSync();
-  } else if (dirExists(path)) {
-    log.io("Deleting directory $path.");
-    new Directory(path).deleteSync(recursive: true);
-  } else if (fileExists(path)) {
-    log.io("Deleting file $path.");
-    new File(path).deleteSync();
-  }
+/// it's a directory, it will be deleted recursively. Ignore any errors so that
+/// deleteEntry for a non-existant [path] will be a success.
+Future deleteEntry(PathRep path) {
+  log.io("Deleting $path.");
+
+  return FileSystemEntity.load(path)
+      .catchError((_) => print("$path didn't exist anyway"))
+      .then((entry) => entry != null ? entry.remove() : null);
 }
 
 /// "Cleans" [dir]. If that directory already exists, it will be deleted. Then a
 /// new empty directory will be created.
-void cleanDir(String dir) {
-  if (entryExists(dir)) deleteEntry(dir);
-  createDir(dir);
+Future cleanDir(PathRep dir) {
+  Directory.load(dir)
+      .then((dir) => dir.delete())
+      .then((_) => Directory.create(dir));
 }
 
 /// Renames (i.e. moves) the directory [from] to [to].
-void renameDir(String from, String to) {
+void renameDir(PathRep from, PathRep to) {
   log.io("Renaming directory $from to $to.");
-  try {
-    new Directory(from).renameSync(to);
-  } on IOException catch (error) {
-    // Ensure that [to] isn't left in an inconsistent state. See issue 12436.
-    if (entryExists(to)) deleteEntry(to);
-    rethrow;
-  }
-}
-
-/// Creates a new symlink at path [symlink] that points to [target]. Returns a
-/// [Future] which completes to the path to the symlink file.
-///
-/// If [relative] is true, creates a symlink with a relative path from the
-/// symlink to the target. Otherwise, uses the [target] path unmodified.
-///
-/// Note that on Windows, only directories may be symlinked to.
-void createSymlink(String target, String symlink,
-    {bool relative: false}) {
-  if (relative) {
-    // Relative junction points are not supported on Windows. Instead, just
-    // make sure we have a clean absolute path because it will interpret a
-    // relative path to be relative to the cwd, not the symlink, and will be
-    // confused by forward slashes.
-    if (Platform.operatingSystem == 'windows') {
-      target = path.normalize(path.absolute(target));
-    } else {
-      target = path.normalize(
-          path.relative(target, from: path.dirname(symlink)));
-    }
-  }
-
-  log.fine("Creating $symlink pointing to $target");
-  new Link(symlink).createSync(target);
+  Directory.load(from)
+      .then((dir) => dir.rename(to))
+      .catchError((error) => fail("Failed to move dir: $error"));
 }
 
 /// Creates a new symlink that creates an alias at [symlink] that points to the
@@ -376,10 +268,6 @@ void createPackageSymlink(String name, String target, String symlink,
                 'you will not be able to import any libraries from it.');
   }
 }
-
-/// Whether pub is running from within the Dart SDK, as opposed to from the Dart
-/// source repository.
-bool get runningFromSdk => Platform.script.path.endsWith('.snapshot');
 
 /// Resolves [target] relative to the path to pub's `resource` directory.
 String resourcePath(String target) {
@@ -670,6 +558,13 @@ Future withTempDir(Future fn(String path)) {
   });
 }
 
+/// Extract the archive inside the current directory.
+Future<bool> extractArchive(File file) {
+  return extractArchiveNative(file);
+}
+
+// TODO(pajamallam): Extract the rest of this file into io_wrap.dart
+// for the Dartium wrapper.
 /// Extracts a `.tar.gz` file from [stream] to [destination]. Returns whether
 /// or not the extraction was successful.
 Future<bool> extractTarGz(Stream<List<int>> stream, String destination) {

@@ -9,7 +9,7 @@ import 'package:path/path.dart' as path;
 
 import 'io.dart';
 import 'version.dart';
-import 'wrap/iowrap.dart';
+import 'wrap/sdk_wrap.dart';
 
 /// Gets the path to the root directory of the SDK.
 String get rootDirectory {
@@ -21,18 +21,4 @@ String get rootDirectory {
 ///
 /// This can be set so that the version solver tests can artificially select
 /// different SDK versions.
-Version version = _getVersion();
-
-/// Determine the SDK's version number.
-Version _getVersion() {
-  // Some of the pub integration tests require an SDK version number, but the
-  // tests on the bots are not run from a built SDK so this lets us avoid
-  // parsing the missing version file.
-  var sdkVersion = Platform.environment["_PUB_TEST_SDK_VERSION"];
-  if (sdkVersion != null) return new Version.parse(sdkVersion);
-
-  // Read the "version" file.
-  var revisionPath = path.join(rootDirectory, "version");
-  var version = readTextFile(revisionPath).trim();
-  return new Version.parse(version);
-}
+Version version = getVersion();

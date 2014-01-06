@@ -10,10 +10,11 @@ import 'package:path/path.dart' as path;
 
 import 'io.dart';
 import 'package.dart';
+import 'path_rep.dart';
 import 'pubspec.dart';
-import 'system_cache.dart';
 import 'utils.dart';
 import 'version.dart';
+import 'wrap/system_cache_wrap.dart';
 
 /// A source from which to get packages.
 ///
@@ -47,7 +48,7 @@ abstract class Source {
   /// The root directory of this source's cache within the system cache.
   ///
   /// This shouldn't be overridden by subclasses.
-  String get systemCacheRoot => path.join(systemCache.rootDir, name);
+  PathRep get systemCacheRoot => systemCache.rootDir.join(name);
 
   /// Records the system cache to which this source belongs.
   ///
@@ -90,15 +91,19 @@ abstract class Source {
     }
 
     // Try to get it from the system cache first.
-    if (shouldCache) {
-      return systemCacheDirectory(id).then((packageDir) {
-        if (!fileExists(path.join(packageDir, "pubspec.yaml"))) {
-          return describeUncached(id);
-        }
+    var packageDir;
 
-        return new Pubspec.load(packageDir, _systemCache.sources,
-            expectedName: id.name);
-      });
+    if (shouldCache) {
+      return systemCacheDirectory(id)
+          .then((p) {
+            packageDir = p;
+            return fileExists(packageDir.join("pubspec.yaml"));
+          }).then((exists) {
+            if (!exists) return describeUncached(id);
+
+            return Pubspec.load(packageDir, _systemCache.sources,
+                expectedName: id.name);
+          });
     }
 
     // Not cached, so get it from the source.
@@ -115,10 +120,10 @@ abstract class Source {
   /// This method is effectively protected. Derived classes may override it,
   /// but external code should not call it. Call [describe()] instead.
   Future<Pubspec> describeUncached(PackageId id) {
-    if (!shouldCache) {
+    if (!shouldCache)
       throw new UnimplementedError(
           "Source $name must implement describeUncached(id).");
-    }
+
     return downloadToSystemCache(id).then((package) => package.pubspec);
   }
 
@@ -151,19 +156,18 @@ abstract class Source {
     var packageDir;
     return systemCacheDirectory(id).then((p) {
       packageDir = p;
+      return _isCachedPackageCorrupted(p);
+    }).then((corrupted) {
+      // If corrupted (or if dir doesn't exists) then wipe out the package
+      // and re-download.
+      if (!corrupted) return true;
 
-      // See if it's already cached.
-      if (dirExists(packageDir)) {
-        if (!_isCachedPackageCorrupted(packageDir)) return true;
-        // Busted, so wipe out the package and re-download.
-        deleteEntry(packageDir);
-      }
-
-      ensureDir(path.dirname(packageDir));
-      return get(id, packageDir);
+      return deleteEntry(packageDir).then(
+          (_) => ensureDir(packageDir.dirname)).then(
+          (_) => get(id, packageDir));
     }).then((found) {
       if (!found) fail('Package $id not found.');
-      return new Package.load(id.name, packageDir, systemCache.sources);
+      return Package.load(id.name, packageDir, systemCache.sources);
     });
   }
 
@@ -178,20 +182,31 @@ abstract class Source {
   ///
   ///   * It has an empty "lib" directory.
   ///   * It has no pubspec.
-  bool _isCachedPackageCorrupted(String packageDir) {
-    if (!fileExists(path.join(packageDir, "pubspec.yaml"))) return true;
+  Future<bool> _isCachedPackageCorrupted(PathRep packageDir) {
+    var pubspec = packageDir.join("pubspec.yaml");
+    var libDir = packageDir.join("lib");
 
-    var libDir = path.join(packageDir, "lib");
-    if (dirExists(libDir)) return listDir(libDir).length == 0;
+    return dirExists(packageDir).then((exists) {
+      if (!exists) return true;
 
-    // If we got here, it's OK.
-    return false;
+      return fileExists(pubspec).then((exists) {
+        if (!exists) return true;
+
+        return dirExists(libDir).then((exists) {
+          if (exists)
+            return listDir(libDir).then((list) => list.length == 0);
+
+          // If we got here, it's OK.
+          return false;
+        });
+      });
+    });
   }
 
   /// Returns the directory where this package can be found locally. If this is
   /// a cached source, it will be in the system cache. Otherwise, it will
   /// depend on the source.
-  Future<String> getDirectory(PackageId id) {
+  Future<PathRep> getDirectory(PackageId id) {
     if (shouldCache) return systemCacheDirectory(id);
     throw new UnimplementedError("Source $name must implement this.");
   }
@@ -201,7 +216,7 @@ abstract class Source {
   /// of [systemCacheRoot].
   ///
   /// This doesn't need to be implemented if [shouldCache] is false.
-  Future<String> systemCacheDirectory(PackageId id) {
+  Future<PathRep> systemCacheDirectory(PackageId id) {
     return new Future.error(
         "systemCacheDirectory() must be implemented if shouldCache is true.");
   }
@@ -222,7 +237,7 @@ abstract class Source {
   ///
   /// [fromLockFile] is true when the description comes from a [LockFile], to
   /// allow the source to use lockfile-specific descriptions via [resolveId].
-  dynamic parseDescription(String containingPath, description,
+  dynamic parseDescription(PathRep containingPath, description,
                            {bool fromLockFile: false}) {
     return description;
   }
@@ -231,7 +246,7 @@ abstract class Source {
   /// [description] in the right format.
   ///
   /// [containingPath] is the containing directory of the root package.
-  dynamic serializeDescription(String containingPath, description) {
+  dynamic serializeDescription(PathRep containingPath, description) {
     return description;
   }
 
@@ -241,7 +256,7 @@ abstract class Source {
   /// By default, it just converts the description to a string, but sources
   /// may customize this. [containingPath] is the containing directory of the
   /// root package.
-  String formatDescription(String containingPath, description) {
+  String formatDescription(PathRep containingPath, description) {
     return description.toString();
   }
 

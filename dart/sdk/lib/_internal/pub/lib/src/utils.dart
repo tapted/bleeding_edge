@@ -16,8 +16,7 @@ import 'package:path/path.dart' as path;
 import "package:stack_trace/stack_trace.dart";
 
 import 'dart.dart';
-import "wrap/analyzerwrap.dart";
-import 'wrap/iowrap.dart';
+import 'io.dart';
 
 /// A pair of values.
 class Pair<E, F> {

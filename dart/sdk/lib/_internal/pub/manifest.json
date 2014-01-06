@@ -11,6 +11,9 @@
   },
   "permissions": [
     {"fileSystem": ["write", "retainEntries", "directory"]},
-    "storage"
+    "storage",
+    "https://pub.dartlang.org/",
+    "https://commondatastorage.googleapis.com/pub.dartlang.org",
+    "https://tavern.appspot.com/"
   ]
 }

@@ -11,7 +11,6 @@ import 'dart:collection';
 import 'io.dart';
 import 'transcript.dart';
 import 'utils.dart';
-import 'wrap/iowrap.dart';
 
 typedef LogFn(Entry entry);
 final Map<Level, LogFn> _loggers = new Map<Level, LogFn>();

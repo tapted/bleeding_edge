@@ -9,16 +9,15 @@ import "dart:convert";
 
 import 'package:path/path.dart' as path;
 
-import '../http.dart';
 import '../io.dart';
 import '../log.dart' as log;
 import '../package.dart';
+import '../path_rep.dart';
 import '../pubspec.dart';
 import '../source.dart';
 import '../utils.dart';
 import '../version.dart';
-import '../wrap/httpwrap.dart';
-import '../wrap/iowrap.dart';
+import '../wrap/http_wrap.dart';
 
 /// A package source that gets packages from a package hosting site that uses
 /// the same API as pub.dartlang.org.
@@ -29,7 +28,7 @@ class HostedSource extends Source {
 
   /// Gets the default URL for the package server for hosted dependencies.
   static String get defaultUrl {
-    var url = io.Platform.environment["PUB_HOSTED_URL"];
+    var url = Platform.environment["PUB_HOSTED_URL"];
     if (url != null) return url;
 
     return "https://pub.dartlang.org";
@@ -77,7 +76,7 @@ class HostedSource extends Source {
   }
 
   /// Downloads a package from the site and unpacks it.
-  Future<bool> get(PackageId id, String destPath) {
+  Future<bool> get(PackageId id, PathRep destPath) {
     return new Future.sync(() {
       var url = _makeVersionUrl(id, (server, package, version) =>
           "$server/packages/$package/versions/$version.tar.gz");
@@ -86,19 +85,11 @@ class HostedSource extends Source {
       log.message('Downloading ${id.name} ${id.version}...');
 
       // Download and extract the archive to a temp directory.
-      var tempDir = systemCache.createTempDir();
-      return httpClient.send(new http.Request("GET", url))
-          .then((response) => response.stream)
-          .then((stream) {
-        return timeout(extractTarGz(stream, tempDir), HTTP_TIMEOUT,
-            'fetching URL "$url"');
-      }).then((_) {
-        // Now that the get has succeeded, move it to the real location in the
-        // cache. This ensures that we don't leave half-busted ghost
-        // directories in the user's pub cache if a get fails.
-        renameDir(tempDir, destPath);
-        return true;
-      });
+      var tempDir = systemCache.createCacheTempDir();
+
+      return httpClient.read(url, responseType: "arraybuffer")
+          .then((data) => writeBinaryFile(destPath, data))
+          .then((archive) => extractArchive(archive));
     });
   }
 
@@ -106,12 +97,12 @@ class HostedSource extends Source {
   /// for each separate repository URL that's used on the system. Each of these
   /// subdirectories then contains a subdirectory for each package downloaded
   /// from that site.
-  Future<String> systemCacheDirectory(PackageId id) {
+  Future<PathRep> systemCacheDirectory(PackageId id) {
     var parsed = _parseDescription(id.description);
     var dir = _getSourceDirectory(parsed.last);
 
     return new Future.value(
-        path.join(systemCacheRoot, dir, "${parsed.first}-${id.version}"));
+        systemCacheRoot.join(dir, "${parsed.first}-${id.version}"));
   }
 
   String packageName(description) => _parseDescription(description).first;
@@ -124,29 +115,30 @@ class HostedSource extends Source {
   /// There are two valid formats. A plain string refers to a package with the
   /// given name from the default host, while a map with keys "name" and "url"
   /// refers to a package with the given name from the host at the given URL.
-  dynamic parseDescription(String containingPath, description,
+  dynamic parseDescription(PathRep containingPath, description,
                            {bool fromLockFile: false}) {
     _parseDescription(description);
     return description;
   }
 
-  List<Package> getCachedPackages([String url]) {
+  Future<List<Package>> getCachedPackages([String url]) {
     if (url == null) url = defaultUrl;
+    var cacheDir = systemCacheRoot.join(_getSourceDirectory(url));
 
-    var cacheDir = path.join(systemCacheRoot,
-                             _getSourceDirectory(url));
-    if (!dirExists(cacheDir)) return [];
-
-    return listDir(path.join(cacheDir)).map((entry) {
-      // TODO(keertip): instead of catching exception in pubspec parse with
-      // sdk dependency, fix to parse and report usage of sdk dependency.
-      // dartbug.com/10190
-      try {
-        return new Package.load(null, entry, systemCache.sources);
-      }  on ArgumentError catch (e) {
-        log.error(e);
-      }
-    }).where((package) => package != null).toList();
+    return listDir(cacheDir).then((entries) {
+      return Future.forEach(entries, (entry) {
+        // TODO(keertip): instead of catching exception in pubspec parse with
+        // sdk dependency, fix to parse and report usage of sdk dependency.
+        // dartbug.com/10190
+        try {
+          return new Package.load(null, entry, systemCache.sources);
+        }  on ArgumentError catch (e) {
+          log.error(e);
+        }
+      }).then((packages) {
+        return packages.where((package) => package != null).toList();
+      });
+    }).catchError((e) => fail("Failed to get cached packages: $e"));
   }
 
   /// When an error occurs trying to read something about [package] from [url],
@@ -164,7 +156,7 @@ class HostedSource extends Source {
           error, stackTrace);
     }
 
-    if (error is io.SocketException) {
+    if (error is SocketException) {
       fail('Got socket error trying to find package "$package" at $url.',
            error, stackTrace);
     }

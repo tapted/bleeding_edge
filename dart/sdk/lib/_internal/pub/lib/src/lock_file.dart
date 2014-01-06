@@ -4,10 +4,13 @@
 
 library pub.lock_file;
 
+import 'dart:async';
+
 import 'package:yaml/yaml.dart';
 
 import 'io.dart';
 import 'package.dart';
+import 'path_rep.dart';
 import 'source_registry.dart';
 import 'utils.dart';
 import 'version.dart';
@@ -23,8 +26,9 @@ class LockFile {
     : packages = <String, PackageId>{};
 
   /// Loads a lockfile from [filePath].
-  factory LockFile.load(String filePath, SourceRegistry sources) {
-    return LockFile._parse(filePath, readTextFile(filePath), sources);
+  static Future<LockFile> load(PathRep filePath, SourceRegistry sources) {
+    return readTextFile(filePath).then((text) =>
+        LockFile._parse(filePath, text, sources));
   }
 
   /// Parses a lockfile whose text is [contents].
@@ -33,7 +37,7 @@ class LockFile {
   }
 
   /// Parses the lockfile whose text is [contents].
-  static LockFile _parse(String filePath, String contents,
+  static LockFile _parse(PathRep filePath, String contents,
       SourceRegistry sources) {
     var packages = <String, PackageId>{};
 
@@ -86,7 +90,7 @@ class LockFile {
   ///
   /// [packageDir] is the containing directory of the root package, used to
   /// properly serialize package descriptions.
-  String serialize(String packageDir, SourceRegistry sources) {
+  String serialize(PathRep packageDir, SourceRegistry sources) {
     // Convert the dependencies to a simple object.
     var data = {};
     packages.forEach((name, package) {

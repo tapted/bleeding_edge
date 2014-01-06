@@ -11,10 +11,7 @@ import 'dart:isolate';
 import 'io.dart';
 import 'sdk.dart' as sdk;
 import 'utils.dart';
-import 'wrap/analyzerwrap.dart';
-import 'wrap/compilerwrap.dart';
-import 'wrap/source_file_providerwrap.dart';
-import 'wrap/filenameswrap.dart';
+import 'wrap/compiler_wrap.dart';
 
 /// Interface to communicate with dart2js.
 ///

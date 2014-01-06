@@ -8,16 +8,16 @@ import 'dart:async';
 
 import 'package:path/path.dart' as path;
 
-import 'git.dart' as git;
 import 'io.dart';
+import 'git.dart' as git;
 import 'lock_file.dart';
 import 'log.dart' as log;
 import 'package.dart';
 import 'package_graph.dart';
+import 'path_rep.dart';
 import 'solver/version_solver.dart';
 import 'utils.dart';
-import 'wrap/path_rep.dart';
-import 'wrap/system_cache.dart';
+import 'wrap/system_cache_wrap.dart';
 
 /// Pub operates over a directed graph of dependencies that starts at a root
 /// "entrypoint" package. This is typically the package where the current
@@ -51,19 +51,19 @@ class Entrypoint {
 
   /// Loads the entrypoint from a package at [rootDir].
   Entrypoint(PathRep rootDir, SystemCache cache) : cache = cache {
-    Package.load(null, rootDir.fullPath(), cache.sources).then(
+    Package.load(null, rootDir, cache.sources).then(
         (package) => root = package);
   }
 
   // TODO(rnystrom): Make this path configurable.
   /// The path to the entrypoint's "packages" directory.
-  String get packagesDir => path.join(root.dir, 'packages');
+  PathRep get packagesDir => root.dir.join('packages');
 
   /// `true` if the entrypoint package currently has a lock file.
-  bool get lockFileExists => entryExists(lockFilePath);
+  Future<bool> get lockFileExists => entryExists(lockFilePath);
 
   /// The path to the entrypoint package's lockfile.
-  String get lockFilePath => path.join(root.dir, 'pubspec.lock');
+  PathRep get lockFilePath => root.dir.join('pubspec.lock');
 
   /// Gets package [id] and makes it available for use by this entrypoint.
   ///
@@ -76,34 +76,34 @@ class Entrypoint {
   ///
   /// See also [getDependencies].
   Future<PackageId> get(PackageId id) {
-    var pending = _pendingGets[id];
-    if (pending != null) return pending;
+    if (_pendingGets[id] != null) return _pendingGets[id];
 
-    var packageDir = path.join(packagesDir, id.name);
     var source;
-
+    var packageDir = packagesDir.join(id.name);
     var future = new Future.sync(() {
-      ensureDir(path.dirname(packageDir));
+      return entryExists(packageDir).then((exists) {
+        if (exists) {
+          // TODO(nweiz): figure out when to actually delete the directory, and
+          // when we can just re-use the existing symlink.
+          log.fine("Deleting package directory for ${id.name} before get.");
+          return deleteEntry(packageDir);
+        }
+        return new Future.value();
+      }).then((_) {
+        source = cache.sources[id.source];
 
-      if (entryExists(packageDir)) {
-        // TODO(nweiz): figure out when to actually delete the directory, and
-        // when we can just re-use the existing symlink.
-        log.fine("Deleting package directory for ${id.name} before get.");
-        deleteEntry(packageDir);
-      }
-
-      source = cache.sources[id.source];
-
-      if (source.shouldCache) {
-        return cache.download(id).then(
-            (pkg) => createPackageSymlink(id.name, pkg.dir, packageDir));
-      } else {
-        return source.get(id, packageDir).then((found) {
-          if (found) return null;
-          fail('Package ${id.name} not found in source "${id.source}".');
-        });
-      }
-    }).then((_) => source.resolveId(id));
+        if (source.shouldCache) {
+          return cache.download(id).then((pkg) {
+            return createPackageSymlink(id.name, pkg.dir, packageDir);
+          });
+        } else {
+          return source.get(id, packageDir).then((found) {
+            if (found) return null;
+            fail('Package ${id.name} not found in source "${id.source}".');
+          });
+        }
+      }).then((_) => source.resolveId(id));
+    });
 
     _pendingGets[id] = future;
 
@@ -125,40 +125,46 @@ class Entrypoint {
   /// It completes when an up-to-date lockfile has been generated and all
   /// dependencies are available.
   Future<int> acquireDependencies({List<String> useLatest,
-      bool upgradeAll: false}) {
+                                   bool upgradeAll: false}) {
     var numChanged = 0;
+    var result;
 
-    return new Future.sync(() {
-      return resolveVersions(cache.sources, root, lockFile: loadLockFile(),
-          useLatest: useLatest, upgradeAll: upgradeAll);
-    }).then((result) {
+    return loadLockFile().then((lockFile) {
+      return resolveVersions(cache.sources,
+                             root,
+                             lockFile: lockFile,
+                             useLatest: useLatest,
+                             upgradeAll: upgradeAll);
+    }).then((r) {
+      result = r;
       if (!result.succeeded) throw result.error;
 
       // TODO(rnystrom): Should also show the report if there were changes.
       // That way pub get/build/serve will show the report when relevant.
       // https://code.google.com/p/dart/issues/detail?id=15587
-      numChanged = result.showReport(showAll: useLatest != null || upgradeAll);
+      numChanged = result.showReport(
+          showAll: useLatest != null || upgradeAll);
 
       // Install the packages.
-      cleanDir(packagesDir);
+      return cleanDir(packagesDir);
+    }).then((_) {
       return Future.wait(result.packages.map((id) {
         if (id.isRoot) return new Future.value(id);
         return get(id);
       }).toList());
-    }).then((ids) {
-      _saveLockFile(ids);
-      _linkSelf();
-      _linkSecondaryPackageDirs();
-
-      return numChanged;
-    });
+    }).then((ids) => _saveLockFile(ids))
+    .then((_) => _linkSelf())
+    .then((_) => _linkSecondaryPackageDirs())
+    .then((_) => numChanged);
   }
 
   /// Loads the list of concrete package versions from the `pubspec.lock`, if it
   /// exists. If it doesn't, this completes to an empty [LockFile].
-  LockFile loadLockFile() {
-    if (!lockFileExists) return new LockFile.empty();
-    return new LockFile.load(lockFilePath, cache.sources);
+  Future<LockFile> loadLockFile() {
+    return lockFileExists.then((exists) {
+      if (!exists) return new LockFile.empty();
+      return LockFile.load(lockFilePath, cache.sources);
+    });
   }
 
   /// Determines whether or not the lockfile is out of date with respect to the
@@ -203,7 +209,7 @@ class Entrypoint {
       // Get the directory.
       return source.getDirectory(package).then((dir) {
         // See if the directory is there and looks like a package.
-        return dirExists(dir) || fileExists(path.join(dir, "pubspec.yaml"));
+        return fileExists(dir.join("pubspec.yaml"));
       });
     })).then((results) {
       // Make sure they are all true.
@@ -219,15 +225,12 @@ class Entrypoint {
 
       // If we don't have a current lock file, we definitely need to install.
       if (!_isLockFileUpToDate(lockFile)) {
-        if (lockFileExists) {
-          log.message(
-              "Your pubspec has changed, so we need to update your lockfile:");
-        } else {
-          log.message(
+        return lockFileExists.then((exists) {
+          log.message(exists ?
+              "Your pubspec has changed, so we need to update your lockfile:" :
               "You don't have a lockfile, so we need to generate that:");
-        }
-
-        return false;
+          return false;
+        });
       }
 
       // If we do have a lock file, we still need to make sure the packages
@@ -257,7 +260,7 @@ class Entrypoint {
     return Future.wait(lockFile.packages.values.map((id) {
       var source = cache.sources[id.source];
       return source.getDirectory(id)
-          .then((dir) => new Package.load(id.name, dir, cache.sources));
+          .then((dir) => Package.load(id.name, dir, cache.sources));
     })).then((packages) {
       var packageMap = <String, Package>{};
       for (var package in packages) {
@@ -275,64 +278,85 @@ class Entrypoint {
       if (!id.isRoot) lockFile.packages[id.name] = id;
     }
 
-    var lockFilePath = path.join(root.dir, 'pubspec.lock');
+    var lockFilePath = root.dir.join('pubspec.lock');
     writeTextFile(lockFilePath, lockFile.serialize(root.dir, cache.sources));
   }
 
   /// Creates a self-referential symlink in the `packages` directory that allows
   /// a package to import its own files using `package:`.
-  void _linkSelf() {
-    var linkPath = path.join(packagesDir, root.name);
+  Future _linkSelf() {
+    var linkPath = packagesDir.join(root.name);
     // Create the symlink if it doesn't exist.
-    if (entryExists(linkPath)) return;
-    ensureDir(packagesDir);
-    createPackageSymlink(root.name, root.dir, linkPath,
-        isSelfLink: true, relative: true);
+    return entryExists(linkPath).then((exists) {
+      if (exists) return new Future.value();
+
+      return ensureDir(packagesDir).then((_) {
+        return createPackageSymlink(root.name, root.dir, linkPath,
+                                    isSelfLink: true, relative: true);
+      });
+    });
   }
 
   /// Add "packages" directories to the whitelist of directories that may
   /// contain Dart entrypoints.
-  void _linkSecondaryPackageDirs() {
+  Future _linkSecondaryPackageDirs() {
     // Only the main "bin" directory gets a "packages" directory, not its
     // subdirectories.
-    var binDir = path.join(root.dir, 'bin');
-    if (dirExists(binDir)) _linkSecondaryPackageDir(binDir);
+    var binDir = root.dir.join('bin');
 
-    // The others get "packages" directories in subdirectories too.
-    for (var dir in ['benchmark', 'example', 'test', 'tool', 'web']) {
-      _linkSecondaryPackageDirsRecursively(path.join(root.dir, dir));
-    }
+    return dirExists(binDir).then((exists) {
+      return new Future.sync(() {
+        if (exists)
+          _linkSecondaryPackageDir(binDir);
+      }).then((_) {
+        // The others get "packages" directories in subdirectories too.
+        var dirs = ['benchmark', 'example', 'test', 'tool', 'web'].map(
+            (dir) => root.dir.join(dir));
+
+        return Future.forEach(dirs, _linkSecondaryPackageDirsRecursively);
+      });
+    });
  }
 
   /// Creates a symlink to the `packages` directory in [dir] and all its
   /// subdirectories.
-  void _linkSecondaryPackageDirsRecursively(String dir) {
-    if (!dirExists(dir)) return;
-    _linkSecondaryPackageDir(dir);
-    _listDirWithoutPackages(dir)
-        .where(dirExists)
-        .forEach(_linkSecondaryPackageDir);
+  Future _linkSecondaryPackageDirsRecursively(PathRep dir) {
+    return dirExists(dir).then((exists) {
+      if (!exists) return new Future.value();
+
+      return _linkSecondaryPackageDir(dir)
+          .then((_) => _listDirWithoutPackages(dir))
+          .then((List<PathRep> files) {
+            return Future.forEach(
+                files.where((file) => file.isDirectory),
+                _linkSecondaryPackageDir);
+          });
+    });
   }
 
   // TODO(nweiz): roll this into [listDir] in io.dart once issue 4775 is fixed.
   /// Recursively lists the contents of [dir], excluding hidden `.DS_Store`
   /// files and `package` files.
-  List<String> _listDirWithoutPackages(dir) {
-    return flatten(listDir(dir).map((file) {
-      if (path.basename(file) == 'packages') return [];
-      if (!dirExists(file)) return [];
-      var fileAndSubfiles = [file];
-      fileAndSubfiles.addAll(_listDirWithoutPackages(file));
-      return fileAndSubfiles;
-    }));
+  Future<List<PathRep>> _listDirWithoutPackages(dir) {
+    return Directory.load(dir)
+        .then((dir) => dir.list())
+        .then((fileEntries) {
+          return fileEntries.map((entry) => entry.path)
+            .where((path) => !path.inPackages());
+        });
   }
 
   /// Creates a symlink to the `packages` directory in [dir]. Will replace one
   /// if already there.
-  void _linkSecondaryPackageDir(String dir) {
-    var symlink = path.join(dir, 'packages');
-    if (entryExists(symlink)) deleteEntry(symlink);
-    createSymlink(packagesDir, symlink, relative: true);
+  Future _linkSecondaryPackageDir(PathRep dir) {
+    var symlink = dir.join('packages');
+
+    return entryExists(symlink).then((exists) {
+      return new Future.sync(() {
+        if (exists)
+          return deleteEntry(symlink);
+      });
+    }).then((_) => createSymlink(packagesDir, symlink, relative: true));
   }
 
   /// The basenames of files that are automatically excluded from archives.
@@ -353,7 +377,7 @@ class Entrypoint {
     if (beneath == null) beneath = root.dir;
 
     return git.isInstalled.then((gitInstalled) {
-      if (dirExists(path.join(root.dir, '.git')) && gitInstalled) {
+      if (dirExists(root.dir.join('.git')) && gitInstalled) {
         // Later versions of git do not allow a path for ls-files that appears
         // to be outside of the repo, so make sure we give it a relative path.
         var relativeBeneath = path.relative(beneath, from: root.dir);

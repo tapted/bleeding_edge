@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:path/path.dart' as path;
 
 import 'io.dart';
+import 'path_rep.dart';
 import 'pubspec.dart';
 import 'source_registry.dart';
 import 'version.dart';
@@ -17,12 +18,12 @@ final _README_REGEXP = new RegExp(r"^README($|\.)", caseSensitive: false);
 /// A named, versioned, unit of code and resource reuse.
 class Package {
   /// The path to the directory containing the package.
-  final String dir;
+  final PathRep dir;
 
   /// The name of the package.
   String get name {
     if (pubspec.name != null) return pubspec.name;
-    if (dir != null) return path.basename(dir);
+    if (dir != null) return dir.basename;
     return null;
   }
 
@@ -65,25 +66,29 @@ class Package {
   /// same conventions as pub.dartlang.org for choosing the primary one: the
   /// README with the fewest extensions that is lexically ordered first is
   /// chosen.
-  String get readmePath {
-    var readmes = listDir(dir).map(path.basename).
-        where((entry) => entry.contains(_README_REGEXP));
-    if (readmes.isEmpty) return null;
+  Future<PathRep> get readmePath {
+    return listDir(dir).then((entries) {
+      var readmes = entries
+          .map((entry) => entry.path)
+          .where((entry) => entry.basename.contains(_README_REGEXP));
 
-    return path.join(dir, readmes.reduce((readme1, readme2) {
-      var extensions1 = ".".allMatches(readme1).length;
-      var extensions2 = ".".allMatches(readme2).length;
-      var comparison = extensions1.compareTo(extensions2);
-      if (comparison == 0) comparison = readme1.compareTo(readme2);
-      return (comparison <= 0) ? readme1 : readme2;
-    }));
+      if (readmes.isEmpty) return null;
+
+      return dir.join(readmes.reduce((readme1, readme2) {
+        var extensions1 = ".".allMatches(readme1).length;
+        var extensions2 = ".".allMatches(readme2).length;
+        var comparison = extensions1.compareTo(extensions2);
+        if (comparison == 0) comparison = readme1.compareTo(readme2);
+        return (comparison <= 0) ? readme1 : readme2;
+      }));
+    });
   }
 
   /// Loads the package whose root directory is [packageDir]. [name] is the
   /// expected name of that package (e.g. the name given in the dependency), or
   /// `null` if the package being loaded is the entrypoint package.
   static Future<Package> load(String name,
-                              String packageDir,
+                              PathRep packageDir,
                               SourceRegistry sources) {
     return Pubspec.load(packageDir, sources, expectedName: name).then(
         (pubspec) => new Package._(packageDir, pubspec));
