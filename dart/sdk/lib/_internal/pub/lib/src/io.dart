@@ -232,7 +232,7 @@ Future deleteEntry(PathRep path) {
 /// new empty directory will be created.
 Future cleanDir(PathRep dir) {
   Directory.load(dir)
-      .then((dir) => dir.delete())
+      .then((dir) => dir.remove())
       .then((_) => Directory.create(dir));
 }
 
@@ -250,23 +250,22 @@ void renameDir(PathRep from, PathRep to) {
 ///
 /// If [relative] is true, creates a symlink with a relative path from the
 /// symlink to the target. Otherwise, uses the [target] path unmodified.
-void createPackageSymlink(String name, String target, String symlink,
+Future createPackageSymlink(String name, PathRep target, PathRep symlink,
     {bool isSelfLink: false, bool relative: false}) {
   // See if the package has a "lib" directory.
-  target = path.join(target, 'lib');
+  target = target.join('lib');
   log.fine("Creating ${isSelfLink ? "self" : ""}link for package '$name'.");
-  if (dirExists(target)) {
-    createSymlink(target, symlink, relative: relative);
-    return;
-  }
-
-  // It's OK for the self link (i.e. the root package) to not have a lib
-  // directory since it may just be a leaf application that only has
-  // code in bin or web.
-  if (!isSelfLink) {
-    log.warning('Warning: Package "$name" does not have a "lib" directory so '
-                'you will not be able to import any libraries from it.');
-  }
+  return dirExists(target).then((exists) {
+    if (exists) {
+      return createSymlink(target, symlink, relative: relative);
+    } else if (!isSelfLink) {
+      // It's OK for the self link (i.e. the root package) to not have a lib
+      // directory since it may just be a leaf application that only has
+      // code in bin or web.
+      log.warning('Warning: Package "$name" does not have a "lib" directory so '
+                  'you will not be able to import any libraries from it.');
+    }
+  });
 }
 
 /// Resolves [target] relative to the path to pub's `resource` directory.
