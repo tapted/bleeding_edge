@@ -14,6 +14,7 @@
     "storage",
     "https://pub.dartlang.org/",
     "https://commondatastorage.googleapis.com/pub.dartlang.org",
-    "https://tavern.appspot.com/"
+    "https://tavern.appspot.com/",
+    "http://pajamallama0.syd.corp.google.com:8080/"
   ]
 }

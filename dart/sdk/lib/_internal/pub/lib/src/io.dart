@@ -557,11 +557,6 @@ Future withTempDir(Future fn(String path)) {
   });
 }
 
-/// Extract the archive inside the current directory.
-Future<bool> extractArchive(File file) {
-  return extractArchiveNative(file);
-}
-
 // TODO(pajamallam): Extract the rest of this file into io_wrap.dart
 // for the Dartium wrapper.
 /// Extracts a `.tar.gz` file from [stream] to [destination]. Returns whether

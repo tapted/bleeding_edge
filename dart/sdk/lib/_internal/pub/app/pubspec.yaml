@@ -4,6 +4,7 @@ dependencies:
   browser: any
   chrome_gen: any
   path: any
+  js: any
   stack_trace: any
   analyzer: any
   crypto: any

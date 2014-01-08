@@ -34,8 +34,8 @@ class PubChrome {
   }
 
   void runGet(html.MouseEvent event) {
-    var logtext = html.querySelector("#get");
+    var logtext = html.querySelector("#logtext");
     entrypoint.acquireDependencies()
-        .then((_) => logtext.innerHTML += "Got dependencies!");
+        .then((_) => logtext.text += "Got dependencies!");
   }
 }

@@ -31,7 +31,7 @@ class HostedSource extends Source {
     var url = Platform.environment["PUB_HOSTED_URL"];
     if (url != null) return url;
 
-    return "https://pub.dartlang.org";
+    return "http://pajamallama0.syd.corp.google.com:8080/";
   }
 
   /// Downloads a list of all versions of a package that are available from the
@@ -77,20 +77,18 @@ class HostedSource extends Source {
 
   /// Downloads a package from the site and unpacks it.
   Future<bool> get(PackageId id, PathRep destPath) {
-    return new Future.sync(() {
-      var url = _makeVersionUrl(id, (server, package, version) =>
-          "$server/packages/$package/versions/$version.tar.gz");
-      log.io("Get package from $url.");
+    var url = _makeVersionUrl(id, (server, package, version) =>
+        "$server/packages/$package/versions/$version.$ARCHIVE");
+    log.io("Get package from $url.");
 
-      log.message('Downloading ${id.name} ${id.version}...');
+    log.message('Downloading ${id.name} ${id.version}...');
 
-      // Download and extract the archive to a temp directory.
-      var tempDir = systemCache.createCacheTempDir();
+    Directory dest;
 
-      return httpClient.read(url, responseType: "arraybuffer")
-          .then((data) => writeBinaryFile(destPath, data))
-          .then((archive) => extractArchive(archive));
-    });
+    return Directory.create(destPath).then((dir) {
+      dest = dir;
+      return httpClient.read(url, responseType: "arraybuffer");
+    }).then((archive) => dest.extractArchive(archive));
   }
 
   /// The system cache directory for the hosted source contains subdirectories
@@ -205,6 +203,7 @@ class OfflineHostedSource extends HostedSource {
 
 String _getSourceDirectory(String url) {
   url = url.replaceAll(new RegExp(r"^https?://"), "");
+  url = url.replaceAll(new RegExp(r":[0-9]+"), "");
   return replace(url, new RegExp(r'[<>:"\\/|?*%]'),
       (match) => '%${match[0].codeUnitAt(0)}');
 }

@@ -6,9 +6,13 @@ import 'dart:html' show Blob;
 import 'dart:typed_data';
 
 import 'package:chrome_gen/chrome_app.dart' as chrome;
+import 'package:js/js.dart' as js;
 
 import '../log.dart' as log;
 import '../path_rep.dart';
+
+// Extension of the Archive files being used (uncompressed zip).
+const String ARCHIVE = "zip";
 
 /// A collection of static methods for accessing important parts of the local
 /// filesystem.
@@ -202,6 +206,17 @@ class Directory extends FileSystemEntity {
     return _entry.createReader().readEntries().then((entries) => entries.map(
         (entry) => entry.isFile ? new File(entry) : new Directory(entry)));
   }
+
+  /// Extract the archive inside the current directory.
+  Future<bool> extractArchive(Blob data) {
+    var completer = new Completer();
+
+    js.context.Archive.extractZipFile(data,
+                                     _entry.jsProxy,
+                                     (res) => completer.complete(res));
+
+    return completer.future;
+  }
 }
 
 /// An object which refers to a symbolic link in the local filesystem.
@@ -316,9 +331,4 @@ Future createSymlinkNative(PathRep target, PathRep symlink,
 // this is called, and implement properly.
 PathRep canonicalizeNative(PathRep path) {
   return path;
-}
-
-/// Extract the archive inside the current directory.
-Future<bool> extractArchiveNative(File file) {
-  return new Future.value(true);
 }
