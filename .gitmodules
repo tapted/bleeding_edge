@@ -1,0 +1,3 @@
+[submodule "dart/sdk/lib/_internal/pub/js/jszip"]
+	path = dart/sdk/lib/_internal/pub/js/jszip
+	url = https://github.com/Stuk/jszip.git
