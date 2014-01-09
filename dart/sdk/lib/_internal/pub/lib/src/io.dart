@@ -123,7 +123,7 @@ Future writeTextFile(PathRep file, String contents,
     log.fine("Contents:\n$contents");
   }
 
-  return File.load(file).then((file) => file.writeText(contents));
+  return File.create(file).then((file) => file.writeText(contents));
 }
 
 /// Creates [file] and writes [contents] to it.

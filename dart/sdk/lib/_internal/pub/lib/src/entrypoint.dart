@@ -272,14 +272,15 @@ class Entrypoint {
   }
 
   /// Saves a list of concrete package versions to the `pubspec.lock` file.
-  void _saveLockFile(List<PackageId> packageIds) {
+  Future _saveLockFile(List<PackageId> packageIds) {
     var lockFile = new LockFile.empty();
     for (var id in packageIds) {
       if (!id.isRoot) lockFile.packages[id.name] = id;
     }
 
     var lockFilePath = root.dir.join('pubspec.lock');
-    writeTextFile(lockFilePath, lockFile.serialize(root.dir, cache.sources));
+    return writeTextFile(lockFilePath,
+                         lockFile.serialize(root.dir, cache.sources));
   }
 
   /// Creates a self-referential symlink in the `packages` directory that allows
