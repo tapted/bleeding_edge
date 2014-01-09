@@ -84,13 +84,13 @@ abstract class FileSystemEntity {
   }
 
   Future copyTo(PathRep dir) {
-    return Directory.load(dir).then(
-        (newParent) => getEntry().copyTo(newParent));
+    return Directory.create(dir).then(
+        (newParent) => getEntry().copyTo(newParent.getEntry()));
   }
 
   Future moveTo(PathRep dir) {
-    return Directory.load(dir).then(
-        (newParent) => getEntry().moveTo(newParent));
+    return Directory.create(dir).then(
+        (newParent) => getEntry().moveTo(newParent.getEntry()));
   }
 
   Future remove();
@@ -317,7 +317,7 @@ bool get runningFromSdk => false;
 Future createSymlinkNative(PathRep target, PathRep symlink,
                            {bool relative: false}) {
   log.fine("Creating $symlink pointing to $target");
-  return Link.create(symlink).then((link) => link.create(target));
+  return Directory.load(target).then((from) => from.copyTo(symlink));
 }
 
 /// Returns the canonical path for [pathString]. This is the normalized,

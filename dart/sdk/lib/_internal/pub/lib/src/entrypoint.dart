@@ -351,12 +351,8 @@ class Entrypoint {
   Future _linkSecondaryPackageDir(PathRep dir) {
     var symlink = dir.join('packages');
 
-    return entryExists(symlink).then((exists) {
-      return new Future.sync(() {
-        if (exists)
-          return deleteEntry(symlink);
-      });
-    }).then((_) => createSymlink(packagesDir, symlink, relative: true));
+    return deleteEntry(symlink).then((_) =>
+        createSymlink(packagesDir, symlink, relative: true));
   }
 
   /// The basenames of files that are automatically excluded from archives.
