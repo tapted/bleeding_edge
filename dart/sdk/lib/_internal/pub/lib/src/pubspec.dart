@@ -225,8 +225,7 @@ class Pubspec {
     var pubspecPath = packageDir.join('pubspec.yaml');
     var pubspecUri = pubspecPath.toUri();
 
-    return File.load(pubspecPath)
-      .then((file) => file.readAsString())
+    return readTextFile(pubspecPath)
       .then((text) => new Pubspec.parse(
           text, sources, expectedName: expectedName, location: pubspecUri))
       .catchError((e) => throw new PubspecException(expectedName, pubspecUri,

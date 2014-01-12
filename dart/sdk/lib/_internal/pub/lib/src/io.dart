@@ -224,7 +224,7 @@ Future deleteEntry(PathRep path) {
   log.io("Deleting $path.");
 
   return FileSystemEntity.load(path)
-      .catchError((_) => print("$path didn't exist anyway"))
+      .catchError((_) => null)
       .then((entry) => entry != null ? entry.remove() : null);
 }
 

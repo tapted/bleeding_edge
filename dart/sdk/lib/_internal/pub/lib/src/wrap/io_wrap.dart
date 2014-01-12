@@ -42,9 +42,10 @@ class FileSystem {
       // storage.
       if (chrome.storage.available) {
         return chrome.storage.local.get(STORAGE_KEY).then((map) {
-          if (map != null) {
-            return chrome.fileSystem.restoreEntry(map[STORAGE_KEY]).then(
-                (entry) => _workingDir = new Directory(entry));
+          if (map[STORAGE_KEY] is String) {
+            return chrome.fileSystem.restoreEntry(map[STORAGE_KEY])
+                .then((entry) => _workingDir = new Directory(entry))
+                .catchError((_) => null);
           }
         });
       }
@@ -128,9 +129,9 @@ class File extends FileSystemEntity {
     return _entry.readBytes().then((arraybuff) => arraybuff.getBytes());
   }
 
-  Future<String> readAsString() => _entry.readText();
+  Future<String> readText() => _entry.readText();
 
-  Future<bool> write(Blob data) => _entry.writeBytes(data);
+  Future<bool> write(var data) => _entry.writeBytes(data);
 
   Future writeText(String s) => _entry.writeText(s);
 }
@@ -208,12 +209,12 @@ class Directory extends FileSystemEntity {
   }
 
   /// Extract the archive inside the current directory.
-  Future<bool> extractArchive(Blob data) {
+  Future<bool> extractArchive(var data) {
     var completer = new Completer();
 
-    js.context.Archive.extractZipFile(data,
-                                     _entry.jsProxy,
-                                     (res) => completer.complete(res));
+    js.context["Archive"].extractZipFile(data,
+                                         _entry.jsProxy,
+                                         (res) => completer.complete(res));
 
     return completer.future;
   }

@@ -26,7 +26,6 @@ class PubChrome {
 
     FileSystem.obtainWorkingDirectory().then((dir) {
       workingDir = dir;
-      print("Loaded working directory $dir");
       return SystemCache.withSources(dir.path.join("cache"));
     }).then((cache) {
       entrypoint = new Entrypoint(workingDir.path, cache);
