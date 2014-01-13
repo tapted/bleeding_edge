@@ -52,16 +52,12 @@ Future<bool> entryExists(PathRep path) {
 /// Returns whether [link] exists on the file system. This will return `true`
 /// for any symlink, regardless of what it points at or whether it's broken.
 Future<bool> linkExists(PathRep link) =>
-  Link.load(link)
-      .then((_) => true)
-      .catchError((error) => false);
+    Link.load(link).then((res) => res != null);
 
 /// Returns whether [file] exists on the file system. This will return `true`
 /// for a symlink only if that symlink is unbroken and points to a file.
 Future<bool> fileExists(PathRep file) =>
-  File.load(file)
-      .then((_) => true)
-      .catchError((error) => false);
+    File.load(file).then((res) => res != null);
 
 /// Returns the canonical path for [pathString]. This is the normalized,
 /// absolute path, with symlinks resolved. As in [transitiveTarget], broken or
@@ -94,20 +90,22 @@ PathRep resolveLink(PathRep link) {
 /// Note that on Windows, only directories may be symlinked to.
 Future createSymlink(PathRep target, PathRep symlink,
                      {bool relative: false}) {
-  return createSymlinkNative(target, symlink, relative: relative);
+  return deleteEntry(symlink).then((_) =>
+      createSymlinkNative(target, symlink, relative: relative));
 }
 
 /// Reads the contents of the text file [file].
 Future<String> readTextFile(PathRep file) =>
-    File.load(file).then((file) => file.readText());
+    File.load(file).then((file) => file != null ? file.readText() : null);
 
 /// Reads the contents of the binary file [file].
 Future<List<int>> readBinaryFile(PathRep file) {
   log.io("Reading binary file $file.");
   return File.load(file)
-      .then((file) => file.readBytes())
+      .then((file) => file != null ? file.readBytes() : null)
       .then((contents) {
-        log.io("Read ${contents.length} bytes from $file.");
+        if (contents != null)
+          log.io("Read ${contents.length} bytes from $file.");
         return contents;
       });
 }
@@ -202,7 +200,7 @@ Future<List<PathRep>> listDir(PathRep dir,
                                bool includePackages: true}) {
 
   return Directory.load(dir)
-      .then((dir) => dir.list(
+      .then((dir) => dir == null ? [] : dir.list(
           recursive: recursive,
           includeHidden: includeHidden,
           includePackages: includePackages))
@@ -211,11 +209,8 @@ Future<List<PathRep>> listDir(PathRep dir,
 
 /// Returns whether [dir] exists on the file system. This will return `true` for
 /// a symlink only if that symlink is unbroken and points to a directory.
-Future<bool> dirExists(PathRep dir) {
-  return Directory.load(dir)
-      .then((_) => true)
-      .catchError((error) => false);
-}
+Future<bool> dirExists(PathRep dir) =>
+    Directory.load(dir).then((res) => res != null);
 
 /// Deletes whatever's at [path], whether it's a file, directory, or symlink. If
 /// it's a directory, it will be deleted recursively. Ignore any errors so that
@@ -223,17 +218,18 @@ Future<bool> dirExists(PathRep dir) {
 Future deleteEntry(PathRep path) {
   log.io("Deleting $path.");
 
-  return FileSystemEntity.load(path)
-      .catchError((_) => null)
-      .then((entry) => entry != null ? entry.remove() : null);
+  return FileSystemEntity.load(path).then((entry) {
+    if (entry != null) return entry.remove();
+  });
 }
 
 /// "Cleans" [dir]. If that directory already exists, it will be deleted. Then a
 /// new empty directory will be created.
 Future cleanDir(PathRep dir) {
   Directory.load(dir)
-      .then((dir) => dir.remove())
-      .then((_) => Directory.create(dir));
+      .then((dir) {
+        if (dir) dir.remove();
+      }).then((_) => Directory.create(dir));
 }
 
 /// Renames (i.e. moves) the directory [from] to [to].

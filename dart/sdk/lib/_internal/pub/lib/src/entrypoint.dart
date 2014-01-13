@@ -80,30 +80,24 @@ class Entrypoint {
 
     var source;
     var packageDir = packagesDir.join(id.name);
-    var future = new Future.sync(() {
-      return entryExists(packageDir).then((exists) {
-        if (exists) {
-          // TODO(nweiz): figure out when to actually delete the directory, and
-          // when we can just re-use the existing symlink.
-          log.fine("Deleting package directory for ${id.name} before get.");
-          return deleteEntry(packageDir);
-        }
-        return new Future.value();
-      }).then((_) {
-        source = cache.sources[id.source];
 
-        if (source.shouldCache) {
-          return cache.download(id).then((pkg) {
-            return createPackageSymlink(id.name, pkg.dir, packageDir);
-          });
-        } else {
-          return source.get(id, packageDir).then((found) {
-            if (found) return null;
-            fail('Package ${id.name} not found in source "${id.source}".');
-          });
-        }
-      }).then((_) => source.resolveId(id));
-    });
+    // TODO(nweiz): figure out when to actually delete the directory, and
+    // when we can just re-use the existing symlink.
+    log.fine("Ensuring no package directory exists for ${id.name} before get.");
+    var future = deleteEntry(packageDir).then((_) {
+      source = cache.sources[id.source];
+
+      if (source.shouldCache) {
+        return cache.download(id).then((pkg) {
+          return createPackageSymlink(id.name, pkg.dir, packageDir);
+        });
+      } else {
+        return source.get(id, packageDir).then((found) {
+          if (found) return null;
+          fail('Package ${id.name} not found in source "${id.source}".');
+        });
+      }
+    }).then((_) => source.resolveId(id));
 
     _pendingGets[id] = future;
 

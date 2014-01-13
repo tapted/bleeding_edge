@@ -80,8 +80,11 @@ abstract class FileSystemEntity {
   bool get isFile => getEntry().isFile;
   bool get isDirectory => getEntry().isDirectory;
 
+  /// Load a filesystem entity at the location [path]. Returns null if nothing
+  /// exists there.
   static Future<FileSystemEntity> load(PathRep path) {
-    return File.load(path).catchError((e) => Directory.load(path));
+    return File.load(path).then((file) =>
+      file ? new Future.value(file) : Directory.load(path));
   }
 
   Future copyTo(PathRep dir) {
@@ -110,9 +113,9 @@ class File extends FileSystemEntity {
   /// are the public interfaces to creating a File.
   File(entry) : _entry = entry, _path = new PathRep(entry.fullPath);
 
-  /// Load a file at the location [file]. Throws an error if it doesn't exist.
+  /// Load a file at the location [file]. Returns null if it doesn't exist.
   static Future<File> load(PathRep file) {
-    return FileSystem.workingDir.getFile(file);
+    return FileSystem.workingDir.getFile(file).catchError((_) => null);
   }
 
   /// Create a file at the location [file] and all necessary parent folders.
@@ -152,10 +155,9 @@ class Directory extends FileSystemEntity {
   /// Delete this directory and all contents recursively.
   Future remove() => _entry.removeRecursively();
 
-  /// Load a directory at the location [dir]. Throws an error if it
-  /// doesn't exist.
+  /// Load a directory at the location [dir]. Returns null if it doesn't exist.
   static Future<Directory> load(PathRep dir) {
-    return FileSystem.workingDir.getDirectory(dir);
+    return FileSystem.workingDir.getDirectory(dir).catchError((_) => null);
   }
 
   /// Create a directory at the location [dir] and all necessary
@@ -227,12 +229,8 @@ class Link extends File {
   /// are the public interfaces to creating a Link.
   Link(entry) : super(entry);
 
-  /// Load a link at the location [link]. Throws an error if it
-  /// doesn't exist.
-  static Future<Link> load(PathRep link) {
-    return FileSystem.workingDir.getFile(link).then(
-        (entry) => new Link(entry));
-  }
+  /// Load a link at the location [link]. Returns null if it doesn't exist.
+  static Future<Link> load(PathRep link) => File.load(link);
 
   /// Create a link at the location [link] and all necessary parent folders.
   static Future<Link> create(PathRep link) {
@@ -318,7 +316,10 @@ bool get runningFromSdk => false;
 Future createSymlinkNative(PathRep target, PathRep symlink,
                            {bool relative: false}) {
   log.fine("Creating $symlink pointing to $target");
-  return Directory.load(target).then((from) => from.copyTo(symlink));
+  return Directory.load(target).then((from) {
+    if (from != null) return from.copyTo(symlink);
+    log.error("Target of symlink doesn't exists");
+  });
 }
 
 /// Returns the canonical path for [pathString]. This is the normalized,
