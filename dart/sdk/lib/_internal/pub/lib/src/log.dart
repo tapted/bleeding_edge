@@ -34,6 +34,9 @@ Timer _progressTimer;
 /// progress is done, a single entry will be added to the log for it.
 String _progressMessage;
 
+/// Stores additional functions to call when a message is being logged.
+List<Function> _otherLogFunctions = new List<Function>();
+
 final _cyan = getSpecial('\u001b[36m');
 final _green = getSpecial('\u001b[32m');
 final _magenta = getSpecial('\u001b[35m');
@@ -120,9 +123,20 @@ void write(Level level, message) {
   var entry = new Entry(level, lines);
 
   var logFn = _loggers[level];
-  if (logFn != null) logFn(entry);
+  if (logFn != null) {
+    logFn(entry);
+    for (var otherLogFunction in _otherLogFunctions) {
+      for (var line in lines) {
+        otherLogFunction(line, level.name);
+      }
+    }
+  }
 
   if (_transcript != null) _transcript.add(entry);
+}
+
+void addLoggerFunction(void logFunction(String message, String level)) {
+  _otherLogFunctions.add(logFunction);
 }
 
 /// Logs an asynchronous IO operation. Logs [startMessage] before the operation

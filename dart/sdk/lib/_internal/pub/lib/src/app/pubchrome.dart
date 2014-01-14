@@ -6,6 +6,7 @@ import 'dart:html' as html;
 
 import '../entrypoint.dart';
 import '../io.dart' show FileSystem;
+import '../log.dart' as log;
 import '../path_rep.dart';
 import '../wrap/system_cache_wrap.dart';
 
@@ -16,14 +17,18 @@ void main() {
 class PubChrome {
 
   var commands;
+  html.DivElement logtext;
   Entrypoint entrypoint;
 
   PubChrome() {
     html.querySelector("#get_button")
-      ..onClick.listen(runGet);
+        ..onClick.listen(runGet);
+
+    logtext = html.querySelector("#logtext");
+    log.showAll();
+    log.addLoggerFunction(logToWindow);
 
     var workingDir;
-
     FileSystem.obtainWorkingDirectory().then((dir) {
       workingDir = dir;
       return SystemCache.withSources(dir.path.join("cache"));
@@ -33,8 +38,14 @@ class PubChrome {
   }
 
   void runGet(html.MouseEvent event) {
-    var logtext = html.querySelector("#logtext");
     entrypoint.acquireDependencies()
-        .then((_) => logtext.text += "Got dependencies!");
+        .then((_) => log.fine("Got dependencies!"));
+  }
+
+  void logToWindow(String line, String level) {
+    var line_div = new html.DivElement();
+    line_div.text = line;
+    line_div.classes.add("log_$level");
+    logtext.children.add(line_div);
   }
 }
