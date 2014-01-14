@@ -49,10 +49,13 @@ class Entrypoint {
   /// completed.
   final _pendingGets = new Map<PackageId, Future<PackageId>>();
 
+  /// Create an entrypoint from a system cache and a package.
+  Entrypoint(SystemCache this.cache, Package this.root);
+
   /// Loads the entrypoint from a package at [rootDir].
-  Entrypoint(PathRep rootDir, SystemCache cache) : cache = cache {
-    Package.load(null, rootDir, cache.sources).then(
-        (package) => root = package);
+  static Future<Entrypoint> load(PathRep rootDir, SystemCache cache) {
+    return Package.load(null, rootDir, cache.sources)
+        .then((package) => new Entrypoint(cache, package));
   }
 
   // TODO(rnystrom): Make this path configurable.

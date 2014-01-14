@@ -3,29 +3,40 @@ html, body {
   text-align: center;
 }
 
+#cwd {
+  min-width: 200px;
+}
+
 #logtext {
-  width: 80%;
-  height: 80%;
   border: 1px solid;
+  height: 80%;
+  margin: auto;
   overflow-y: scroll;
   text-align: left;
-  margin: auto;
+  width: 80%;
 }
 
+#working_dir_bar {
+  white-space: normal;
+}
 
-div {
-  white-space: pre-wrap;
+.bold {
+  font-weight: bold;
+}
+
+.log {
   font-size: 12pt;
+  white-space: pre-wrap;
 }
 
-.log_SLVR {
-  color: red;
+.log_FINE {
+  color: green;
 }
 
 .log_IO {
   color: blue;
 }
 
-.log_FINE {
-  color: green;
+.log_SLVR {
+  color: red;
 }

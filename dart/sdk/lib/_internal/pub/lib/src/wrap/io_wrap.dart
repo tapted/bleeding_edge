@@ -32,38 +32,29 @@ class FileSystem {
         .then((chrome.ChooseEntryResult result) => new Directory(result.entry));
   }
 
-  /// Obtain the working directory for the current project (i.e. the directory
-  /// that contains the pubspec.yaml file). This will either be reloaded from
-  /// local storage, or the user will be prompted to select one.
-  static Future<Directory> obtainWorkingDirectory() {
-    // Wait until chrome.storage check has finished before prompting the user.
-    return new Future.sync(() {
-      // Check if a working directory has already been retained in the local
-      // storage.
-      if (chrome.storage.available) {
-        return chrome.storage.local.get(STORAGE_KEY).then((map) {
-          if (map[STORAGE_KEY] is String) {
-            return chrome.fileSystem.restoreEntry(map[STORAGE_KEY])
-                .then((entry) => _workingDir = new Directory(entry))
-                .catchError((_) => null);
-          }
-        });
-      }
-    }).then((dir) {
-      // If restoreEntry succeeded then use that result.
-      if (dir != null) return dir;
+  /// Load the working directory for the current project (the directory
+  /// that contains the pubspec.yaml file) from local storage. Any errors
+  /// complete with null (e.g. if a working directory hasn't been set before).
+  static Future<Directory> restoreWorkingDirectory() {
+    if (!chrome.storage.available) return new Future.value();
 
-      // Otherwise request a directory from the user.
-      return obtainDirectory().then((dir) {
-        _workingDir = dir;
+    return chrome.storage.local.get(STORAGE_KEY).then((map) {
+      if (map[STORAGE_KEY] is! String) return null;
 
-        if (chrome.storage.available) {
-          String entryID = chrome.fileSystem.retainEntry(dir._entry);
-          chrome.storage.local.set({STORAGE_KEY: entryID});
-        }
-        return _workingDir;
-      });
+      return chrome.fileSystem.restoreEntry(map[STORAGE_KEY])
+          .then((entry) => new Directory(entry))
+          ..then((dir) => _workingDir = dir)
+          .catchError((_) => null);
     });
+  }
+
+  /// Sets the working directory to [dir] in the local storage.
+  static void persistWorkingDirectory(Directory dir) {
+    _workingDir = dir;
+    if (chrome.storage.available) {
+      String entryID = chrome.fileSystem.retainEntry(dir.getEntry());
+      chrome.storage.local.set({STORAGE_KEY: entryID});
+    }
   }
 }
 

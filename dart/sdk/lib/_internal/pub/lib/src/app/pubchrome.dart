@@ -15,37 +15,61 @@ void main() {
 }
 
 class PubChrome {
-
-  var commands;
-  html.DivElement logtext;
-  Entrypoint entrypoint;
+  html.Element _logtext;
+  html.InputElement _cwd;
 
   PubChrome() {
-    html.querySelector("#get_button")
-        ..onClick.listen(runGet);
+    // Store output fields for later access.
+    _cwd = html.querySelector("#cwd");
+    _logtext = html.querySelector("#logtext");
 
-    logtext = html.querySelector("#logtext");
+    // Attach listeners to the buttons.
+    html.querySelector("#get_button").onClick.listen(runGet);
+    html.querySelector("#change_dir").onClick.listen(changeWorkingDirectory);
+
+    // Turn on the maximum level of logging, and send it to the page.
     log.showAll();
     log.addLoggerFunction(logToWindow);
 
+    // Load the working directory from storage, or ask the user for one.
     var workingDir;
-    FileSystem.obtainWorkingDirectory().then((dir) {
-      workingDir = dir;
-      return SystemCache.withSources(dir.path.join("cache"));
-    }).then((cache) {
-      entrypoint = new Entrypoint(workingDir.path, cache);
+    FileSystem.restoreWorkingDirectory().then((dir) {
+      if (dir != null)
+        _cwd.value = dir.fullPath;
+      else
+        changeWorkingDirectory();
     });
   }
 
+  /// Start the 'get' command for the currently selected working directory.
   void runGet(html.MouseEvent event) {
-    entrypoint.acquireDependencies()
+    SystemCache.withSources(FileSystem.workingDir.path.join("cache"))
+        ..catchError((e) => log.error("Could not create system cache", e))
+        .then((cache) => Entrypoint.load(FileSystem.workingDir.path, cache))
+        .then((entrypoint) => entrypoint.acquireDependencies())
         .then((_) => log.fine("Got dependencies!"));
   }
 
+  /// Log a single message [line] at importance level [level] to the page.
   void logToWindow(String line, String level) {
     var line_div = new html.DivElement();
     line_div.text = line;
-    line_div.classes.add("log_$level");
-    logtext.children.add(line_div);
+    line_div.classes
+        ..add("log")
+        ..add("log_$level");
+    _logtext.children.add(line_div);
+  }
+
+  /// Prompt the user to select a new working directory. The optional [event]
+  /// is never used, just added to satisfy the button callback interface.
+  void changeWorkingDirectory([html.MouseEvent event]) {
+    FileSystem.obtainDirectory().then((dir) {
+      if (dir != null) {
+        _cwd.value = dir.fullPath;
+        FileSystem.persistWorkingDirectory(dir);
+      } else {
+        _cwd.value = "Nothing currently selected.";
+      }
+    });
   }
 }
