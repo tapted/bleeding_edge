@@ -9,7 +9,7 @@ html, body {
 
 #logtext {
   border: 1px solid;
-  height: 80%;
+  height: 70%;
   margin: auto;
   overflow-y: scroll;
   text-align: left;

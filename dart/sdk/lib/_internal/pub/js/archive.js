@@ -47,6 +47,12 @@ var Archive = (function() {
    * @param {function(boolean)} onFinish Called when finished; false on failure.
    */
   function extractZipFile(data, dest, onFinish) {
+    // Sometimes data arrives as a DartObject (by mistake?).
+    if (data.o != null)
+      data = data.o;
+    if (dest.o != null)
+      dest = dest.o;
+
     var zip = new JSZip(data);
 
     files = zip.file(/.*/);
