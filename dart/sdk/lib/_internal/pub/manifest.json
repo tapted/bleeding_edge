@@ -2,9 +2,9 @@
   "manifest_version": 2,
   "name": "Tavern",
   "short_name": "Tavern",
-  "version": "0.1.1",
+  "version": "0.2",
   "minimum_chrome_version": "23",
-  "icons": {"128": "images/dart_icon.png"},
+  "icons": {"128": "images/tavern_icon.png"},
   "app": {
     "background": {
       "scripts": ["js/main.js"]
