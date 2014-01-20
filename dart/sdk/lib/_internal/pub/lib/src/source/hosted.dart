@@ -31,7 +31,7 @@ class HostedSource extends Source {
     var url = Platform.environment["PUB_HOSTED_URL"];
     if (url != null) return url;
 
-    return "http://pajamallama0.syd.corp.google.com:8080/";
+    return "http://pajamallama0.syd.corp.google.com:8080";
   }
 
   /// Downloads a list of all versions of a package that are available from the
@@ -49,6 +49,21 @@ class HostedSource extends Source {
     }).catchError((ex, stackTrace) {
       var parsed = _parseDescription(description);
       _throwFriendlyError(ex, stackTrace, parsed.first, parsed.last);
+    });
+  }
+
+  /// Downloads a list of all packages available for download from the site.
+  static Future<List<String>> getHostedPackages() {
+    var url =  Uri.parse("$defaultUrl/api/packages");
+    log.message('Downloading list of available packages...');
+    return httpClient.read(url).then((text) {
+      var packages = JSON.decode(text)["packages"].map(
+          (package) => package["name"]).toList();
+      packages.sort();
+      return packages;
+    }).catchError((e) {
+      log.message("Cannot load package list from $url");
+      log.error(e);
     });
   }
 

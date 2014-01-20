@@ -29,6 +29,10 @@ html, body {
   white-space: pre-wrap;
 }
 
+.log_ERR {
+  color: red;
+}
+
 .log_FINE {
   color: green;
 }
@@ -37,6 +41,10 @@ html, body {
   color: blue;
 }
 
+.log_MSG {
+  color: black;
+}
+
 .log_SLVR {
-  color: red;
+  color: purple;
 }

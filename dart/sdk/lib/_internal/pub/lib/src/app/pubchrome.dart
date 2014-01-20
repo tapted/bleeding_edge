@@ -7,6 +7,7 @@ import 'dart:html' as html;
 import '../entrypoint.dart';
 import '../io.dart' show FileSystem;
 import '../log.dart' as log;
+import '../source/hosted.dart';
 import '../path_rep.dart';
 import '../wrap/system_cache_wrap.dart';
 
@@ -39,6 +40,9 @@ class PubChrome {
       else
         changeWorkingDirectory();
     });
+
+    HostedSource.getHostedPackages().then((packages) => log.message(
+        "Available packages: ${packages != null ? packages : 'None'}"));
   }
 
   /// Start the 'get' command for the currently selected working directory.
