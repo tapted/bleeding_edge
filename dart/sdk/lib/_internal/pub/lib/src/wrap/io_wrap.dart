@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'dart:html' show Blob;
 import 'dart:typed_data';
 
-import 'package:chrome_gen/chrome_app.dart' as chrome;
+import 'package:chrome/chrome_app.dart' as chrome;
 import 'package:js/js.dart' as js;
 
 import '../log.dart' as log;
@@ -17,10 +17,9 @@ const String ARCHIVE = "zip";
 /// A collection of static methods for accessing important parts of the local
 /// filesystem.
 class FileSystem {
-  static Directory _workingDir;
-  static Directory get workingDir => _workingDir;
+  static Directory workingDir;
+  static PathRep workingDirPath() => workingDir.path;
   static const String STORAGE_KEY = "WORKING_DIR";
-  static PathRep workingDirPath() => _workingDir.path;
 
   /// Ask the user to select a directory from a file selection widget.
   static Future<Directory> obtainDirectory() {
@@ -43,14 +42,14 @@ class FileSystem {
 
       return chrome.fileSystem.restoreEntry(map[STORAGE_KEY])
           .then((entry) => new Directory(entry))
-          ..then((dir) => _workingDir = dir)
+          ..then((dir) => workingDir = dir)
           .catchError((_) => null);
     });
   }
 
   /// Sets the working directory to [dir] in the local storage.
   static void persistWorkingDirectory(Directory dir) {
-    _workingDir = dir;
+    workingDir = dir;
     if (chrome.storage.available) {
       String entryID = chrome.fileSystem.retainEntry(dir.getEntry());
       chrome.storage.local.set({STORAGE_KEY: entryID});

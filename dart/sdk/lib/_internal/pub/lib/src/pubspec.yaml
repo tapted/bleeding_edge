@@ -1,7 +1,7 @@
 name: tavern
 
 dependencies:
-  chrome_gen: any
+  chrome: any
   path: any
   js: any
   stack_trace: any
