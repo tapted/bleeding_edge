@@ -24,7 +24,7 @@ Future getDependencies(html.DirectoryEntry entry, [LogFunction extraLog]) {
   // Store [entry] as the working directory.
   FileSystem.workingDir = new Directory(entry);
 
-  return SystemCache.withSources(FileSystem.workingDirPath().join("cache")))
+  return SystemCache.withSources(FileSystem.workingDirPath().join("cache"))
       ..catchError((e) => log.error("Could not create system cache", e))
       .then((cache) => Entrypoint.load(FileSystem.workingDirPath(), cache))
       .then((entrypoint) => entrypoint.acquireDependencies())

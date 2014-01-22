@@ -202,6 +202,7 @@ class Directory extends FileSystemEntity {
 
   /// Extract the archive inside the current directory.
   Future<bool> extractArchive(var data) {
+    log.message("Extracting zipped data received from the site.");
     var completer = new Completer();
 
     js.context["Archive"].extractZipFile(data,
@@ -284,12 +285,33 @@ StdioType stdioType(object) {
   return StdioType.PIPE;
 }
 
-class TimeoutException extends Exception {
-  TimeoutException([dynamic message]);
-}
+class SocketException implements Exception {
+  final String message;
+  final OSError osError;
+  final InternetAddress address;
+  final int port;
 
-class SocketException extends Exception {
-  SocketException([dynamic message]);
+  const SocketException(this.message, {this.osError, this.address, this.port});
+
+  String toString() {
+    StringBuffer sb = new StringBuffer();
+    sb.write("SocketException");
+    if (!message.isEmpty) {
+      sb.write(": $message");
+      if (osError != null) {
+        sb.write(" ($osError)");
+      }
+    } else if (osError != null) {
+      sb.write(": $osError");
+    }
+    if (address != null) {
+      sb.write(", address = ${address.host}");
+    }
+    if (port != null) {
+      sb.write(", port = $port");
+    }
+    return sb.toString();
+  }
 }
 
 /// Whether pub is running from within the Dart SDK, as opposed to from the Dart
@@ -323,4 +345,34 @@ Future createSymlinkNative(PathRep target, PathRep symlink,
 // this is called, and implement properly.
 PathRep canonicalizeNative(PathRep path) {
   return path;
+}
+
+/**
+ * A Mock of the dart:io/process.dart Process class.
+ */
+abstract class Process {
+  Future<int> exitCode;
+  static Future<ProcessResult> run(
+      String executable,
+      List<String> arguments,
+      {String workingDirectory,
+       Map<String, String> environment,
+       bool includeParentEnvironment: true,
+       bool runInShell: false,
+       Encoding stdoutEncoding,
+       Encoding stderrEncoding}) {}
+  Stream<List<int>> get stdout;
+  Stream<List<int>> get stderr;
+  IOSink get stdin;
+  bool kill([ProcessSignal signal = ProcessSignal.SIGTERM]);
+}
+
+/**
+ * A Mock of the dart:io/process.dart ProcessSignal class.
+ */
+class ProcessSignal {
+  static const ProcessSignal SIGTERM = const ProcessSignal._(15, "SIGTERM");
+  final int _signalNumber;
+  final String _name;
+  const ProcessSignal._(this._signalNumber, this._name);
 }
