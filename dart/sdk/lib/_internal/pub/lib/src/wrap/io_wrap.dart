@@ -77,14 +77,14 @@ abstract class FileSystemEntity {
       file ? new Future.value(file) : Directory.load(path));
   }
 
-  Future copyTo(PathRep dir) {
+  Future copyTo(PathRep dir, {String name}) {
     return Directory.create(dir).then(
-        (newParent) => getEntry().copyTo(newParent.getEntry()));
+        (newParent) => getEntry().copyTo(newParent.getEntry(), name: name));
   }
 
-  Future moveTo(PathRep dir) {
+  Future moveTo(PathRep dir, {String name}) {
     return Directory.create(dir).then(
-        (newParent) => getEntry().moveTo(newParent.getEntry()));
+        (newParent) => getEntry().moveTo(newParent.getEntry(), name: name));
   }
 
   Future remove();
@@ -329,8 +329,11 @@ Future createSymlinkNative(PathRep target, PathRep symlink,
                            {bool relative: false}) {
   log.fine("Creating $symlink pointing to $target");
   return Directory.load(target).then((from) {
-    if (from != null) return from.copyTo(symlink);
-    log.error("Target of symlink doesn't exists");
+    if (from == null) {
+      log.error("Can't create symlink to target folder: $target");
+      return null;
+    }
+    return from.copyTo(symlink.dirname, name: symlink.basename);
   });
 }
 
