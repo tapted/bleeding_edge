@@ -5,12 +5,12 @@
 import 'dart:async';
 import 'dart:html' as html;
 
-import '../entrypoint.dart';
-import '../io.dart';
-import '../log.dart' as log;
-import '../source/hosted.dart';
-import '../path_rep.dart';
-import '../wrap/system_cache_wrap.dart';
+import 'src/entrypoint.dart';
+import 'src/io.dart';
+import 'src/log.dart' as log;
+import 'src/source/hosted.dart';
+import 'src/path_rep.dart';
+import 'src/wrap/system_cache_wrap.dart';
 
 typedef void LogFunction(String line, String level);
 

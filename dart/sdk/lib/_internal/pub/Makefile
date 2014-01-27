@@ -1,4 +1,5 @@
 all: lib/src/packages
+	cp js/jszip/dist/jszip.js lib/
 	dart2js --suppress-hints --package-root=lib/src/packages \
 		 -o js/pubchrome.dart.js lib/src/app/pubchrome.dart
 
