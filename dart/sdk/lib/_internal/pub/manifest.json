@@ -15,6 +15,8 @@
     "storage",
     "http://pajamallama0.syd.corp.google.com:8080/",
     "http://pub.dartlang.org/",
-    "https://commondatastorage.googleapis.com/pub.dartlang.org/"
+    "https://commondatastorage.googleapis.com/pub.dartlang.org/",
+    "https://api.github.com/",
+    "https://codeload.github.com/"
   ]
 }

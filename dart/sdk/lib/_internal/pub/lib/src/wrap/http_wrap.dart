@@ -28,7 +28,7 @@ class PubHttpClient {
 
   void decodeResponse(var event, HttpRequest request) {
     var completer = completers.remove(request);
-    log.io("Received response with status ${request.statusText}.");
+    log.io("Received response ${request.statusText} (${request.status}).");
 
     if (request.status < 400 || request.status == 401) {
       completer.complete(request.response);

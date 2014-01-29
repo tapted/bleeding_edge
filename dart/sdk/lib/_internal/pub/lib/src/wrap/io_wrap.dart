@@ -203,16 +203,33 @@ class Directory extends FileSystemEntity {
   }
 
   /// Extract the archive inside the current directory.
-  Future extractArchive(ByteBuffer data) {
-    log.message("Extracting zipped data received from the site.");
+  Future extractArchive(ByteBuffer data, {bool skipTopDir: false}) {
+    log.message("Extracting zipped data to $path.");
 
     Uint8List gzData = new Uint8List.view(data);
     List<int> tarData = (new GZipDecoder()).decodeBytes(gzData);
     Archive archive = (new TarDecoder()).decodeBytes(tarData);
 
-    return Future.forEach(range(archive.numberOfFiles()), (i) {
-      var path = getPath().join(archive.fileName(i));
-      return File.create(path).then((file) => file.write(archive.fileData(i)));
+    return Future.forEach(archive.files, (zipFile) {
+      var zipFilename = zipFile.filename;
+      // If the zip file has all its contents inside a top directory then
+      // sometimes we want to extract them up a level.
+      if (skipTopDir) {
+        var parts = zipFilename.split('/');
+
+        // Skip files in the top directory
+        if (parts.length == 1)
+          return;
+
+        parts.removeAt(0);
+        zipFilename = parts.join('/');
+      }
+      var path = getPath().join(zipFilename);
+
+      if (zipFile.fileSize > 0)
+        return File.create(path).then((file) => file.write(zipFile.content));
+      else
+        return Directory.create(path);
     });
   }
 }
