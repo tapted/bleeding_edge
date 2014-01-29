@@ -94,16 +94,11 @@ class HostedSource extends Source {
   Future<bool> get(PackageId id, PathRep destPath) {
     var url = _makeVersionUrl(id, (server, package, version) =>
         "$server/packages/$package/versions/$version.$ARCHIVE");
-    log.io("Get package from $url.");
-
-    log.message('Downloading ${id.name} ${id.version}...');
-
-    Directory dest;
-
-    return Directory.create(destPath).then((dir) {
-      dest = dir;
-      return httpClient.read(url, responseType: "arraybuffer");
-    }).then((archive) => dest.extractArchive(archive));
+    log.io('Downloading ${id.name} ${id.version} from $url...');
+    return Future.wait([Directory.create(destPath),
+                        httpClient.read(url, responseType: "arraybuffer")])
+        .then((results) => results[0].extractArchive(results[1]))
+        .then((_) => true);
   }
 
   /// The system cache directory for the hosted source contains subdirectories

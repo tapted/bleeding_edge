@@ -13,6 +13,8 @@
   "permissions": [
     {"fileSystem": ["write", "retainEntries", "directory"]},
     "storage",
-    "http://pajamallama0.syd.corp.google.com:8080/"
+    "http://pajamallama0.syd.corp.google.com:8080/",
+    "http://pub.dartlang.org/",
+    "https://commondatastorage.googleapis.com/pub.dartlang.org/"
   ]
 }

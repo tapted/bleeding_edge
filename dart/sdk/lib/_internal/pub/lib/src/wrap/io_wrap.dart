@@ -5,14 +5,15 @@ import 'dart:convert';
 import 'dart:html' show Blob;
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:chrome/chrome_app.dart' as chrome;
-import 'package:js/js.dart' as js;
+import 'package:range/range.dart';
 
 import '../log.dart' as log;
 import '../path_rep.dart';
 
-// Extension of the Archive files being used (uncompressed zip).
-const String ARCHIVE = "zip";
+// Extension of the Archive files being used (tarball).
+const String ARCHIVE = "tar.gz";
 
 /// A collection of static methods for accessing important parts of the local
 /// filesystem.
@@ -124,7 +125,8 @@ class File extends FileSystemEntity {
 
   Future<String> readText() => _entry.readText();
 
-  Future<bool> write(var data) => _entry.writeBytes(data);
+  Future write(Uint8List data) =>
+      _entry.writeBytes(new chrome.ArrayBuffer.fromBytes(data));
 
   Future writeText(String s) => _entry.writeText(s);
 }
@@ -201,15 +203,17 @@ class Directory extends FileSystemEntity {
   }
 
   /// Extract the archive inside the current directory.
-  Future<bool> extractArchive(var data) {
+  Future extractArchive(ByteBuffer data) {
     log.message("Extracting zipped data received from the site.");
-    var completer = new Completer();
 
-    js.context["Archive"].extractZipFile(data,
-                                         _entry.jsProxy,
-                                         (res) => completer.complete(res));
+    Uint8List gzData = new Uint8List.view(data);
+    List<int> tarData = (new GZipDecoder()).decodeBytes(gzData);
+    Archive archive = (new TarDecoder()).decodeBytes(tarData);
 
-    return completer.future;
+    return Future.forEach(range(archive.numberOfFiles()), (i) {
+      var path = getPath().join(archive.fileName(i));
+      return File.create(path).then((file) => file.write(archive.fileData(i)));
+    });
   }
 }
 
