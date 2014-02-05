@@ -31,7 +31,7 @@ class HostedSource extends Source {
     var url = Platform.environment["PUB_HOSTED_URL"];
     if (url != null) return url;
 
-    return "http://pajamallama0.syd.corp.google.com:8080";
+    return "http://tapted-z620-l.syd.corp.google.com:8080";
   }
 
   /// Downloads a list of all versions of a package that are available from the
