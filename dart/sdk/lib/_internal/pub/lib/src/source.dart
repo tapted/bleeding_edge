@@ -157,7 +157,11 @@ abstract class Source {
   /// uncorrupted.
   Future<bool> isInSystemCache(PackageId id) {
     return systemCacheDirectory(id).then((packageDir) {
-      return dirExists(packageDir) && !_isCachedPackageCorrupted(packageDir);
+      return dirExists(packageDir).then((exists) {
+        if (!exists)
+          return false;
+        return _isCachedPackageCorrupted(packageDir).then((bad) => !bad);
+      });
     });
   }
 

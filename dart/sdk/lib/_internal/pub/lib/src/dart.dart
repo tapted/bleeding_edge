@@ -7,8 +7,6 @@ library pub.dart;
 
 import 'dart:async';
 import 'dart:isolate';
-
-;
 import 'sdk.dart' as sdk;
 import 'utils.dart';
 import 'wrap/compiler_wrap.dart';

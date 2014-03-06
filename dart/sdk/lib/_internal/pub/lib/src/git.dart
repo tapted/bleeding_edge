@@ -6,10 +6,10 @@
 library pub.git;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'io.dart';
 import 'log.dart' as log;
+import 'wrap/io_wrap.dart';
 
 /// Tests whether or not the git command-line app is available for use.
 Future<bool> get isInstalled {

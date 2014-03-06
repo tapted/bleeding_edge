@@ -67,12 +67,15 @@ class GitSource extends Source {
             .then((res) => res[0].extractArchive(res[1], skipTopDir: true))
             .then((_) => Package.load(id.name, path, systemCache.sources));
       }
-      ensureDir(path.join(systemCacheRoot, 'cache'));
-      return _ensureRepoCache(id)
+      return ensureDir(systemCacheRoot.join('cache'))
+          .then((_) => _ensureRepoCache(id))
           .then((_) => systemCacheDirectory(id)).then((path) {
             revisionCachePath = path;
-            if (entryExists(revisionCachePath)) return null;
-            return _clone(_repoCachePath(id),
+            return entryExists(revisionCachePath);
+          }).then((exists) {
+            if (!exists)
+              return null;
+            return _clone(_repoCachePath(id).toString(),
                 revisionCachePath, mirror: false);
           }).then((_) {
             var ref = _getEffectiveRef(id);
@@ -148,8 +151,11 @@ class GitSource extends Source {
   Future _ensureRepoCache(PackageId id) {
     return syncFuture(() {
       var path = _repoCachePath(id);
-      if (!entryExists(path)) return _clone(_getUrl(id), path, mirror: true);
-      return git.run(["fetch"], workingDir: path).then((result) => null);
+      entryExists(path).then((exists) {
+        if (!exists)
+          return _clone(_getUrl(id), path, mirror: true);
+        return git.run(["fetch"], workingDir: path).then((result) => null);
+      });
     });
   }
 
@@ -166,11 +172,12 @@ class GitSource extends Source {
   /// If [mirror] is true, create a bare, mirrored clone. This doesn't check out
   /// the working tree, but instead makes the repository a local mirror of the
   /// remote repository. See the manpage for `git clone` for more information.
-  Future _clone(String from, String to, {bool mirror: false}) {
+  Future _clone(String from, PathRep to, {bool mirror: false}) {
     return syncFuture(() {
       // Git on Windows does not seem to automatically create the destination
       // directory.
-      ensureDir(to);
+      return ensureDir(to);
+    }).then((_) {
       var args = ["clone", from, to];
       if (mirror) args.insert(1, "--mirror");
       return git.run(args);
@@ -185,9 +192,9 @@ class GitSource extends Source {
 
   /// Returns the path to the canonical clone of the repository referred to by
   /// [id] (the one in `<system cache>/git/cache`).
-  String _repoCachePath(PackageId id) {
+  PathRep _repoCachePath(PackageId id) {
     var repoCacheName = '${id.name}-${sha1(_getUrl(id))}';
-    return path.join(systemCacheRoot, 'cache', repoCacheName);
+    return systemCacheRoot.join('cache', repoCacheName);
   }
 
   /// Returns the repository URL for [id].

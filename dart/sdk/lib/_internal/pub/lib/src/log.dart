@@ -6,6 +6,7 @@
 library pub.log;
 
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:path/path.dart' as p;
 
