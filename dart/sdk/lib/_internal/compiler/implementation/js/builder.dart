@@ -126,16 +126,12 @@ class JsBuilder {
       }
       return new ObjectInitializer([]);
     } else if (expression is List) {
-      var values = new List<ArrayElement>(expression.length);
-      int index = 0;
-      for (var entry in expression) {
-        values[index] = new ArrayElement(index, toExpression(entry));
-        index++;
-      }
+      var values = new List<ArrayElement>.generate(expression.length,
+          (index) => new ArrayElement(index, toExpression(expression[index])));
       return new ArrayInitializer(values.length, values);
     } else {
       throw new ArgumentError('expression should be an Expression, '
-                              'a String, a num, a bool, or a Map');
+                              'a String, a num, a bool, a Map, or a List;');
     }
   }
 
@@ -489,6 +485,7 @@ class MiniJsParser {
       return expression;
     } else {
       error("Expected primary expression");
+      return null;
     }
   }
 
@@ -502,9 +499,10 @@ class MiniJsParser {
         expectCategory(RSQUARE);
         receiver = new PropertyAccess(receiver, inBraces);
       } else {
-        return receiver;
+        break;
       }
     }
+    return receiver;
   }
 
   Expression parseCall() {
@@ -534,9 +532,10 @@ class MiniJsParser {
       } else {
         // JS allows new without (), but we don't.
         if (constructor) error("Parentheses are required for new");
-        return receiver;
+        break;
       }
     }
+    return receiver;
   }
 
   Expression getDotRhs(Expression receiver) {
@@ -591,8 +590,7 @@ class MiniJsParser {
       if (lastCategory != SYMBOL ||
           !BINARY_PRECEDENCE.containsKey(symbol) ||
           BINARY_PRECEDENCE[symbol] > maxPrecedence) {
-        if (rhs == null) return lhs;
-        return new Binary(lastSymbol, lhs, rhs);
+        break;
       }
       expectCategory(SYMBOL);
       if (rhs == null || BINARY_PRECEDENCE[symbol] >= minPrecedence) {
@@ -605,6 +603,8 @@ class MiniJsParser {
         rhs = new Binary(symbol, rhs, higher);
       }
     }
+    if (rhs == null) return lhs;
+    return new Binary(lastSymbol, lhs, rhs);
   }
 
   Expression parseConditional() {
@@ -685,6 +685,7 @@ class UninterpolateJSExpression extends BaseVisitor<Node> {
 
   Node visitNode(Node node) {
     error('Cannot handle $node');
+    return null;
   }
 
   Node copyPosition(Node oldNode, Node newNode) {

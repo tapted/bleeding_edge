@@ -14,7 +14,7 @@
 package com.google.dart.engine.ast.visitor;
 
 import com.google.dart.engine.EngineTestCase;
-import com.google.dart.engine.ast.ASTNode;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.Combinator;
 import com.google.dart.engine.ast.Comment;
 import com.google.dart.engine.ast.CommentReference;
@@ -27,8 +27,8 @@ import com.google.dart.engine.scanner.Token;
 import com.google.dart.engine.scanner.TokenType;
 import com.google.dart.engine.utilities.io.PrintStringWriter;
 
-import static com.google.dart.engine.ast.ASTFactory.*;
-import static com.google.dart.engine.scanner.TokenFactory.token;
+import static com.google.dart.engine.ast.AstFactory.*;
+import static com.google.dart.engine.scanner.TokenFactory.tokenFromString;
 
 public class ToSourceVisitorTest extends EngineTestCase {
   public void test_visitAdjacentStrings() {
@@ -288,13 +288,13 @@ public class ToSourceVisitorTest extends EngineTestCase {
 
   public void test_visitClassTypeAlias_abstract() {
     assertSource(
-        "class C = abstract S with M1;",
+        "abstract class C = S with M1;",
         classTypeAlias("C", null, Keyword.ABSTRACT, typeName("S"), withClause(typeName("M1")), null));
   }
 
   public void test_visitClassTypeAlias_abstract_implements() {
     assertSource(
-        "class C = abstract S with M1 implements I;",
+        "abstract class C = S with M1 implements I;",
         classTypeAlias(
             "C",
             null,
@@ -336,7 +336,7 @@ public class ToSourceVisitorTest extends EngineTestCase {
 
   public void test_visitClassTypeAlias_parameters_abstract() {
     assertSource(
-        "class C<E> = abstract S with M1;",
+        "abstract class C<E> = S with M1;",
         classTypeAlias(
             "C",
             typeParameterList("E"),
@@ -348,7 +348,7 @@ public class ToSourceVisitorTest extends EngineTestCase {
 
   public void test_visitClassTypeAlias_parameters_abstract_implements() {
     assertSource(
-        "class C<E> = abstract S with M1 implements I;",
+        "abstract class C<E> = S with M1 implements I;",
         classTypeAlias(
             "C",
             typeParameterList("E"),
@@ -371,7 +371,7 @@ public class ToSourceVisitorTest extends EngineTestCase {
   }
 
   public void test_visitComment() {
-    assertSource("", Comment.createBlockComment(new Token[] {token("/* comment */")}));
+    assertSource("", Comment.createBlockComment(new Token[] {tokenFromString("/* comment */")}));
   }
 
   public void test_visitCommentReference() {
@@ -1526,7 +1526,7 @@ public class ToSourceVisitorTest extends EngineTestCase {
    * @param node the AST node being visited to produce the actual source
    * @throws AFE if the visitor does not produce the expected source for the given node
    */
-  private void assertSource(String expectedSource, ASTNode node) {
+  private void assertSource(String expectedSource, AstNode node) {
     PrintStringWriter writer = new PrintStringWriter();
     node.accept(new ToSourceVisitor(writer));
     assertEquals(expectedSource, writer.toString());

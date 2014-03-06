@@ -13,7 +13,7 @@ namespace dart {
 DECLARE_FLAG(bool, trace_deoptimization_verbose);
 
 
-void DeferredDouble::Materialize() {
+void DeferredDouble::Materialize(DeoptContext* deopt_context) {
   RawDouble** double_slot = reinterpret_cast<RawDouble**>(slot());
   *double_slot = Double::New(value());
 
@@ -24,7 +24,7 @@ void DeferredDouble::Materialize() {
 }
 
 
-void DeferredMint::Materialize() {
+void DeferredMint::Materialize(DeoptContext* deopt_context) {
   RawMint** mint_slot = reinterpret_cast<RawMint**>(slot());
   ASSERT(!Smi::IsValid64(value()));
   Mint& mint = Mint::Handle();
@@ -38,7 +38,7 @@ void DeferredMint::Materialize() {
 }
 
 
-void DeferredFloat32x4::Materialize() {
+void DeferredFloat32x4::Materialize(DeoptContext* deopt_context) {
   RawFloat32x4** float32x4_slot = reinterpret_cast<RawFloat32x4**>(slot());
   RawFloat32x4* raw_float32x4 = Float32x4::New(value());
   *float32x4_slot = raw_float32x4;
@@ -54,7 +54,21 @@ void DeferredFloat32x4::Materialize() {
 }
 
 
-void DeferredInt32x4::Materialize() {
+void DeferredFloat64x2::Materialize(DeoptContext* deopt_context) {
+  RawFloat64x2** float64x2_slot = reinterpret_cast<RawFloat64x2**>(slot());
+  RawFloat64x2* raw_float64x2 = Float64x2::New(value());
+  *float64x2_slot = raw_float64x2;
+
+  if (FLAG_trace_deoptimization_verbose) {
+    double x = raw_float64x2->x();
+    double y = raw_float64x2->y();
+    OS::PrintErr("materializing Float64x2 at %" Px ": %g,%g\n",
+                 reinterpret_cast<uword>(slot()), x, y);
+  }
+}
+
+
+void DeferredInt32x4::Materialize(DeoptContext* deopt_context) {
   RawInt32x4** int32x4_slot = reinterpret_cast<RawInt32x4**>(slot());
   RawInt32x4* raw_int32x4 = Int32x4::New(value());
   *int32x4_slot = raw_int32x4;
@@ -70,13 +84,8 @@ void DeferredInt32x4::Materialize() {
 }
 
 
-void DeferredObjectRef::Materialize() {
-  // TODO(turnidge): Consider passing the deopt_context to materialize
-  // instead of accessing it through the current isolate.  It would
-  // make it easier to test deferred object materialization in a unit
-  // test eventually.
-  DeferredObject* obj =
-      Isolate::Current()->deopt_context()->GetDeferredObject(index());
+void DeferredObjectRef::Materialize(DeoptContext* deopt_context) {
+  DeferredObject* obj = deopt_context->GetDeferredObject(index());
   *slot() = obj->object();
   if (FLAG_trace_deoptimization_verbose) {
     OS::PrintErr("writing instance ref at %" Px ": %s\n",
@@ -107,12 +116,22 @@ void DeferredObject::Materialize() {
 
   const Instance& obj = Instance::ZoneHandle(Instance::New(cls));
 
+  Smi& offset = Smi::Handle();
   Field& field = Field::Handle();
   Object& value = Object::Handle();
+  const Array& offset_map = Array::Handle(cls.OffsetToFieldMap());
+
   for (intptr_t i = 0; i < field_count_; i++) {
-    field ^= GetField(i);
+    offset ^= GetFieldOffset(i);
+    field ^= offset_map.At(offset.Value() / kWordSize);
     value = GetValue(i);
-    obj.SetField(field, value);
+    if (!field.IsNull()) {
+      obj.SetField(field, value);
+    } else {
+      ASSERT(cls.IsSignatureClass() ||
+             (offset.Value() == cls.type_arguments_field_offset()));
+      obj.SetFieldAtOffset(offset.Value(), value);
+    }
 
     if (FLAG_trace_deoptimization_verbose) {
       OS::PrintErr("    %s <- %s\n",

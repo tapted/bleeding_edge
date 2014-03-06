@@ -34,29 +34,29 @@
 
 namespace dart {
 
-DEFINE_FLAG(bool, disassemble, false, "Disassemble dart code.");
-DEFINE_FLAG(bool, disassemble_optimized, false, "Disassemble optimized code.");
-DEFINE_FLAG(bool, trace_bailout, false, "Print bailout from ssa compiler.");
-DEFINE_FLAG(bool, trace_compiler, false, "Trace compiler operations.");
-DEFINE_FLAG(bool, constant_propagation, true,
-    "Do conditional constant propagation/unreachable code elimination.");
-DEFINE_FLAG(bool, common_subexpression_elimination, true,
-    "Do common subexpression elimination.");
-DEFINE_FLAG(bool, loop_invariant_code_motion, true,
-    "Do loop invariant code motion.");
 DEFINE_FLAG(bool, allocation_sinking, true,
     "Attempt to sink temporary allocations to side exits");
+DEFINE_FLAG(bool, common_subexpression_elimination, true,
+    "Do common subexpression elimination.");
+DEFINE_FLAG(bool, constant_propagation, true,
+    "Do conditional constant propagation/unreachable code elimination.");
 DEFINE_FLAG(int, deoptimization_counter_threshold, 16,
     "How many times we allow deoptimization before we disallow optimization.");
-DEFINE_FLAG(int, deoptimization_counter_licm_threshold, 8,
-    "How many times we allow deoptimization before we disable LICM.");
-DEFINE_FLAG(bool, use_inlining, true, "Enable call-site inlining");
+DEFINE_FLAG(bool, disassemble, false, "Disassemble dart code.");
+DEFINE_FLAG(bool, disassemble_optimized, false, "Disassemble optimized code.");
+DEFINE_FLAG(bool, loop_invariant_code_motion, true,
+    "Do loop invariant code motion.");
+DEFINE_FLAG(bool, print_flow_graph, false, "Print the IR flow graph.");
+DEFINE_FLAG(bool, print_flow_graph_optimized, false,
+    "Print the IR flow graph when optimizing.");
 DEFINE_FLAG(bool, range_analysis, true, "Enable range analysis");
 DEFINE_FLAG(bool, reorder_basic_blocks, true, "Enable basic-block reordering.");
+DEFINE_FLAG(bool, trace_compiler, false, "Trace compiler operations.");
+DEFINE_FLAG(bool, trace_bailout, false, "Print bailout from ssa compiler.");
+DEFINE_FLAG(bool, use_inlining, true, "Enable call-site inlining");
 DEFINE_FLAG(bool, verify_compiler, false,
     "Enable compiler verification assertions");
-DECLARE_FLAG(bool, print_flow_graph);
-DECLARE_FLAG(bool, print_flow_graph_optimized);
+
 DECLARE_FLAG(bool, trace_failed_optimization_attempts);
 
 // Compile a function. Should call only if the function has not been compiled.
@@ -74,9 +74,7 @@ DEFINE_RUNTIME_ENTRY(CompileFunction, 1) {
 RawError* Compiler::Compile(const Library& library, const Script& script) {
   Isolate* isolate = Isolate::Current();
   StackZone zone(isolate);
-  LongJump* base = isolate->long_jump_base();
-  LongJump jump;
-  isolate->set_long_jump_base(&jump);
+  LongJumpScope jump;
   if (setjmp(*jump.Set()) == 0) {
     if (FLAG_trace_compiler) {
       const String& script_url = String::Handle(script.url());
@@ -86,13 +84,11 @@ RawError* Compiler::Compile(const Library& library, const Script& script) {
     const String& library_key = String::Handle(library.private_key());
     script.Tokenize(library_key);
     Parser::ParseCompilationUnit(library, script);
-    isolate->set_long_jump_base(base);
     return Error::null();
   } else {
     Error& error = Error::Handle();
     error = isolate->object_store()->sticky_error();
     isolate->object_store()->clear_sticky_error();
-    isolate->set_long_jump_base(base);
     return error.raw();
   }
   UNREACHABLE();
@@ -168,9 +164,7 @@ RawError* Compiler::CompileClass(const Class& cls) {
 
   // Parse the class and all the interfaces it implements and super classes.
   StackZone zone(isolate);
-  LongJump* base = isolate->long_jump_base();
-  LongJump jump;
-  isolate->set_long_jump_base(&jump);
+  LongJumpScope jump;
   if (setjmp(*jump.Set()) == 0) {
     if (FLAG_trace_compiler) {
       OS::Print("Compiling Class %s '%s'\n", "", cls.ToCString());
@@ -215,7 +209,6 @@ RawError* Compiler::CompileClass(const Class& cls) {
       parse_class.reset_is_marked_for_parsing();
     }
 
-    isolate->set_long_jump_base(base);
     return Error::null();
   } else {
     // Reset the marked for parsing flags.
@@ -235,7 +228,6 @@ RawError* Compiler::CompileClass(const Class& cls) {
     Error& error = Error::Handle();
     error = isolate->object_store()->sticky_error();
     isolate->object_store()->clear_sticky_error();
-    isolate->set_long_jump_base(base);
     return error.raw();
   }
   UNREACHABLE();
@@ -263,13 +255,14 @@ static bool CompileParsedFunctionHelper(ParsedFunction* parsed_function,
                                         bool optimized,
                                         intptr_t osr_id) {
   const Function& function = parsed_function->function();
-  if (optimized && !function.is_optimizable()) {
+  if (optimized && !function.IsOptimizable()) {
     return false;
   }
   TimerScope timer(FLAG_compiler_stats, &CompilerStats::codegen_timer);
   bool is_compiled = false;
   Isolate* isolate = Isolate::Current();
   HANDLESCOPE(isolate);
+  isolate->set_cha_used(false);
 
   // We may reattempt compilation if the function needs to be assembled using
   // far branches on ARM and MIPS. In the else branch of the setjmp call,
@@ -283,10 +276,8 @@ static bool CompileParsedFunctionHelper(ParsedFunction* parsed_function,
   while (!done) {
     const intptr_t prev_deopt_id = isolate->deopt_id();
     isolate->set_deopt_id(0);
-    LongJump* old_base = isolate->long_jump_base();
-    LongJump bailout_jump;
-    isolate->set_long_jump_base(&bailout_jump);
-    if (setjmp(*bailout_jump.Set()) == 0) {
+    LongJumpScope jump;
+    if (setjmp(*jump.Set()) == 0) {
       FlowGraph* flow_graph = NULL;
       // TimerScope needs an isolate to be properly terminated in case of a
       // LongJump.
@@ -450,9 +441,7 @@ static bool CompileParsedFunctionHelper(ParsedFunction* parsed_function,
         optimizer.TryOptimizePatterns();
         DEBUG_ASSERT(flow_graph->VerifyUseLists());
 
-        if (FLAG_loop_invariant_code_motion &&
-            (function.deoptimization_counter() <
-             FLAG_deoptimization_counter_licm_threshold)) {
+        if (FLAG_loop_invariant_code_motion) {
           LICM licm(flow_graph);
           licm.Optimize();
           DEBUG_ASSERT(flow_graph->VerifyUseLists());
@@ -549,6 +538,12 @@ static bool CompileParsedFunctionHelper(ParsedFunction* parsed_function,
         const Code& code = Code::Handle(
             Code::FinalizeCode(function, &assembler, optimized));
         code.set_is_optimized(optimized);
+        // CHA should not be used for unoptimized code.
+        ASSERT(optimized || !isolate->cha_used());
+        if (isolate->cha_used()) {
+          Class::Handle(function.Owner()).RegisterCHACode(code);
+          isolate->set_cha_used(false);
+        }
         graph_compiler.FinalizePcDescriptors(code);
         graph_compiler.FinalizeDeoptInfo(code);
         graph_compiler.FinalizeStackmaps(code);
@@ -608,7 +603,6 @@ static bool CompileParsedFunctionHelper(ParsedFunction* parsed_function,
       is_compiled = false;
     }
     // Reset global isolate state.
-    isolate->set_long_jump_base(old_base);
     isolate->set_deopt_id(prev_deopt_id);
   }
   return is_compiled;
@@ -745,15 +739,12 @@ static RawError* CompileFunctionHelper(const Function& function,
                                        intptr_t osr_id) {
   Isolate* isolate = Isolate::Current();
   StackZone zone(isolate);
-  LongJump* base = isolate->long_jump_base();
-  LongJump jump;
-  isolate->set_long_jump_base(&jump);
+  LongJumpScope jump;
   // Make sure unoptimized code is not collected while we are compiling.
   const Code& unoptimized_code = Code::ZoneHandle(function.unoptimized_code());
   // Skips parsing if we need to only install unoptimized code.
   if (!optimized && !unoptimized_code.IsNull()) {
     InstallUnoptimizedCode(function);
-    isolate->set_long_jump_base(base);
     return Error::null();
   }
   if (setjmp(*jump.Set()) == 0) {
@@ -786,8 +777,7 @@ static RawError* CompileFunctionHelper(const Function& function,
       } else if (FLAG_trace_failed_optimization_attempts) {
         OS::Print("Cannot optimize: %s\n", function.ToFullyQualifiedCString());
       }
-      function.set_is_optimizable(false);
-      isolate->set_long_jump_base(base);
+      function.SetIsOptimizable(false);
       return Error::null();
     }
 
@@ -813,14 +803,12 @@ static RawError* CompileFunctionHelper(const Function& function,
       OS::Print("*** END CODE\n");
     }
 
-    isolate->set_long_jump_base(base);
     return Error::null();
   } else {
     Error& error = Error::Handle();
     // We got an error during compilation.
     error = isolate->object_store()->sticky_error();
     isolate->object_store()->clear_sticky_error();
-    isolate->set_long_jump_base(base);
     return error.raw();
   }
   UNREACHABLE();
@@ -842,23 +830,19 @@ RawError* Compiler::CompileOptimizedFunction(const Function& function,
 RawError* Compiler::CompileParsedFunction(
     ParsedFunction* parsed_function) {
   Isolate* isolate = Isolate::Current();
-  LongJump* base = isolate->long_jump_base();
-  LongJump jump;
-  isolate->set_long_jump_base(&jump);
+  LongJumpScope jump;
   if (setjmp(*jump.Set()) == 0) {
     // Non-optimized code generator.
     CompileParsedFunctionHelper(parsed_function, false, Isolate::kNoDeoptId);
     if (FLAG_disassemble) {
       DisassembleCode(parsed_function->function(), false);
     }
-    isolate->set_long_jump_base(base);
     return Error::null();
   } else {
     Error& error = Error::Handle();
     // We got an error during compilation.
     error = isolate->object_store()->sticky_error();
     isolate->object_store()->clear_sticky_error();
-    isolate->set_long_jump_base(base);
     return error.raw();
   }
   UNREACHABLE();
@@ -887,6 +871,7 @@ RawError* Compiler::CompileAllFunctions(const Class& cls) {
       if (!error.IsNull()) {
         return error.raw();
       }
+      func.ClearCode();
     }
   }
   // Inner functions get added to the closures array. As part of compilation
@@ -902,6 +887,7 @@ RawError* Compiler::CompileAllFunctions(const Class& cls) {
         if (!error.IsNull()) {
           return error.raw();
         }
+        func.ClearCode();
       }
     }
   }
@@ -911,9 +897,7 @@ RawError* Compiler::CompileAllFunctions(const Class& cls) {
 
 RawObject* Compiler::ExecuteOnce(SequenceNode* fragment) {
   Isolate* isolate = Isolate::Current();
-  LongJump* base = isolate->long_jump_base();
-  LongJump jump;
-  isolate->set_long_jump_base(&jump);
+  LongJumpScope jump;
   if (setjmp(*jump.Set()) == 0) {
     if (FLAG_trace_compiler) {
       OS::Print("compiling expression: ");
@@ -939,7 +923,7 @@ RawObject* Compiler::ExecuteOnce(SequenceNode* fragment) {
     func.set_num_fixed_parameters(0);
     func.SetNumOptionalParameters(0, true);
     // Manually generated AST, do not recompile.
-    func.set_is_optimizable(false);
+    func.SetIsOptimizable(false);
 
     // We compile the function here, even though InvokeStatic() below
     // would compile func automatically. We are checking fewer invariants
@@ -956,13 +940,11 @@ RawObject* Compiler::ExecuteOnce(SequenceNode* fragment) {
 
     const Object& result = Object::Handle(
         DartEntry::InvokeFunction(func, Object::empty_array()));
-    isolate->set_long_jump_base(base);
     return result.raw();
   } else {
     const Object& result =
       Object::Handle(isolate->object_store()->sticky_error());
     isolate->object_store()->clear_sticky_error();
-    isolate->set_long_jump_base(base);
     return result.raw();
   }
   UNREACHABLE();

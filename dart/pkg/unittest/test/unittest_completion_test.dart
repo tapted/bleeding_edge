@@ -14,7 +14,7 @@ var testName = 'completion test';
 var testFunction = (TestConfiguration testConfig) {
   test(testName, () {
     var _callback;
-    _callback = expectAsyncUntil0(() {
+    _callback = expectAsyncUntil(() {
       if (++testConfig.count < 10) {
         _defer(_callback);
       }
@@ -24,4 +24,4 @@ var testFunction = (TestConfiguration testConfig) {
   });
 };
 
-var expected =  buildStatusString(1, 0, 0, testName, count: 10);
+var expected = buildStatusString(1, 0, 0, testName, count: 10);

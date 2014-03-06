@@ -49,6 +49,7 @@ final TEST_SUITE_DIRECTORIES = [
     new Path('pkg'),
     new Path('runtime/tests/vm'),
     new Path('samples'),
+    new Path('samples-dev'),
     new Path('tests/benchmark_smoke'),
     new Path('tests/chrome'),
     new Path('tests/compiler/dart2js'),
@@ -65,10 +66,6 @@ final TEST_SUITE_DIRECTORIES = [
     new Path('utils/tests/css'),
     new Path('utils/tests/peg'),
     new Path('sdk/lib/_internal/pub'),
-    // TODO(amouravski): move these to tests/ once they no longer rely on weird
-    // dependencies.
-    new Path('sdk/lib/_internal/dartdoc'),
-    new Path('tools/dom/docs'),
 ];
 
 void testConfigurations(List<Map> configurations) {
@@ -191,6 +188,21 @@ void testConfigurations(List<Map> configurations) {
         if (key == 'analyze_library') {
           testSuites.add(new AnalyzeLibraryTestSuite(conf));
         }
+      } else if (conf['compiler'] == 'none' &&
+                 conf['runtime'] == 'vm' &&
+                 key == 'pkgbuild') {
+        if (!conf['use_repository_packages'] && !conf['use_public_packages']) {
+          print("You need to use either --use-repository-packages or "
+                "--use-public-packages with the pkgbuild test suite!");
+          exit(1);
+        }
+        if (!conf['use_sdk']) {
+          print("Running the 'pkgbuild' test suite requires "
+                "passing the '--use-sdk' to test.py");
+          exit(1);
+        }
+        testSuites.add(
+            new PkgBuildTestSuite(conf, 'pkgbuild', 'pkg/pkgbuild.status'));
       }
     }
 
@@ -246,6 +258,10 @@ void testConfigurations(List<Map> configurations) {
   if (firstConf['write_test_outcome_log']) {
     eventListener.add(new TestOutcomeLogWriter());
   }
+  if (firstConf['copy_coredumps']) {
+    eventListener.add(new UnexpectedCrashDumpArchiver());
+  }
+
   eventListener.add(new ExitCodeSetter());
 
   void startProcessQueue() {

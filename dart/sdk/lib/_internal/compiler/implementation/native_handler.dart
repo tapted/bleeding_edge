@@ -623,7 +623,7 @@ void maybeEnableNative(Compiler compiler,
       || libraryName == 'dart:indexed_db'
       || libraryName == 'dart:js'
       || libraryName == 'dart:svg'
-      || libraryName == 'dart:typed_data'
+      || libraryName == 'dart:_native_typed_data'
       || libraryName == 'dart:web_audio'
       || libraryName == 'dart:web_gl'
       || libraryName == 'dart:web_sql') {
@@ -1050,7 +1050,7 @@ final RegExp nativeRedirectionRegExp = new RegExp(r'^[a-zA-Z][a-zA-Z_$0-9]*$');
 void handleSsaNative(SsaBuilder builder, Expression nativeBody) {
   Compiler compiler = builder.compiler;
   FunctionElement element = builder.work.element;
-  NativeEmitter nativeEmitter = builder.emitter.nativeEmitter;
+  NativeEmitter nativeEmitter = builder.nativeEmitter;
   JavaScriptBackend backend = builder.backend;
 
   HInstruction convertDartClosure(Element parameter, FunctionType type) {

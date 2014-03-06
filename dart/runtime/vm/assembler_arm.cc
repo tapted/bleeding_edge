@@ -6,6 +6,7 @@
 #if defined(TARGET_ARCH_ARM)
 
 #include "vm/assembler.h"
+#include "vm/cpu.h"
 #include "vm/longjump.h"
 #include "vm/runtime_entry.h"
 #include "vm/simulator.h"
@@ -21,97 +22,6 @@ namespace dart {
 
 DEFINE_FLAG(bool, print_stop_message, true, "Print stop message.");
 DECLARE_FLAG(bool, inline_alloc);
-
-bool CPUFeatures::integer_division_supported_ = false;
-bool CPUFeatures::neon_supported_ = false;
-#if defined(DEBUG)
-bool CPUFeatures::initialized_ = false;
-#endif
-
-
-bool CPUFeatures::integer_division_supported() {
-  DEBUG_ASSERT(initialized_);
-  return integer_division_supported_;
-}
-
-
-bool CPUFeatures::neon_supported() {
-  DEBUG_ASSERT(initialized_);
-  return neon_supported_;
-}
-
-
-// If we are using the simulator, allow tests to enable/disable support for
-// integer division.
-#if defined(USING_SIMULATOR)
-void CPUFeatures::set_integer_division_supported(bool supported) {
-  integer_division_supported_ = supported;
-}
-
-
-void CPUFeatures::set_neon_supported(bool supported) {
-  neon_supported_ = supported;
-}
-#endif
-
-
-// Probe /proc/cpuinfo for features of the ARM processor.
-#if !defined(USING_SIMULATOR)
-static bool CPUInfoContainsString(const char* search_string) {
-  const char* file_name = "/proc/cpuinfo";
-  // This is written as a straight shot one pass parser
-  // and not using STL string and ifstream because,
-  // on Linux, it's reading from a (non-mmap-able)
-  // character special device.
-  FILE* f = NULL;
-  const char* what = search_string;
-
-  if (NULL == (f = fopen(file_name, "r")))
-    return false;
-
-  int k;
-  while (EOF != (k = fgetc(f))) {
-    if (k == *what) {
-      ++what;
-      while ((*what != '\0') && (*what == fgetc(f))) {
-        ++what;
-      }
-      if (*what == '\0') {
-        fclose(f);
-        return true;
-      } else {
-        what = search_string;
-      }
-    }
-  }
-  fclose(f);
-
-  // Did not find string in the proc file.
-  return false;
-}
-#endif
-
-
-void CPUFeatures::InitOnce() {
-#if defined(USING_SIMULATOR)
-  integer_division_supported_ = true;
-  neon_supported_ = true;
-#else
-  ASSERT(CPUInfoContainsString("ARMv7"));  // Implements ARMv7.
-  ASSERT(CPUInfoContainsString("vfp"));  // Has floating point unit.
-  // Has integer division.
-  if (CPUInfoContainsString("QCT APQ8064")) {
-    // Special case for Qualcomm Krait CPUs in Nexus 4 and 7.
-    integer_division_supported_ = true;
-  } else {
-    integer_division_supported_ = CPUInfoContainsString("idiva");
-  }
-  neon_supported_ = CPUInfoContainsString("neon");
-#endif  // defined(USING_SIMULATOR)
-#if defined(DEBUG)
-  initialized_ = true;
-#endif
-}
 
 
 // Instruction encoding bits.
@@ -549,7 +459,7 @@ void Assembler::umlal(Register rd_lo, Register rd_hi,
 
 void Assembler::EmitDivOp(Condition cond, int32_t opcode,
                           Register rd, Register rn, Register rm) {
-  ASSERT(CPUFeatures::integer_division_supported());
+  ASSERT(TargetCPUFeatures::integer_division_supported());
   ASSERT(rd != kNoRegister);
   ASSERT(rn != kNoRegister);
   ASSERT(rm != kNoRegister);
@@ -1798,6 +1708,8 @@ class PatchFarBranch : public AssemblerFixup {
     ASSERT((movt == Instr::kNopInstruction) &&
            (bx == Instr::kNopInstruction));
   }
+
+  virtual bool IsPointerOffset() const { return false; }
 };
 
 
@@ -2455,7 +2367,7 @@ void Assembler::TestImmediate(Register rn, int32_t imm, Condition cond) {
 void Assembler::IntegerDivide(Register result, Register left, Register right,
                               DRegister tmpl, DRegister tmpr) {
   ASSERT(tmpl != tmpr);
-  if (CPUFeatures::integer_division_supported()) {
+  if (TargetCPUFeatures::integer_division_supported()) {
     sdiv(result, left, right);
   } else {
     SRegister stmpl = static_cast<SRegister>(2 * tmpl);
@@ -2641,9 +2553,96 @@ void Assembler::LeaveStubFrame() {
 }
 
 
+void Assembler::UpdateAllocationStats(intptr_t cid,
+                                      Register temp_reg,
+                                      Heap::Space space) {
+  ASSERT(temp_reg != kNoRegister);
+  ASSERT(temp_reg != TMP);
+  ASSERT(cid > 0);
+  Isolate* isolate = Isolate::Current();
+  ClassTable* class_table = isolate->class_table();
+  if (cid < kNumPredefinedCids) {
+    const uword class_heap_stats_table_address =
+        class_table->PredefinedClassHeapStatsTableAddress();
+    const uword class_offset = cid * sizeof(ClassHeapStats);  // NOLINT
+    const uword count_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_since_gc_old_space_offset();
+    LoadImmediate(temp_reg, class_heap_stats_table_address + class_offset);
+    const Address& count_address = Address(temp_reg, count_field_offset);
+    ldr(TMP, count_address);
+    AddImmediate(TMP, 1);
+    str(TMP, count_address);
+  } else {
+    ASSERT(temp_reg != kNoRegister);
+    const uword class_offset = cid * sizeof(ClassHeapStats);  // NOLINT
+    const uword count_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_since_gc_old_space_offset();
+    LoadImmediate(temp_reg, class_table->ClassStatsTableAddress());
+    ldr(temp_reg, Address(temp_reg, 0));
+    AddImmediate(temp_reg, class_offset);
+    ldr(TMP, Address(temp_reg, count_field_offset));
+    AddImmediate(TMP, 1);
+    str(TMP, Address(temp_reg, count_field_offset));
+  }
+}
+
+
+void Assembler::UpdateAllocationStatsWithSize(intptr_t cid,
+                                              Register size_reg,
+                                              Register temp_reg,
+                                              Heap::Space space) {
+  ASSERT(temp_reg != kNoRegister);
+  ASSERT(temp_reg != TMP);
+  ASSERT(cid > 0);
+  Isolate* isolate = Isolate::Current();
+  ClassTable* class_table = isolate->class_table();
+  if (cid < kNumPredefinedCids) {
+    const uword class_heap_stats_table_address =
+        class_table->PredefinedClassHeapStatsTableAddress();
+    const uword class_offset = cid * sizeof(ClassHeapStats);  // NOLINT
+    const uword count_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_since_gc_old_space_offset();
+    const uword size_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_size_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_size_since_gc_old_space_offset();
+    LoadImmediate(temp_reg, class_heap_stats_table_address + class_offset);
+    const Address& count_address = Address(temp_reg, count_field_offset);
+    const Address& size_address = Address(temp_reg, size_field_offset);
+    ldr(TMP, count_address);
+    AddImmediate(TMP, 1);
+    str(TMP, count_address);
+    ldr(TMP, size_address);
+    add(TMP, TMP, ShifterOperand(size_reg));
+    str(TMP, size_address);
+  } else {
+    ASSERT(temp_reg != kNoRegister);
+    const uword class_offset = cid * sizeof(ClassHeapStats);  // NOLINT
+    const uword count_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_since_gc_old_space_offset();
+    const uword size_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_size_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_size_since_gc_old_space_offset();
+    LoadImmediate(temp_reg, class_table->ClassStatsTableAddress());
+    ldr(temp_reg, Address(temp_reg, 0));
+    AddImmediate(temp_reg, class_offset);
+    ldr(TMP, Address(temp_reg, count_field_offset));
+    AddImmediate(TMP, 1);
+    str(TMP, Address(temp_reg, count_field_offset));
+    ldr(TMP, Address(temp_reg, size_field_offset));
+    add(TMP, TMP, ShifterOperand(size_reg));
+    str(TMP, Address(temp_reg, size_field_offset));
+  }
+}
+
+
 void Assembler::TryAllocate(const Class& cls,
                             Label* failure,
-                            Register instance_reg) {
+                            Register instance_reg,
+                            Register temp_reg) {
   ASSERT(failure != NULL);
   if (FLAG_inline_alloc) {
     Heap* heap = Isolate::Current()->heap();
@@ -2666,6 +2665,7 @@ void Assembler::TryAllocate(const Class& cls,
 
     ASSERT(instance_size >= kHeapObjectTag);
     AddImmediate(instance_reg, -instance_size + kHeapObjectTag);
+    UpdateAllocationStats(cls.id(), temp_reg);
 
     uword tags = 0;
     tags = RawObject::SizeTag::update(instance_size, tags);

@@ -14,6 +14,7 @@
 package com.google.dart.engine.internal.element;
 
 import com.google.dart.engine.context.AnalysisContext;
+import com.google.dart.engine.element.CompilationUnitElement;
 import com.google.dart.engine.element.ElementKind;
 import com.google.dart.engine.element.ElementVisitor;
 import com.google.dart.engine.element.HtmlElement;
@@ -47,6 +48,12 @@ public class HtmlElementImpl extends ElementImpl implements HtmlElement {
   private Source source;
 
   /**
+   * The element associated with Dart pieces in this HTML unit or {@code null} if the receiver is
+   * not resolved.
+   */
+  private CompilationUnitElement angularCompilationUnit;
+
+  /**
    * Initialize a newly created HTML element to have the given name.
    * 
    * @param context the analysis context in which the HTML file is defined
@@ -64,8 +71,23 @@ public class HtmlElementImpl extends ElementImpl implements HtmlElement {
 
   @Override
   public boolean equals(Object object) {
-    return getClass() == object.getClass()
-        && source.equals(((CompilationUnitElementImpl) object).getSource());
+    if (object == this) {
+      return true;
+    }
+    if (object == null) {
+      return false;
+    }
+    return getClass() == object.getClass() && source.equals(((HtmlElementImpl) object).getSource());
+  }
+
+  /**
+   * Return the element associated with Dart pieces in this HTML unit.
+   * 
+   * @return the element or {@code null} if the receiver is not resolved
+   */
+  @Override
+  public CompilationUnitElement getAngularCompilationUnit() {
+    return angularCompilationUnit;
   }
 
   @Override
@@ -91,6 +113,13 @@ public class HtmlElementImpl extends ElementImpl implements HtmlElement {
   @Override
   public int hashCode() {
     return source.hashCode();
+  }
+
+  /**
+   * Set the {@link CompilationUnitElement} associated with this Angular HTML file.
+   */
+  public void setAngularCompilationUnit(CompilationUnitElement angularCompilationUnit) {
+    this.angularCompilationUnit = angularCompilationUnit;
   }
 
   /**

@@ -209,7 +209,6 @@ void FUNCTION_NAME(Process_Exit)(Dart_NativeArguments args) {
   DartUtils::GetInt64Value(Dart_GetNativeArgument(args, 0), &status);
   Dart_ExitIsolate();
   Dart_Cleanup();
-  Platform::Cleanup();
   exit(static_cast<int>(status));
 }
 
@@ -240,6 +239,23 @@ void FUNCTION_NAME(Process_Pid)(Dart_NativeArguments args) {
     Process::GetProcessIdNativeField(process, &pid);
   }
   Dart_SetReturnValue(args, Dart_NewInteger(pid));
+}
+
+
+void FUNCTION_NAME(Process_SetSignalHandler)(Dart_NativeArguments args) {
+  intptr_t signal = DartUtils::GetIntptrValue(Dart_GetNativeArgument(args, 0));
+  intptr_t id = Process::SetSignalHandler(signal);
+  if (id == -1) {
+    Dart_SetReturnValue(args, DartUtils::NewDartOSError());
+  } else {
+    Dart_SetReturnValue(args, Dart_NewInteger(id));
+  }
+}
+
+
+void FUNCTION_NAME(Process_ClearSignalHandler)(Dart_NativeArguments args) {
+  intptr_t signal = DartUtils::GetIntptrValue(Dart_GetNativeArgument(args, 0));
+  Process::ClearSignalHandler(signal);
 }
 
 

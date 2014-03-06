@@ -53,6 +53,10 @@ var french = {
   "thisNameIsNotInTheOriginal" : "Could this lead to something malicious?",
   "originalNotInBMP" : "Anciens caractères grecs jeux du pendu: 𐅆𐅇.",
   "escapable" : "Escapes: \n\r\f\b\t\v.",
+  "sameContentsDifferentName" : "Bonjour tout le monde",
+  "differentNameSameContents" : "Bonjour tout le monde",
+  "rentToBePaid" : "loyer",
+  "rentAsVerb" : "louer",
   "plurals" : writer.write(new Plural.from("num",
       [
         ["zero", "Est-ce que nulle est pluriel?"],
@@ -97,6 +101,11 @@ var french = {
         ['female', 'femme'],
         ['other', 'autre'],
       ], null)),
+  "pluralThatFailsParsing" : writer.write(new Plural.from("noOfThings",
+      [
+        ['one', '1 chose:'],
+        ['other', '\$noOfThings choses:']
+      ], null)),
   "nestedOuter" : writer.write ( new Plural.from("number",
       [
         ['other', new Gender.from("gen",
@@ -138,6 +147,10 @@ var german = {
   "staticMessage" : "Dies ergibt sich aus einer statischen Methode",
   "originalNotInBMP" : "Antike griechische Galgenmännchen Zeichen: 𐅆𐅇",
   "escapable" : "Escapes: \n\r\f\b\t\v.",
+  "sameContentsDifferentName" : "Hallo Welt",
+  "differentNameSameContents" : "Hallo Welt",
+  "rentToBePaid" : "Miete",
+  "rentAsVerb" : "mieten",
   "plurals" : writer.write(new Plural.from("num",
     [
       ["zero", "Ist Null Plural?"],
@@ -183,6 +196,11 @@ var german = {
         ['female', 'Frau'],
         ['other', 'andere'],
       ], null)),
+  "pluralThatFailsParsing" : writer.write(new Plural.from("noOfThings",
+      [
+        ['one', 'eins:'],
+        ['other', '\$noOfThings Dinge:']
+      ], null)),
   "nestedOuter" : writer.write (new Plural.from("number",
       [
         ['other', new Gender.from("gen",
@@ -225,7 +243,7 @@ void translate(List originals, String locale, Map translations) {
 
 main(List<String> args) {
   if (args.length == 0) {
-    print('Usage: generate_hardcoded_translation [--output-dir=<dir>] '
+    print('Usage: make_hardcoded_translation [--output-dir=<dir>] '
         '[originalFile.json]');
     exit(0);
   }

@@ -28,13 +28,16 @@ import com.google.dart.engine.ast.StringInterpolation;
 import com.google.dart.engine.ast.StringLiteral;
 import com.google.dart.engine.ast.UriBasedDirective;
 import com.google.dart.engine.context.AnalysisException;
+import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ExportElement;
+import com.google.dart.engine.element.FunctionElement;
 import com.google.dart.engine.element.ImportElement;
 import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.NamespaceCombinator;
 import com.google.dart.engine.error.AnalysisError;
 import com.google.dart.engine.error.AnalysisErrorListener;
 import com.google.dart.engine.error.CompileTimeErrorCode;
+import com.google.dart.engine.internal.builder.AngularCompilationUnitBuilder;
 import com.google.dart.engine.internal.constant.ConstantValueComputer;
 import com.google.dart.engine.internal.context.InternalAnalysisContext;
 import com.google.dart.engine.internal.context.PerformanceStatistics;
@@ -45,6 +48,8 @@ import com.google.dart.engine.internal.element.ImportElementImpl;
 import com.google.dart.engine.internal.element.LibraryElementImpl;
 import com.google.dart.engine.internal.element.PrefixElementImpl;
 import com.google.dart.engine.internal.element.ShowElementCombinatorImpl;
+import com.google.dart.engine.internal.scope.Namespace;
+import com.google.dart.engine.internal.scope.NamespaceBuilder;
 import com.google.dart.engine.sdk.DartSdk;
 import com.google.dart.engine.source.Source;
 import com.google.dart.engine.source.SourceKind;
@@ -163,7 +168,7 @@ public class LibraryResolver {
       //
       // Create the objects representing the library being resolved and the core library.
       //
-      Library targetLibrary = createLibrary(librarySource, modificationStamp, unit);
+      Library targetLibrary = createLibraryWithUnit(librarySource, modificationStamp, unit);
       coreLibrary = libraryMap.get(coreLibrarySource);
       if (coreLibrary == null) {
         // This will be true unless the library being analyzed is the core library.
@@ -173,7 +178,7 @@ public class LibraryResolver {
       //
       // Compute the set of libraries that need to be resolved together.
       //
-      computeLibraryDependencies(targetLibrary, unit);
+      computeEmbeddedLibraryDependencies(targetLibrary, unit);
       librariesInCycles = computeLibrariesInCycles(targetLibrary);
       //
       // Build the element models representing the libraries being resolved. This is done in three
@@ -498,6 +503,13 @@ public class LibraryResolver {
       LibraryElementImpl libraryElement = library.getLibraryElement();
       libraryElement.setImports(imports.toArray(new ImportElement[imports.size()]));
       libraryElement.setExports(exports.toArray(new ExportElement[exports.size()]));
+      if (libraryElement.getEntryPoint() == null) {
+        Namespace namespace = new NamespaceBuilder().createExportNamespaceForLibrary(libraryElement);
+        Element element = namespace.get(LibraryElementBuilder.ENTRY_POINT_NAME);
+        if (element instanceof FunctionElement) {
+          libraryElement.setEntryPoint((FunctionElement) element);
+        }
+      }
     }
   }
 
@@ -552,6 +564,37 @@ public class LibraryResolver {
   }
 
   /**
+   * Recursively traverse the libraries reachable from the given library, creating instances of the
+   * class {@link Library} to represent them, and record the references in the library objects.
+   * 
+   * @param library the library to be processed to find libraries that have not yet been traversed
+   * @throws AnalysisException if some portion of the library graph could not be traversed
+   */
+  private void computeEmbeddedLibraryDependencies(Library library, CompilationUnit unit)
+      throws AnalysisException {
+    Source librarySource = library.getLibrarySource();
+    HashSet<Source> exportedSources = new HashSet<Source>();
+    HashSet<Source> importedSources = new HashSet<Source>();
+    for (Directive directive : unit.getDirectives()) {
+      if (directive instanceof ExportDirective) {
+        Source exportSource = resolveSource(librarySource, (ExportDirective) directive);
+        if (exportSource != null) {
+          exportedSources.add(exportSource);
+        }
+      } else if (directive instanceof ImportDirective) {
+        Source importSource = resolveSource(librarySource, (ImportDirective) directive);
+        if (importSource != null) {
+          importedSources.add(importSource);
+        }
+      }
+    }
+    computeLibraryDependenciesFromDirectives(
+        library,
+        importedSources.toArray(new Source[importedSources.size()]),
+        exportedSources.toArray(new Source[exportedSources.size()]));
+  }
+
+  /**
    * Return a collection containing all of the libraries reachable from the given library that are
    * contained in a cycle that includes the given library.
    * 
@@ -575,41 +618,10 @@ public class LibraryResolver {
    */
   private void computeLibraryDependencies(Library library) throws AnalysisException {
     Source librarySource = library.getLibrarySource();
-    computeLibraryDependencies(
+    computeLibraryDependenciesFromDirectives(
         library,
         analysisContext.computeImportedLibraries(librarySource),
         analysisContext.computeExportedLibraries(librarySource));
-  }
-
-  /**
-   * Recursively traverse the libraries reachable from the given library, creating instances of the
-   * class {@link Library} to represent them, and record the references in the library objects.
-   * 
-   * @param library the library to be processed to find libraries that have not yet been traversed
-   * @throws AnalysisException if some portion of the library graph could not be traversed
-   */
-  private void computeLibraryDependencies(Library library, CompilationUnit unit)
-      throws AnalysisException {
-    Source librarySource = library.getLibrarySource();
-    HashSet<Source> exportedSources = new HashSet<Source>();
-    HashSet<Source> importedSources = new HashSet<Source>();
-    for (Directive directive : unit.getDirectives()) {
-      if (directive instanceof ExportDirective) {
-        Source exportSource = resolveSource(librarySource, (ExportDirective) directive);
-        if (exportSource != null) {
-          exportedSources.add(exportSource);
-        }
-      } else if (directive instanceof ImportDirective) {
-        Source importSource = resolveSource(librarySource, (ImportDirective) directive);
-        if (importSource != null) {
-          importedSources.add(importSource);
-        }
-      }
-    }
-    computeLibraryDependencies(
-        library,
-        importedSources.toArray(new Source[importedSources.size()]),
-        exportedSources.toArray(new Source[exportedSources.size()]));
   }
 
   /**
@@ -621,7 +633,7 @@ public class LibraryResolver {
    * @param exportedSources an array containing the sources that are exported from the given library
    * @throws AnalysisException if some portion of the library graph could not be traversed
    */
-  private void computeLibraryDependencies(Library library, Source[] importedSources,
+  private void computeLibraryDependenciesFromDirectives(Library library, Source[] importedSources,
       Source[] exportedSources) throws AnalysisException {
     ArrayList<Library> importedLibraries = new ArrayList<Library>();
     boolean explicitlyImportsCore = false;
@@ -679,7 +691,23 @@ public class LibraryResolver {
    */
   private Library createLibrary(Source librarySource) throws AnalysisException {
     Library library = new Library(analysisContext, errorListener, librarySource);
-    library.getDefiningCompilationUnit();
+    libraryMap.put(librarySource, library);
+    return library;
+  }
+
+  /**
+   * Create an object to represent the information about the library defined by the compilation unit
+   * with the given source. Return the library object that was created, or {@code null} if the
+   * source is not valid.
+   * 
+   * @param librarySource the source of the library's defining compilation unit
+   * @return the library object that was created
+   */
+  private Library createLibraryOrNull(Source librarySource) {
+    if (!analysisContext.exists(librarySource)) {
+      return null;
+    }
+    Library library = new Library(analysisContext, errorListener, librarySource);
     libraryMap.put(librarySource, library);
     return library;
   }
@@ -695,27 +723,10 @@ public class LibraryResolver {
    * @return the library object that was created
    * @throws AnalysisException if the library source is not valid
    */
-  private Library createLibrary(Source librarySource, long modificationStamp, CompilationUnit unit)
-      throws AnalysisException {
+  private Library createLibraryWithUnit(Source librarySource, long modificationStamp,
+      CompilationUnit unit) throws AnalysisException {
     Library library = new Library(analysisContext, errorListener, librarySource);
     library.setDefiningCompilationUnit(modificationStamp, unit);
-    libraryMap.put(librarySource, library);
-    return library;
-  }
-
-  /**
-   * Create an object to represent the information about the library defined by the compilation unit
-   * with the given source. Return the library object that was created, or {@code null} if the
-   * source is not valid.
-   * 
-   * @param librarySource the source of the library's defining compilation unit
-   * @return the library object that was created
-   */
-  private Library createLibraryOrNull(Source librarySource) {
-    if (!librarySource.exists()) {
-      return null;
-    }
-    Library library = new Library(analysisContext, errorListener, librarySource);
     libraryMap.put(librarySource, library);
     return library;
   }
@@ -742,7 +753,7 @@ public class LibraryResolver {
   private void performConstantEvaluation() {
     TimeCounterHandle timeCounter = PerformanceStatistics.resolve.start();
     try {
-      ConstantValueComputer computer = new ConstantValueComputer();
+      ConstantValueComputer computer = new ConstantValueComputer(typeProvider);
       for (Library library : librariesInCycles) {
         for (Source source : library.getCompilationUnitSources()) {
           try {
@@ -772,7 +783,7 @@ public class LibraryResolver {
    */
   private void resolveReferencesAndTypes() throws AnalysisException {
     for (Library library : librariesInCycles) {
-      resolveReferencesAndTypes(library);
+      resolveReferencesAndTypesInLibrary(library);
     }
   }
 
@@ -783,7 +794,7 @@ public class LibraryResolver {
    * @throws AnalysisException if any of the identifiers could not be resolved or if the types in
    *           the library cannot be analyzed
    */
-  private void resolveReferencesAndTypes(Library library) throws AnalysisException {
+  private void resolveReferencesAndTypesInLibrary(Library library) throws AnalysisException {
     TimeCounterHandle timeCounter = PerformanceStatistics.resolve.start();
     try {
       for (Source source : library.getCompilationUnitSources()) {
@@ -796,6 +807,16 @@ public class LibraryResolver {
             visitor.reportError(conditionalCode.getAnalysisError());
           }
         }
+      }
+    } finally {
+      timeCounter.stop();
+    }
+    // Angular
+    timeCounter = PerformanceStatistics.angular.start();
+    try {
+      for (Source source : library.getCompilationUnitSources()) {
+        CompilationUnit ast = library.getAST(source);
+        new AngularCompilationUnitBuilder(errorListener, source, ast).build();
       }
     } finally {
       timeCounter.stop();

@@ -13,7 +13,7 @@ import 'dart:io';
 
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/error.dart';
-import 'package:analyzer/src/generated/java_core.dart' show JavaSystem;
+import 'package:analyzer/src/generated/java_core.dart' show JavaSystem, instanceOfTimer;
 import 'package:analyzer/options.dart';
 
 import 'package:analyzer/src/analyzer_impl.dart';
@@ -33,15 +33,26 @@ void main(args) {
 
     if (options.perf) {
       int totalTime = JavaSystem.currentTimeMillis() - startTime;
-      print("scan:${PerformanceStatistics.scan.result}");
-      print("parse:${PerformanceStatistics.parse.result}");
-      print("resolve:${PerformanceStatistics.resolve.result}");
-      print("errors:${PerformanceStatistics.errors.result}");
-      print("hints:${PerformanceStatistics.hints.result}");
+      int ioTime = PerformanceStatistics.io.result;
+      int scanTime = PerformanceStatistics.scan.result;
+      int parseTime = PerformanceStatistics.parse.result;
+      int resolveTime = PerformanceStatistics.resolve.result;
+      int errorsTime = PerformanceStatistics.errors.result;
+      int hintsTime = PerformanceStatistics.hints.result;
+      int angularTime = PerformanceStatistics.angular.result;
+      print("io:$ioTime");
+      print("scan:$scanTime");
+      print("parse:$parseTime");
+      print("resolve:$resolveTime");
+      print("errors:$errorsTime");
+      print("hints:$hintsTime");
+      print("angular:$angularTime");
+      print("other:${totalTime
+        - (ioTime + scanTime + parseTime + resolveTime + errorsTime + hintsTime
+           + angularTime)}");
       print("total:$totalTime");
     }
-
-    exit(result.ordinal);
+    exitCode = result.ordinal;
   }
 }
 
@@ -84,7 +95,7 @@ class BatchRunner {
    * Run the tool in 'batch' mode, receiving command lines through stdin and returning pass/fail
    * status through stdout. This feature is intended for use in unit testing.
    */
-  static ErrorSeverity runAsBatch(List<String> sharedArgs, BatchRunnerHandler handler) {
+  static void runAsBatch(List<String> sharedArgs, BatchRunnerHandler handler) {
     stdout.writeln('>>> BATCH START');
     Stopwatch stopwatch = new Stopwatch();
     stopwatch.start();
@@ -100,7 +111,7 @@ class BatchRunner {
       if (line.isEmpty) {
         var time = stopwatch.elapsedMilliseconds;
         stdout.writeln('>>> BATCH END (${totalTests - testsFailed}/$totalTests) ${time}ms');
-        exit(batchResult.ordinal);
+        exitCode = batchResult.ordinal;
       }
       // prepare aruments
       var args;

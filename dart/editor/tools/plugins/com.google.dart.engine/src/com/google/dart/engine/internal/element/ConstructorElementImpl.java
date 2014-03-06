@@ -13,7 +13,9 @@
  */
 package com.google.dart.engine.internal.element;
 
+import com.google.dart.engine.ast.ConstructorDeclaration;
 import com.google.dart.engine.ast.Identifier;
+import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.element.ClassElement;
 import com.google.dart.engine.element.ConstructorElement;
 import com.google.dart.engine.element.ElementKind;
@@ -46,6 +48,17 @@ public class ConstructorElementImpl extends ExecutableElementImpl implements Con
     super(name);
   }
 
+  /**
+   * Initialize a newly created constructor element to have the given name.
+   * 
+   * @param name the name of this element
+   * @param nameOffset the offset of the name of this element in the file that contains the
+   *          declaration of this element
+   */
+  public ConstructorElementImpl(String name, int nameOffset) {
+    super(name, nameOffset);
+  }
+
   @Override
   public <R> R accept(ElementVisitor<R> visitor) {
     return visitor.visitConstructorElement(this);
@@ -59,6 +72,11 @@ public class ConstructorElementImpl extends ExecutableElementImpl implements Con
   @Override
   public ElementKind getKind() {
     return ElementKind.CONSTRUCTOR;
+  }
+
+  @Override
+  public ConstructorDeclaration getNode() throws AnalysisException {
+    return getNode(ConstructorDeclaration.class);
   }
 
   @Override

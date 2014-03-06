@@ -22,6 +22,7 @@ import com.google.dart.engine.internal.element.ExportElementImpl;
 import com.google.dart.engine.internal.element.FieldElementImpl;
 import com.google.dart.engine.internal.element.FieldFormalParameterElementImpl;
 import com.google.dart.engine.internal.element.FunctionElementImpl;
+import com.google.dart.engine.internal.element.HtmlElementImpl;
 import com.google.dart.engine.internal.element.ImportElementImpl;
 import com.google.dart.engine.internal.element.LibraryElementImpl;
 import com.google.dart.engine.internal.element.LocalVariableElementImpl;
@@ -40,8 +41,8 @@ import com.google.dart.engine.type.InterfaceType;
 import com.google.dart.engine.type.Type;
 import com.google.dart.engine.utilities.dart.ParameterKind;
 
-import static com.google.dart.engine.ast.ASTFactory.identifier;
-import static com.google.dart.engine.ast.ASTFactory.libraryIdentifier;
+import static com.google.dart.engine.ast.AstFactory.identifier;
+import static com.google.dart.engine.ast.AstFactory.libraryIdentifier;
 import static com.google.dart.engine.utilities.io.FileUtilities2.createFile;
 
 /**
@@ -82,6 +83,13 @@ public final class ElementFactory {
 
   public static ClassElementImpl classElement(String typeName, String... parameterNames) {
     return classElement(typeName, getObject().getType(), parameterNames);
+  }
+
+  public static CompilationUnitElementImpl compilationUnit(String fileName) {
+    FileBasedSource source = new FileBasedSource(createFile(fileName));
+    CompilationUnitElementImpl unit = new CompilationUnitElementImpl(fileName);
+    unit.setSource(source);
+    return unit;
   }
 
   public static ConstructorElementImpl constructorElement(ClassElement definingClass, String name,
@@ -280,6 +288,13 @@ public final class ElementFactory {
     return getter;
   }
 
+  public static HtmlElementImpl htmlUnit(AnalysisContext context, String fileName) {
+    FileBasedSource source = new FileBasedSource(createFile(fileName));
+    HtmlElementImpl unit = new HtmlElementImpl(context, fileName);
+    unit.setSource(source);
+    return unit;
+  }
+
   public static ImportElementImpl importFor(LibraryElement importedLibrary, PrefixElement prefix,
       NamespaceCombinator... combinators) {
     ImportElementImpl spec = new ImportElementImpl(0);
@@ -291,11 +306,7 @@ public final class ElementFactory {
 
   public static LibraryElementImpl library(AnalysisContext context, String libraryName) {
     String fileName = "/" + libraryName + ".dart";
-    FileBasedSource source = new FileBasedSource(
-        context.getSourceFactory().getContentCache(),
-        createFile(fileName));
-    CompilationUnitElementImpl unit = new CompilationUnitElementImpl(fileName);
-    unit.setSource(source);
+    CompilationUnitElementImpl unit = compilationUnit(fileName);
     LibraryElementImpl library = new LibraryElementImpl(context, libraryIdentifier(libraryName));
     library.setDefiningCompilationUnit(unit);
     return library;

@@ -78,6 +78,7 @@ _removed_html_interfaces = [
   'DataView', # Typed arrays
   'DirectoryEntrySync', # Workers
   'DirectoryReaderSync', # Workers
+  'DocumentType',
   'EntrySync', # Workers
   'FileEntrySync', # Workers
   'FileReaderSync', # Workers
@@ -128,6 +129,7 @@ _removed_html_interfaces = [
   'WebKitCSSMixFunctionValue',
   'WebKitCSSTransformValue',
   'WebKitMediaSource',
+  'WebKitNotification',
   'WebKitSourceBuffer',
   'WebKitSourceBufferList',
   'WorkerLocation', # Workers
@@ -603,6 +605,7 @@ removed_html_members = monitored.Set('htmlrenamer.removed_html_members', [
     '=Event.returnValue', # Only suppress on Event, allow for BeforeUnloadEvnt.
     'Event.srcElement',
     'EventSource.URL',
+    'FontFace.ready',
     'FontFaceSet.load',
     'FontFaceSet.ready',
     'HTMLAnchorElement.charset',
@@ -625,6 +628,7 @@ removed_html_members = monitored.Set('htmlrenamer.removed_html_members', [
     'HTMLDirectoryElement.*',
     'HTMLDivElement.align',
     'HTMLFontElement.*',
+    'HTMLFormControlsCollection.__getter__',
     'HTMLFormElement.get:elements',
     'HTMLFrameElement.*',
     'HTMLFrameSetElement.*',
@@ -751,6 +755,7 @@ removed_html_members = monitored.Set('htmlrenamer.removed_html_members', [
     'SVGElementInstance.on:wheel',
     'WheelEvent.wheelDelta',
     'Window.on:wheel',
+    'WindowEventHandlers.on:beforeUnload',
     'WorkerGlobalScope.webkitIndexedDB',
 # TODO(jacobr): should these be removed?
     'Document.close',
@@ -813,7 +818,7 @@ class HtmlRenamer(object):
     if self.ShouldSuppressMember(interface, member, member_prefix):
       return None
 
-    if 'CheckSecurityForNode' in member_node.ext_attrs:
+    if 'CheckSecurity' in member_node.ext_attrs:
       return None
 
     name = self._FindMatch(interface, member, member_prefix,

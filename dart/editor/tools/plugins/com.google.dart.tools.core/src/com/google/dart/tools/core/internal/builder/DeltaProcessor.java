@@ -92,7 +92,7 @@ public class DeltaProcessor {
       if (source == null) {
         File file = getResourceFile();
         if (file != null) {
-          source = new FileBasedSource(context.getSourceFactory().getContentCache(), file);
+          source = new FileBasedSource(file);
         } else {
           logNoLocation(getResource());
         }
@@ -317,10 +317,13 @@ public class DeltaProcessor {
 
         // Process "packages" folder changes separately
         if (name.equals(PACKAGES_DIRECTORY_NAME)) {
-          if (setContextFor(resource.getParent())) {
-            processPackagesDelta(delta);
+          boolean hasNewContext = setContextFor(resource.getParent());
+          if (pubFolder != null) {
+            if (hasNewContext) {
+              processPackagesDelta(delta);
+            }
+            return false;
           }
-          return false;
         }
 
         // Process folder changes

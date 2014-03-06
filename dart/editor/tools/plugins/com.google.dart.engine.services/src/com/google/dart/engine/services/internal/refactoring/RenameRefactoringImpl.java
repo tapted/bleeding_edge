@@ -22,6 +22,7 @@ import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ImportElement;
 import com.google.dart.engine.element.LocalElement;
 import com.google.dart.engine.element.PrefixElement;
+import com.google.dart.engine.internal.context.InstrumentedAnalysisContextImpl;
 import com.google.dart.engine.search.MatchKind;
 import com.google.dart.engine.search.SearchEngine;
 import com.google.dart.engine.search.SearchMatch;
@@ -31,7 +32,6 @@ import com.google.dart.engine.services.internal.correction.CorrectionUtils;
 import com.google.dart.engine.services.refactoring.ProgressMonitor;
 import com.google.dart.engine.services.refactoring.RenameRefactoring;
 import com.google.dart.engine.services.status.RefactoringStatus;
-import com.google.dart.engine.services.util.ElementUtils;
 import com.google.dart.engine.source.Source;
 import com.google.dart.engine.utilities.source.SourceRange;
 
@@ -94,12 +94,29 @@ public abstract class RenameRefactoringImpl extends RefactoringImpl implements R
   }
 
   /**
+   * Check if the given {@link Element} is in the given {@link AnalysisContext}.
+   */
+  protected static boolean isInContext(Element element, AnalysisContext context) {
+    AnalysisContext elementContext = element.getContext();
+    if (elementContext != context) {
+      if (context instanceof InstrumentedAnalysisContextImpl) {
+        if (elementContext != ((InstrumentedAnalysisContextImpl) context).getBasis()) {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
    * Check if the given {@link Element} is visible in the given {@link Source}.
    */
   protected static boolean isInTheSameLibrary(Element element, AnalysisContext context,
       Source source) {
     // should be the same AnalysisContext
-    if (element.getContext() != context) {
+    if (!isInContext(element, context)) {
       return false;
     }
     // private elements are visible only in their library
@@ -114,11 +131,11 @@ public abstract class RenameRefactoringImpl extends RefactoringImpl implements R
   protected static boolean isPublicOrInTheSameLibrary(Element element, AnalysisContext context,
       Source source) {
     // should be the same AnalysisContext
-    if (element.getContext() != context) {
+    if (!isInContext(element, context)) {
       return false;
     }
     // public elements are always visible
-    if (ElementUtils.isPublic(element)) {
+    if (element.isPublic()) {
       return true;
     }
     // private elements are visible only in their library
@@ -152,6 +169,7 @@ public abstract class RenameRefactoringImpl extends RefactoringImpl implements R
 
   protected final SearchEngine searchEngine;
   protected final Element element;
+  protected final AnalysisContext context;
   protected final String oldName;
 
   protected String newName;
@@ -159,6 +177,7 @@ public abstract class RenameRefactoringImpl extends RefactoringImpl implements R
   public RenameRefactoringImpl(SearchEngine searchEngine, Element element) {
     this.searchEngine = searchEngine;
     this.element = element;
+    this.context = element.getContext();
     this.oldName = getDisplayName(element);
   }
 
@@ -209,7 +228,7 @@ public abstract class RenameRefactoringImpl extends RefactoringImpl implements R
    */
   protected final void addEdit(SourceChange sourceChange, String description, Edit edit)
       throws Exception {
-    CorrectionUtils.addEdit(sourceChange, description, oldName, edit);
+    CorrectionUtils.addEdit(context, sourceChange, description, oldName, edit);
   }
 
   /**

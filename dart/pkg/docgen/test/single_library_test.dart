@@ -6,6 +6,8 @@ import 'package:path/path.dart' as path;
 import 'package:unittest/unittest.dart';
 
 import '../lib/docgen.dart';
+import '../../../sdk/lib/_internal/compiler/implementation/mirrors/mirrors_util.dart'
+    as dart2js_util;
 
 const String DART_LIBRARY = '''
   library test;
@@ -46,37 +48,32 @@ main() {
       var fileName = path.join(temporaryDir.path, 'temp.dart');
       var file = new File(fileName);
       file.writeAsStringSync(DART_LIBRARY);
-      getMirrorSystem([new Uri.file(fileName)])
-        .then(expectAsync1((mirrorSystem) {
-          var testLibraryUri = new Uri(scheme: 'file',
-              path: path.absolute(fileName));
-          var library = generateLibrary(mirrorSystem.libraries[testLibraryUri]);
+
+      return getMirrorSystem([new Uri.file(fileName)])
+        .then((mirrorSystem) {
+          var testLibraryUri = new Uri.file(path.absolute(fileName),
+                                            windows: Platform.isWindows);
+          var library = new Library(mirrorSystem.libraries[testLibraryUri]);
           expect(library is Library, isTrue);
 
           var classTypes = library.classes;
-          expect(classTypes is ClassGroup, isTrue);
-
           var classes = [];
-          classes.addAll(classTypes.classes.values);
-          classes.addAll(classTypes.errors.values);
+          classes.addAll(classTypes.values);
+          classes.addAll(library.errors.values);
           expect(classes.every((e) => e is Class), isTrue);
 
-          expect(classTypes.typedefs.values.every((e) => e is Typedef), isTrue);
+          expect(library.typedefs.values.every((e) => e is Typedef), isTrue);
 
           var classMethodTypes = [];
           classes.forEach((e) {
             classMethodTypes.add(e.methods);
             classMethodTypes.add(e.inheritedMethods);
           });
-          expect(classMethodTypes.every((e) => e is MethodGroup), isTrue);
+          expect(classMethodTypes.every((e) => e is Map<String, Method>), isTrue);
 
           var classMethods = [];
           classMethodTypes.forEach((e) {
-            classMethods.addAll(e.setters.values);
-            classMethods.addAll(e.getters.values);
-            classMethods.addAll(e.constructors.values);
-            classMethods.addAll(e.operators.values);
-            classMethods.addAll(e.regularMethods.values);
+            classMethods.addAll(e.values);
           });
           expect(classMethods.every((e) => e is Method), isTrue);
 
@@ -87,14 +84,10 @@ main() {
           expect(methodParameters.every((e) => e is Parameter), isTrue);
 
           var functionTypes = library.functions;
-          expect(functionTypes is MethodGroup, isTrue);
+          expect(functionTypes is Map<String, Method>, isTrue);
 
           var functions = [];
-          functions.addAll(functionTypes.setters.values);
-          functions.addAll(functionTypes.getters.values);
-          functions.addAll(functionTypes.constructors.values);
-          functions.addAll(functionTypes.operators.values);
-          functions.addAll(functionTypes.regularMethods.values);
+          functions.addAll(functionTypes.values);
           expect(functions.every((e) => e is Method), isTrue);
 
           var functionParameters = [];
@@ -109,28 +102,27 @@ main() {
           /// Testing fixReference
           // Testing Doc comment for class [A].
           var libraryMirror = mirrorSystem.libraries[testLibraryUri];
-          var classMirror = libraryMirror.classes.values.first;
-          var classDocComment = fixReference('A', libraryMirror,
-              classMirror, null).children.first.text;
-          expect(classDocComment == 'test.A', isTrue);
+          var classMirror =
+              dart2js_util.classesOf(libraryMirror.declarations).first;
+          var classDocComment = library.fixReference('A').children.first.text;
+          expect(classDocComment, 'test.A');
 
           // Test for linking to parameter [A]
-          var methodMirror = classMirror.methods['doThis'];
-          var methodParameterDocComment = fixReference('A', libraryMirror,
-              classMirror, methodMirror).children.first.text;
-          // TODO(alanknight) : We're not supporting linking to parameters yet
-          // expect(methodParameterDocComment == 'test.A.doThis#A', isTrue);
+          var method = Indexable.getDocgenObject(
+              classMirror.declarations[dart2js_util.symbolOf('doThis')]);
+          var methodParameterDocComment = method.fixReference(
+              'A').children.first.text;
+          expect(methodParameterDocComment, 'test.A.doThis.A');
 
           // Testing trying to refer to doThis function
-          var methodDocComment = fixReference('doThis', libraryMirror,
-              classMirror, methodMirror).children.first.text;
-          expect(methodDocComment == 'test.A.doThis', isTrue);
+          var methodDocComment = method.fixReference(
+              'doThis').children.first.text;
+          expect(methodDocComment, 'test.A.doThis');
 
           // Testing something with no reference
-          var libraryDocComment = fixReference('foobar', libraryMirror,
-              classMirror, methodMirror).text;
-          expect(libraryDocComment == 'foobar', isTrue);
-        })).whenComplete(() => temporaryDir.deleteSync(recursive: true));
+          var libraryDocComment = method.fixReference('foobar').text;
+          expect(libraryDocComment, 'foobar');
+        }).whenComplete(() => temporaryDir.deleteSync(recursive: true));
     });
   });
 }

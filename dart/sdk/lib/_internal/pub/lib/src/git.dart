@@ -6,6 +6,8 @@
 library pub.git;
 
 import 'dart:async';
+import 'dart:io';
+
 import 'io.dart';
 import 'log.dart' as log;
 
@@ -67,8 +69,13 @@ Future<bool> _tryGitCommand(String command) {
   return runProcess(command, ["--version"]).then((results) {
     var regexp = new RegExp("^git version");
     return results.stdout.length == 1 && regexp.hasMatch(results.stdout[0]);
-  }).catchError((err) {
+  }).catchError((err, stackTrace) {
     // If the process failed, they probably don't have it.
-    return false;
+    if (err is ProcessException) {
+      log.io('Git command is not "$command": $err\n$stackTrace');
+      return false;
+    }
+
+    throw err;
   });
 }

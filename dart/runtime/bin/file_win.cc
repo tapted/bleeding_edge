@@ -37,19 +37,23 @@ class FileHandle {
 
 
 File::~File() {
-  // Close the file (unless it's a standard stream).
-  if (handle_->fd() > 2) {
-    Close();
-  }
+  Close();
   delete handle_;
 }
 
 
 void File::Close() {
   ASSERT(handle_->fd() >= 0);
-  int err = close(handle_->fd());
-  if (err != 0) {
-    Log::PrintErr("%s\n", strerror(errno));
+  if (handle_->fd() == _fileno(stdout)) {
+    int fd = _open("NUL", _O_WRONLY);
+    ASSERT(fd >= 0);
+    _dup2(fd, handle_->fd());
+    close(fd);
+  } else {
+    int err = close(handle_->fd());
+    if (err != 0) {
+      Log::PrintErr("%s\n", strerror(errno));
+    }
   }
   handle_->set_fd(kClosedFd);
 }
@@ -72,19 +76,19 @@ int64_t File::Write(const void* buffer, int64_t num_bytes) {
 }
 
 
-off64_t File::Position() {
+int64_t File::Position() {
   ASSERT(handle_->fd() >= 0);
   return _lseeki64(handle_->fd(), 0, SEEK_CUR);
 }
 
 
-bool File::SetPosition(off64_t position) {
+bool File::SetPosition(int64_t position) {
   ASSERT(handle_->fd() >= 0);
   return _lseeki64(handle_->fd(), position, SEEK_SET) >= 0;
 }
 
 
-bool File::Truncate(off64_t length) {
+bool File::Truncate(int64_t length) {
   ASSERT(handle_->fd() >= 0);
   return _chsize_s(handle_->fd(), length) == 0;
 }
@@ -96,7 +100,7 @@ bool File::Flush() {
 }
 
 
-off64_t File::Length() {
+int64_t File::Length() {
   ASSERT(handle_->fd() >= 0);
   struct __stat64 st;
   if (_fstat64(handle_->fd(), &st) == 0) {
@@ -121,7 +125,7 @@ File* File::Open(const char* name, FileOpenMode mode) {
     return NULL;
   }
   if (((mode & kWrite) != 0) && ((mode & kTruncate) == 0)) {
-    off64_t position = _lseeki64(fd, 0, SEEK_END);
+    int64_t position = _lseeki64(fd, 0, SEEK_END);
     if (position < 0) {
       return NULL;
     }
@@ -131,8 +135,17 @@ File* File::Open(const char* name, FileOpenMode mode) {
 
 
 File* File::OpenStdio(int fd) {
-  UNREACHABLE();
-  return NULL;
+  switch (fd) {
+    case 1:
+      fd = _fileno(stdout);
+      break;
+    case 2:
+      fd = _fileno(stderr);
+      break;
+    default:
+      UNREACHABLE();
+  }
+  return new File(new FileHandle(fd));
 }
 
 
@@ -343,7 +356,7 @@ bool File::Copy(const char* old_path, const char* new_path) {
 }
 
 
-off64_t File::LengthFromPath(const char* name) {
+int64_t File::LengthFromPath(const char* name) {
   struct __stat64 st;
   const wchar_t* system_name = StringUtils::Utf8ToWide(name);
   int stat_status = _wstat64(system_name, &st);
@@ -455,6 +468,7 @@ void File::Stat(const char* name, int64_t* data) {
     struct _stat64 st;
     const wchar_t* system_name = StringUtils::Utf8ToWide(name);
     int stat_status = _wstat64(system_name, &st);
+    free(const_cast<wchar_t*>(system_name));
     if (stat_status == 0) {
       data[kCreatedTime] = st.st_ctime;
       data[kModifiedTime] = st.st_mtime;

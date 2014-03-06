@@ -5,6 +5,7 @@
 #include "vm/dart.h"
 
 #include "vm/code_observers.h"
+#include "vm/cpu.h"
 #include "vm/dart_api_state.h"
 #include "vm/dart_entry.h"
 #include "vm/flags.h"
@@ -17,6 +18,7 @@
 #include "vm/object_id_ring.h"
 #include "vm/port.h"
 #include "vm/profiler.h"
+#include "vm/service.h"
 #include "vm/simulator.h"
 #include "vm/snapshot.h"
 #include "vm/stub_code.h"
@@ -28,8 +30,6 @@
 
 namespace dart {
 
-DEFINE_FLAG(bool, heap_profile_initialize, false,
-            "Writes a heap profile on isolate initialization.");
 DECLARE_FLAG(bool, print_class_table);
 DECLARE_FLAG(bool, trace_isolates);
 
@@ -84,7 +84,8 @@ const char* Dart::InitOnce(Dart_IsolateCreateCallback create,
                            Dart_FileReadCallback file_read,
                            Dart_FileWriteCallback file_write,
                            Dart_FileCloseCallback file_close,
-                           Dart_EntropySource entropy_source) {
+                           Dart_EntropySource entropy_source,
+                           Dart_ServiceIsolateCreateCalback service_create) {
   // TODO(iposva): Fix race condition here.
   if (vm_isolate_ != NULL || !Flags::Initialized()) {
     return "VM already initialized.";
@@ -98,6 +99,7 @@ const char* Dart::InitOnce(Dart_IsolateCreateCallback create,
   FreeListElement::InitOnce();
   Api::InitOnce();
   CodeObservers::InitOnce();
+  ThreadInterrupter::InitOnce();
   Profiler::InitOnce();
 #if defined(USING_SIMULATOR)
   Simulator::InitOnce();
@@ -122,14 +124,15 @@ const char* Dart::InitOnce(Dart_IsolateCreateCallback create,
     Symbols::InitOnce(vm_isolate_);
     Scanner::InitOnce();
     Object::CreateInternalMetaData();
-    CPUFeatures::InitOnce();
+    TargetCPUFeatures::InitOnce();
 #if defined(TARGET_ARCH_IA32) || defined(TARGET_ARCH_X64)
     // Dart VM requires at least SSE2.
-    if (!CPUFeatures::sse2_supported()) {
+    if (!TargetCPUFeatures::sse2_supported()) {
       return "SSE2 is required.";
     }
 #endif
     PremarkingVisitor premarker(vm_isolate_);
+    vm_isolate_->heap()->WriteProtect(false);
     vm_isolate_->heap()->IterateOldObjects(&premarker);
     vm_isolate_->heap()->WriteProtect(true);
   }
@@ -141,6 +144,7 @@ const char* Dart::InitOnce(Dart_IsolateCreateCallback create,
 
   Isolate::SetCurrent(NULL);  // Unregister the VM isolate from this thread.
   Isolate::SetCreateCallback(create);
+  Isolate::SetServiceCreateCallback(service_create);
   Isolate::SetInterruptCallback(interrupt);
   Isolate::SetUnhandledExceptionCallback(unhandled);
   Isolate::SetShutdownCallback(shutdown);
@@ -175,6 +179,7 @@ const char* Dart::Cleanup() {
 
   Profiler::Shutdown();
   CodeObservers::DeleteAll();
+  TargetCPUFeatures::Cleanup();
 
   return NULL;
 }
@@ -213,7 +218,7 @@ RawError* Dart::InitializeIsolate(const uint8_t* snapshot_buffer, void* data) {
     const Snapshot* snapshot = Snapshot::SetupFromBuffer(snapshot_buffer);
     ASSERT(snapshot->kind() == Snapshot::kFull);
     if (FLAG_trace_isolates) {
-      OS::Print("Size of isolate snapshot = %d\n", snapshot->length());
+      OS::Print("Size of isolate snapshot = %" Pd64 "\n", snapshot->length());
     }
     SnapshotReader reader(snapshot->content(), snapshot->length(),
                           Snapshot::kFull, isolate);
@@ -222,10 +227,6 @@ RawError* Dart::InitializeIsolate(const uint8_t* snapshot_buffer, void* data) {
       isolate->heap()->PrintSizes();
       isolate->megamorphic_cache_table()->PrintSizes();
     }
-  }
-
-  if (FLAG_heap_profile_initialize) {
-    isolate->heap()->ProfileToFile("initialize");
   }
 
   Object::VerifyBuiltinVtables();
@@ -244,6 +245,7 @@ RawError* Dart::InitializeIsolate(const uint8_t* snapshot_buffer, void* data) {
   if (FLAG_print_class_table) {
     isolate->class_table()->Print();
   }
+  Service::SendIsolateStartupMessage();
   return Error::null();
 }
 
@@ -252,6 +254,7 @@ void Dart::RunShutdownCallback() {
   Isolate* isolate = Isolate::Current();
   void* callback_data = isolate->init_callback_data();
   Dart_IsolateShutdownCallback callback = Isolate::ShutdownCallback();
+  Service::SendIsolateShutdownMessage();
   if (callback != NULL) {
     (callback)(callback_data);
   }

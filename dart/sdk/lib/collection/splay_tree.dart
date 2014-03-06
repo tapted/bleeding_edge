@@ -237,7 +237,7 @@ class _TypeTest<T> {
   bool test(v) => v is T;
 }
 
-/*
+/**
  * A [Map] of objects that can be ordered relative to each other.
  *
  * The map is based on a self-balancing binary tree. It allows most operations
@@ -428,7 +428,7 @@ class SplayTreeMap<K, V> extends _SplayTree<K> implements Map<K, V> {
   }
 
   /**
-   * Get the first key in the map. Returns [null] if the map is empty.
+   * Get the first key in the map. Returns [:null:] if the map is empty.
    */
   K firstKey() {
     if (_root == null) return null;
@@ -436,7 +436,7 @@ class SplayTreeMap<K, V> extends _SplayTree<K> implements Map<K, V> {
   }
 
   /**
-   * Get the last key in the map. Returns [null] if the map is empty.
+   * Get the last key in the map. Returns [:null:] if the map is empty.
    */
   K lastKey() {
     if (_root == null) return null;
@@ -445,7 +445,7 @@ class SplayTreeMap<K, V> extends _SplayTree<K> implements Map<K, V> {
 
   /**
    * Get the last key in the map that is strictly smaller than [key]. Returns
-   * [null] if no key was not found.
+   * [:null:] if no key was not found.
    */
   K lastKeyBefore(K key) {
     if (key == null) throw new ArgumentError(key);
@@ -462,7 +462,7 @@ class SplayTreeMap<K, V> extends _SplayTree<K> implements Map<K, V> {
 
   /**
    * Get the first key in the map that is strictly larger than [key]. Returns
-   * [null] if no key was not found.
+   * [:null:] if no key was not found.
    */
   K firstKeyAfter(K key) {
     if (key == null) throw new ArgumentError(key);
@@ -525,16 +525,17 @@ abstract class _SplayTreeIterator<T> implements Iterator<T> {
         _modificationCount = tree._modificationCount {
     int compare = tree._splay(startKey);
     _splayCount = tree._splayCount;
-    _findLeftMostDescendent(compare < 0 ? tree._root.right : tree._root);
+    if (compare < 0) {
+      // Don't include the root, start at the next element after the root.
+      _findLeftMostDescendent(tree._root.right);
+    } else {
+      _workList.add(tree._root);
+    }
   }
 
   T get current {
     if (_currentNode == null) return null;
     return _getValue(_currentNode);
-  }
-
-  _SplayTreeNode _findStartNode(T key) {
-
   }
 
   void _findLeftMostDescendent(_SplayTreeNode node) {
@@ -625,10 +626,47 @@ class _SplayTreeNodeIterator<K>
 }
 
 
+/**
+ * A [Set] of objects that can be ordered relative to each other.
+ *
+ * The set is based on a self-balancing binary tree. It allows most operations
+ * in amortized logarithmic time.
+ *
+ * Elements of the set are compared using the `compare` function passed in
+ * the constructor. If that is omitted, the objects are assumed to be
+ * [Comparable], and are compared using their [Comparable.compareTo]
+ * method. Non-comparable objects (including `null`) will not work as an element
+ * in that case.
+ */
 class SplayTreeSet<E> extends _SplayTree<E> with IterableMixin<E>
                       implements Set<E> {
   Comparator _comparator;
   _Predicate _validKey;
+
+  /**
+   * Create a new [SplayTreeSet] with the given compare function.
+   *
+   * If the [compare] function is omitted, it defaults to [Comparable.compare],
+   * and the elements must be comparable.
+   *
+   * A provided `compare` function may not work on all objects. It may not even
+   * work on all `E` instances.
+   *
+   * For operations that add elements to the set, the user is supposed to not
+   * pass in objects that doesn't work with the compare function.
+   *
+   * The methods [contains], [remove], [lookup], [removeAll] or [retainAll]
+   * are typed to accept any object(s), and the [isValidKey] test can used to
+   * filter those objects before handing them to the `compare` function.
+   *
+   * If [isValidKey] is provided, only values satisfying `isValidKey(other)`
+   * are compared using the `compare` method in the methods mentioned above.
+   * If the `isValidKey` function returns false for an object, it is assumed to
+   * not be in the set.
+   *
+   * If omitted, the `isValidKey` function defaults to checking against the
+   * type parameter: `other is E`.
+   */
   SplayTreeSet([int compare(E key1, E key2), bool isValidKey(potentialKey)])
       : _comparator = (compare == null) ? Comparable.compare : compare,
         _validKey = (isValidKey != null) ? isValidKey : ((v) => v is E);
@@ -685,7 +723,7 @@ class SplayTreeSet<E> extends _SplayTree<E> with IterableMixin<E>
     }
   }
 
-  void removeAll(Iterable elements) {
+  void removeAll(Iterable<Object> elements) {
     for (Object element in elements) {
       if (_validKey(element)) _remove(element);
     }
@@ -703,7 +741,8 @@ class SplayTreeSet<E> extends _SplayTree<E> with IterableMixin<E>
         // The iterator should not have side effects.
         throw new ConcurrentModificationError(this);
       }
-      if (this.contains(object)) retainSet.add(object);
+      // Equivalent to this.contains(object).
+      if (_validKey(object) && _splay(object) == 0) retainSet.add(_root.key);
     }
     // Take over the elements from the retained set, if it differs.
     if (retainSet._count != _count) {
@@ -745,7 +784,7 @@ class SplayTreeSet<E> extends _SplayTree<E> with IterableMixin<E>
   }
 
   Set<E> intersection(Set<E> other) {
-    Set<E> result = new SplayTreeSet<E>();
+    Set<E> result = new SplayTreeSet<E>(_compare, _validKey);
     for (E element in this) {
       if (other.contains(element)) result.add(element);
     }
@@ -753,7 +792,7 @@ class SplayTreeSet<E> extends _SplayTree<E> with IterableMixin<E>
   }
 
   Set<E> difference(Set<E> other) {
-    Set<E> result = new SplayTreeSet<E>();
+    Set<E> result = new SplayTreeSet<E>(_compare, _validKey);
     for (E element in this) {
       if (!other.contains(element)) result.add(element);
     }
@@ -765,7 +804,7 @@ class SplayTreeSet<E> extends _SplayTree<E> with IterableMixin<E>
   }
 
   SplayTreeSet<E> _clone() {
-    var set = new SplayTreeSet<E>();
+    var set = new SplayTreeSet<E>(_compare, _validKey);
     set._count = _count;
     set._root = _cloneNode(_root);
     return set;
@@ -777,7 +816,7 @@ class SplayTreeSet<E> extends _SplayTree<E> with IterableMixin<E>
                                           ..right = _cloneNode(node.right);
   }
 
-  bool containsAll(Iterable other) {
+  bool containsAll(Iterable<Object> other) {
     for (var element in other) {
       if (!this.contains(element)) return false;
     }

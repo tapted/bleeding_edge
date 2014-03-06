@@ -15,7 +15,9 @@
 package com.google.dart.tools.ui.internal.text.editor;
 
 import com.google.common.collect.Lists;
-import com.google.dart.engine.ast.ASTNode;
+import com.google.dart.engine.ast.AstNode;
+import com.google.dart.engine.ast.AssignmentExpression;
+import com.google.dart.engine.ast.BinaryExpression;
 import com.google.dart.engine.ast.ClassDeclaration;
 import com.google.dart.engine.ast.ClassMember;
 import com.google.dart.engine.ast.CompilationUnit;
@@ -26,11 +28,15 @@ import com.google.dart.engine.ast.FormalParameterList;
 import com.google.dart.engine.ast.FunctionDeclaration;
 import com.google.dart.engine.ast.FunctionExpression;
 import com.google.dart.engine.ast.FunctionTypeAlias;
+import com.google.dart.engine.ast.InstanceCreationExpression;
 import com.google.dart.engine.ast.MethodDeclaration;
+import com.google.dart.engine.ast.MethodInvocation;
 import com.google.dart.engine.ast.SimpleIdentifier;
 import com.google.dart.engine.ast.TopLevelVariableDeclaration;
 import com.google.dart.engine.ast.TypeName;
 import com.google.dart.engine.ast.VariableDeclaration;
+import com.google.dart.engine.ast.VariableDeclarationStatement;
+import com.google.dart.engine.ast.visitor.RecursiveAstVisitor;
 import com.google.dart.engine.element.Element;
 import com.google.dart.tools.ui.DartElementImageDescriptor;
 import com.google.dart.tools.ui.DartPluginImages;
@@ -62,14 +68,38 @@ public class LightNodeElements {
    * {@link ViewerComparator} for {@link LightNodeElement} names.
    */
   public static class NameComparator extends ViewerComparator {
+    private static final int NOT_ELEMENT = 2;
+    private static final int PRIVATE_ELEMENT = 1;
+    private static final int PUBLIC_ELEMENT = 0;
+
+    @Override
+    public int category(Object e) {
+      if (!(e instanceof LightNodeElement)) {
+        return NOT_ELEMENT;
+      }
+      LightNodeElement element = (LightNodeElement) e;
+      if (element.isPrivate()) {
+        return PRIVATE_ELEMENT;
+      }
+      return PUBLIC_ELEMENT;
+    }
+
     @Override
     public int compare(Viewer viewer, Object e1, Object e2) {
+      // compare categories
+      int cat1 = category(e1);
+      int cat2 = category(e2);
+      if (cat1 != cat2) {
+        return cat1 - cat2;
+      }
+      // check types
       if (!(e1 instanceof LightNodeElement)) {
         return 0;
       }
       if (!(e2 instanceof LightNodeElement)) {
         return 0;
       }
+      // compare names
       String name1 = ((LightNodeElement) e1).getName();
       String name2 = ((LightNodeElement) e2).getName();
       if (name1 == null || name2 == null) {
@@ -168,7 +198,7 @@ public class LightNodeElements {
     private static final Point SIZE = new Point(22, 16);
     private static final ImageDescriptorRegistry registry = DartToolsPlugin.getImageDescriptorRegistry();
 
-    private static ImageDescriptor getBaseImageDescriptor(ASTNode node, boolean isPrivate) {
+    private static ImageDescriptor getBaseImageDescriptor(AstNode node, boolean isPrivate) {
       if (node instanceof ClassDeclaration) {
         return isPrivate ? DartPluginImages.DESC_DART_CLASS_PRIVATE
             : DartPluginImages.DESC_DART_CLASS_PUBLIC;
@@ -189,7 +219,7 @@ public class LightNodeElements {
       return null;
     }
 
-    private static ImageDescriptor getImageDescriptor(ASTNode node, boolean isPrivate) {
+    private static ImageDescriptor getImageDescriptor(AstNode node, boolean isPrivate) {
       ImageDescriptor base = getBaseImageDescriptor(node, isPrivate);
       if (base == null) {
         return null;
@@ -230,7 +260,7 @@ public class LightNodeElements {
     public Image getImage(Object o) {
       LightNodeElement element = (LightNodeElement) o;
       boolean isPrivate = element.isPrivate();;
-      ASTNode node = element.getNode();
+      AstNode node = element.getNode();
       ImageDescriptor descriptor = getImageDescriptor(node, isPrivate);
       if (descriptor != null) {
         return registry.get(descriptor);
@@ -243,7 +273,7 @@ public class LightNodeElements {
       StyledString styledString = new StyledString(getText(obj));
       // prepare object elements
       LightNodeElement lightElement = (LightNodeElement) obj;
-      ASTNode node = lightElement.getNode();
+      AstNode node = lightElement.getNode();
       // prepare parameters
       FormalParameterList parameters = null;
       TypeName returnType = null;
@@ -293,68 +323,76 @@ public class LightNodeElements {
   private static final IStyledLabelProvider LABEL_PROVIDER = new NodeLabelProvider();
 
   /**
-   * @return the {@link LightNodeElement} for given {@link ASTNode}, may be <code>null</code> if
+   * @return the {@link LightNodeElement} for given {@link AstNode}, may be <code>null</code> if
    *         given is not declaration and does not have reasonable declaration child.
    */
-  public static LightNodeElement createLightNodeElement(IFile contextFile, ASTNode node) {
+  public static LightNodeElement createLightNodeElement(IFile contextFile, AstNode node) {
     if (node == null) {
       return null;
     }
-    // prepare "parent" and "childNode"
+    // prepare "childNode"
+    AstNode childNode = null;
+    AstNode parentNode = null;
+    if (childNode == null) {
+      FunctionDeclaration function = node.getAncestor(FunctionDeclaration.class);
+      if (function != null) {
+        childNode = function;
+      }
+    }
+    if (childNode == null) {
+      ConstructorDeclaration constructor = node.getAncestor(ConstructorDeclaration.class);
+      if (constructor != null) {
+        childNode = constructor;
+      }
+    }
+    if (childNode == null) {
+      MethodDeclaration method = node.getAncestor(MethodDeclaration.class);
+      if (method != null) {
+        childNode = method;
+      }
+    }
+    if (childNode == null) {
+      FunctionTypeAlias function = node.getAncestor(FunctionTypeAlias.class);
+      if (function != null) {
+        childNode = function;
+      }
+    }
+    if (childNode == null) {
+      childNode = node.getAncestor(VariableDeclaration.class);
+    }
+    {
+      FieldDeclaration fieldDeclaration = node.getAncestor(FieldDeclaration.class);
+      if (fieldDeclaration != null) {
+        parentNode = fieldDeclaration.getParent();
+        List<VariableDeclaration> fields = fieldDeclaration.getFields().getVariables();
+        if (!fields.isEmpty()) {
+          childNode = fields.get(0);
+        }
+      }
+    }
+    {
+      TopLevelVariableDeclaration decl = node.getAncestor(TopLevelVariableDeclaration.class);
+      if (decl != null) {
+        parentNode = decl.getParent();
+        List<VariableDeclaration> vars = decl.getVariables().getVariables();
+        if (!vars.isEmpty()) {
+          childNode = vars.get(0);
+        }
+      }
+    }
+    if (childNode == null) {
+      ClassDeclaration clazz = node.getAncestor(ClassDeclaration.class);
+      if (clazz != null) {
+        childNode = clazz;
+      }
+    }
+    // prepare "parent"
     LightNodeElement parent = null;
-    ASTNode childNode = null;
-    ClassDeclaration enclosingClass = node.getAncestor(ClassDeclaration.class);
-    if (enclosingClass != null) {
-      parent = createLightNodeElement(contextFile, null, enclosingClass, false);
-      {
-        MethodDeclaration method = node.getAncestor(MethodDeclaration.class);
-        if (method != null) {
-          childNode = method;
-        }
+    if (childNode != null) {
+      if (parentNode == null) {
+        parentNode = childNode.getParent();
       }
-      {
-        ConstructorDeclaration constructor = node.getAncestor(ConstructorDeclaration.class);
-        if (constructor != null) {
-          childNode = constructor;
-        }
-      }
-      if (childNode == null) {
-        childNode = node.getAncestor(VariableDeclaration.class);
-      }
-      if (childNode == null) {
-        FieldDeclaration fieldDeclaration = node.getAncestor(FieldDeclaration.class);
-        if (fieldDeclaration != null) {
-          List<VariableDeclaration> fields = fieldDeclaration.getFields().getVariables();
-          if (!fields.isEmpty()) {
-            childNode = fields.get(0);
-          }
-        }
-      }
-    } else {
-      {
-        FunctionDeclaration function = node.getAncestor(FunctionDeclaration.class);
-        if (function != null) {
-          childNode = function;
-        }
-      }
-      {
-        FunctionTypeAlias function = node.getAncestor(FunctionTypeAlias.class);
-        if (function != null) {
-          childNode = function;
-        }
-      }
-      if (childNode == null) {
-        childNode = node.getAncestor(VariableDeclaration.class);
-      }
-      if (childNode == null) {
-        TopLevelVariableDeclaration decl = node.getAncestor(TopLevelVariableDeclaration.class);
-        if (decl != null) {
-          List<VariableDeclaration> vars = decl.getVariables().getVariables();
-          if (!vars.isEmpty()) {
-            childNode = vars.get(0);
-          }
-        }
-      }
+      parent = createLightNodeElement(contextFile, parentNode);
     }
     // try to create LightNodeElement
     LightNodeElement element = createLightNodeElement(contextFile, parent, childNode, false);
@@ -409,8 +447,47 @@ public class LightNodeElements {
     return new NodeContentProvider(contextFile);
   }
 
-  private static LightNodeElement createLightNodeElement(IFile contextFile,
-      LightNodeElement parent, ASTNode node, boolean withChildren) {
+  private static void addLocalFunctions(final IFile contextFile, final LightNodeElement parent,
+      AstNode in) {
+    if (in == null) {
+      return;
+    }
+    in.accept(new RecursiveAstVisitor<Void>() {
+      @Override
+      public Void visitAssignmentExpression(AssignmentExpression node) {
+        return null;
+      }
+
+      @Override
+      public Void visitBinaryExpression(BinaryExpression node) {
+        return null;
+      }
+
+      @Override
+      public Void visitFunctionDeclaration(FunctionDeclaration node) {
+        createLightNodeElement(contextFile, parent, node, true);
+        return null;
+      }
+
+      @Override
+      public Void visitInstanceCreationExpression(InstanceCreationExpression node) {
+        return null;
+      }
+
+      @Override
+      public Void visitMethodInvocation(MethodInvocation node) {
+        return null;
+      }
+
+      @Override
+      public Void visitVariableDeclarationStatement(VariableDeclarationStatement node) {
+        return null;
+      }
+    });
+  }
+
+  private static LightNodeElement createLightNodeElement(final IFile contextFile,
+      LightNodeElement parent, AstNode node, boolean withChildren) {
     // VariableDeclaration
     if (node instanceof VariableDeclaration) {
       VariableDeclaration variable = (VariableDeclaration) node;
@@ -423,12 +500,17 @@ public class LightNodeElements {
       ConstructorDeclaration constructor = (ConstructorDeclaration) node;
       String name = parent.getName();
       SimpleIdentifier constructorName = constructor.getName();
+      LightNodeElement result;
       if (constructorName != null) {
         name += "." + constructorName.getName();
-        return new LightNodeElement(contextFile, parent, node, constructorName, name);
+        result = new LightNodeElement(contextFile, parent, node, constructorName, name);
       } else {
-        return new LightNodeElement(contextFile, parent, node, constructor.getReturnType(), name);
+        result = new LightNodeElement(contextFile, parent, node, constructor.getReturnType(), name);
       }
+      if (withChildren) {
+        addLocalFunctions(contextFile, result, constructor.getBody());
+      }
+      return result;
     }
     // method
     if (node instanceof MethodDeclaration) {
@@ -438,7 +520,11 @@ public class LightNodeElements {
       if (method.isSetter()) {
         name += "=";
       }
-      return new LightNodeElement(contextFile, parent, node, nameNode, name);
+      LightNodeElement result = new LightNodeElement(contextFile, parent, node, nameNode, name);
+      if (withChildren) {
+        addLocalFunctions(contextFile, result, method.getBody());
+      }
+      return result;
     }
     // ClassDeclaration
     if (node instanceof ClassDeclaration) {
@@ -469,12 +555,16 @@ public class LightNodeElements {
     if (node instanceof FunctionDeclaration) {
       FunctionDeclaration functionDeclaration = (FunctionDeclaration) node;
       SimpleIdentifier nameNode = functionDeclaration.getName();
-      return new LightNodeElement(
+      final LightNodeElement result = new LightNodeElement(
           contextFile,
-          null,
+          parent,
           functionDeclaration,
           nameNode,
           nameNode.getName());
+      if (withChildren) {
+        addLocalFunctions(contextFile, result, functionDeclaration.getFunctionExpression());
+      }
+      return result;
     }
     // FunctionTypeAlias
     if (node instanceof FunctionTypeAlias) {

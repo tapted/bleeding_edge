@@ -22,11 +22,11 @@ vars = {
   "chrome_rev" : "@19997",
   "clang_rev" : "@28450",
   "commons-io_rev" : "@19997",
-  "commons-lang_rev" : "@19997",
-  "d8_rev" : "@30465",
-  "eclipse_rev" : "@31166",
+  "commons-lang_rev" : "@33092",
+  "d8_rev" : "@33015",
+  "eclipse_rev" : "@31921",
   "fest_rev" : "@19997",
-  "firefox_jsshell_rev" : "@28444",
+  "firefox_jsshell_rev" : "@32115",
   "gsutil_rev" : "@19997",
   "guava_rev" : "@19997",
   "hamcrest_rev" : "@19997",
@@ -35,9 +35,10 @@ vars = {
   "mockito_rev" : "@19997",
   "snakeyaml_rev" : "@19997",
   "stripjar_rev" : "@20110",
-  "WebCore_rev" : "@29094",
+  "WebCore_rev" : "@32481",
   "weberknecht_rev" : "@26547",
   "bootstrap_css_rev" : "@28387",
+  "font_awesome_rev": "@31824",
 }
 
 deps = {
@@ -95,13 +96,16 @@ deps = {
   "dart/third_party/WebCore": "/third_party/WebCore" + Var("WebCore_rev"),
   "dart/third_party/weberknecht":
       "/third_party/weberknecht" + Var("weberknecht_rev"),
+
+  "dart/third_party/font-awesome":
+      "/third_party/font-awesome" + Var("font_awesome_rev"),
 }
 
 deps_os = {
   "android": {
     "dart/third_party//android_tools":
       Var("chromium_git") + "/android_tools.git" +
-      "@ebd740fc3d55dda34d9322c8c5f7749302734325",
+      "@e504b737693e96816b40e6ae80d177352c079c18",
   },
   "win": {
     "dart/third_party/cygwin":

@@ -60,6 +60,11 @@ abstract class DartType {
    */
   DartType subst(Link<DartType> arguments, Link<DartType> parameters);
 
+  /// Performs the substitution of the type arguments of [type] for their
+  /// corresponding type variables in this type.
+  DartType substByContext(GenericType type) =>
+      subst(type.typeArguments, type.element.typeVariables);
+
   /**
    * Returns the unaliased type of this type.
    *
@@ -115,6 +120,12 @@ abstract class DartType {
 
   /// Is [: true :] if this type contains any type variables.
   bool get containsTypeVariables => typeVariableOccurrence != null;
+
+  /// Returns a textual representation of this type as if it was the type
+  /// of a member named [name].
+  String getStringAsDeclared(String name) {
+    return new TypeDeclarationFormatter().format(this, name);
+  }
 
   accept(DartTypeVisitor visitor, var argument);
 
@@ -352,7 +363,7 @@ abstract class GenericType extends DartType {
   TypeDeclarationElement get element;
 
   /// Creates a new instance of this type using the provided type arguments.
-  GenericType _createType(Link<DartType> newTypeArguments);
+  GenericType createInstantiation(Link<DartType> newTypeArguments);
 
   DartType subst(Link<DartType> arguments, Link<DartType> parameters) {
     if (typeArguments.isEmpty) {
@@ -368,7 +379,7 @@ abstract class GenericType extends DartType {
         Types.substTypes(typeArguments, arguments, parameters);
     if (!identical(typeArguments, newTypeArguments)) {
       // Create a new type only if necessary.
-      return _createType(newTypeArguments);
+      return createInstantiation(newTypeArguments);
     }
     return this;
   }
@@ -416,6 +427,9 @@ abstract class GenericType extends DartType {
         && typeArguments == other.typeArguments;
   }
 
+  /// Returns `true` if the declaration of this type has type variables.
+  bool get isGeneric => !typeArguments.isEmpty;
+
   bool get isRaw => typeArguments.isEmpty || identical(this, element.rawType);
 
   GenericType asRaw() => element.rawType;
@@ -451,7 +465,7 @@ class InterfaceType extends GenericType {
 
   String get name => element.name;
 
-  InterfaceType _createType(Link<DartType> newTypeArguments) {
+  InterfaceType createInstantiation(Link<DartType> newTypeArguments) {
     return new InterfaceType(element, newTypeArguments);
   }
 
@@ -476,63 +490,20 @@ class InterfaceType extends GenericType {
 
   DartType unalias(Compiler compiler) => this;
 
-  /**
-   * Finds the method, field or property named [name] declared or inherited
-   * on this interface type.
-   */
-  Member lookupMember(String name, {bool isSetter: false}) {
-    // Abstract field returned when setter was needed but only a getter was
-    // present and vice-versa.
-    Member fallbackAbstractField;
-
-    Member createMember(ClassElement classElement,
-                        InterfaceType receiver, InterfaceType declarer) {
-      Element member = classElement.implementation.lookupLocalMember(name);
-      if (member == null) return null;
-      if (member.isConstructor() || member.isPrefix()) return null;
-      assert(member.isFunction() ||
-             member.isAbstractField() ||
-             member.isField());
-
-      if (member.isAbstractField()) {
-        AbstractFieldElement abstractFieldElement = member;
-        if (fallbackAbstractField == null) {
-          fallbackAbstractField =
-              new Member(receiver, declarer, member, isSetter: isSetter);
-        }
-        if (isSetter && abstractFieldElement.setter == null) {
-          // Keep searching further up the hierarchy.
-          member = null;
-        } else if (!isSetter && abstractFieldElement.getter == null) {
-          // Keep searching further up the hierarchy.
-          member = null;
-        }
-      }
-      return member != null
-          ? new Member(receiver, declarer, member, isSetter: isSetter) : null;
+  MemberSignature lookupInterfaceMember(Name name) {
+    MemberSignature member = element.lookupInterfaceMember(name);
+    if (member != null && isGeneric) {
+      return new InterfaceMember(this, member);
     }
+    return member;
+  }
 
-    ClassElement classElement = element;
-    InterfaceType receiver = this;
-    InterfaceType declarer = receiver;
-    // TODO(johnniwinther): Lookup and callers should handle private members and
-    // injected members.
-    Member member = createMember(classElement, receiver, declarer);
-    if (member != null) return member;
-
-    assert(invariant(element, classElement.allSupertypes != null,
-        message: 'Supertypes not computed for $classElement'));
-    for (InterfaceType supertype in classElement.allSupertypes) {
-      // Skip mixin applications since their supertypes are also in the list of
-      // [allSupertypes].
-      if (supertype.element.isMixinApplication) continue;
-      declarer = supertype;
-      ClassElement lookupTarget = declarer.element;
-      Member member = createMember(lookupTarget, receiver, declarer);
-      if (member != null) return member;
+  MemberSignature lookupClassMember(Name name) {
+    MemberSignature member = element.lookupClassMember(name);
+    if (member != null && isGeneric) {
+      return new InterfaceMember(this, member);
     }
-
-    return fallbackAbstractField;
+    return member;
   }
 
   int get hashCode => super.hashCode;
@@ -541,6 +512,13 @@ class InterfaceType extends GenericType {
 
   accept(DartTypeVisitor visitor, var argument) {
     return visitor.visitInterfaceType(this, argument);
+  }
+
+  /// Returns the type of the 'call' method in this interface type, or
+  /// `null` if the interface type has no 'call' method.
+  FunctionType get callType {
+    FunctionType type = element.callType;
+    return type != null && isGeneric ? type.substByContext(this) : type;
   }
 }
 
@@ -600,10 +578,10 @@ class FunctionType extends DartType {
 
   FunctionType(Element this.element,
                DartType this.returnType,
-               Link<DartType> this.parameterTypes,
-               Link<DartType> this.optionalParameterTypes,
-               Link<String> this.namedParameters,
-               Link<DartType> this.namedParameterTypes) {
+               [this.parameterTypes = const Link<DartType>(),
+                this.optionalParameterTypes = const Link<DartType>(),
+                this.namedParameters = const Link<String>(),
+                this.namedParameterTypes = const Link<DartType>()]) {
     assert(invariant(element, element.isDeclaration));
     // Assert that optional and named parameters are not used at the same time.
     assert(optionalParameterTypes.isEmpty || namedParameterTypes.isEmpty);
@@ -779,7 +757,7 @@ class TypedefType extends GenericType {
               [Link<DartType> typeArguments = const Link<DartType>()])
       : super(typeArguments);
 
-  TypedefType _createType(Link<DartType> newTypeArguments) {
+  TypedefType createInstantiation(Link<DartType> newTypeArguments) {
     return new TypedefType(element, newTypeArguments);
   }
 
@@ -797,8 +775,7 @@ class TypedefType extends GenericType {
     compiler.resolveTypedef(element);
     element.checkCyclicReference(compiler);
     DartType definition = element.alias.unalias(compiler);
-    TypedefType declaration = element.computeType(compiler);
-    return definition.subst(typeArguments, declaration.typeArguments);
+    return definition.substByContext(this);
   }
 
   int get hashCode => super.hashCode;
@@ -829,79 +806,43 @@ class DynamicType extends InterfaceType {
 }
 
 /**
- * Member encapsulates a member (method, field, property) with the types of the
- * declarer and receiver in order to do substitution on the member type.
+ * [InterfaceMember] encapsulates a member (method, field, property) with
+ * the types of the declarer and receiver in order to do substitution on the
+ * member type.
  *
- * Consider for instance these classes and the variable [: B<String> b :]:
+ * Consider for instance these classes and the variable `B<String> b`:
  *
  *     class A<E> {
  *       E field;
  *     }
  *     class B<F> extends A<F> {}
  *
- * In a [Member] for [: b.field :] the [receiver] is the type [: B<String> :]
- * and the declarer is the type [: A<F> :], which is the supertype of [: B<F> :]
- * from which [: field :] has been inherited. To compute the type of
- * [: b.field :] we must first substitute [: E :] by [: F :] using the relation
- * between [: A<E> :] and [: A<F> :], and then [: F :] by [: String :] using the
- * relation between [: B<F> :] and [: B<String> :].
+ * In an [InterfaceMember] for `b.field` the [receiver] is the type
+ * `B<String>` and the declarer is the type `A<F>`, which is the supertype of
+ * `B<F>` from which `field` has been inherited. To compute the type of
+ * `b.field` we must first substitute `E` by `F` using the relation between
+ * `A<E>` and `A<F>`, and then `F` by `String` using the relation between
+ * `B<F>` and `B<String>`.
  */
-// TODO(johnniwinther): Add [isReadable] and [isWritable] predicates.
-class Member {
-  final InterfaceType receiver;
-  final InterfaceType declarer;
-  final Element element;
-  DartType cachedType;
-  final bool isSetter;
+class InterfaceMember implements MemberSignature {
+  final InterfaceType instance;
+  final MemberSignature member;
 
-  Member(this.receiver, this.declarer, this.element,
-         {bool this.isSetter: false}) {
-    assert(invariant(element, element.isAbstractField() ||
-                              element.isField() ||
-                              element.isFunction(),
-                     message: "Unsupported Member element: $element"));
-  }
+  InterfaceMember(this.instance, this.member);
 
-  DartType computeType(Compiler compiler) {
-    if (cachedType == null) {
-      DartType type;
-      if (element.isAbstractField()) {
-        AbstractFieldElement abstractFieldElement = element;
-        // Use setter if present and required or if no getter is available.
-        if ((isSetter && abstractFieldElement.setter != null) ||
-            abstractFieldElement.getter == null) {
-          // TODO(johnniwinther): Add check of read of field with no getter.
-          FunctionType functionType =
-              abstractFieldElement.setter.computeType(
-                  compiler);
-          type = functionType.parameterTypes.head;
-          if (type == null) {
-            type = compiler.types.dynamicType;
-          }
-        } else {
-          // TODO(johnniwinther): Add check of assignment to field with no
-          // setter.
-          FunctionType functionType =
-              abstractFieldElement.getter.computeType(compiler);
-          type = functionType.returnType;
-        }
-      } else {
-        type = element.computeType(compiler);
-      }
-      if (!declarer.element.typeVariables.isEmpty) {
-        type = type.subst(declarer.typeArguments,
-                          declarer.element.typeVariables);
-        type = type.subst(receiver.typeArguments,
-                          receiver.element.typeVariables);
-      }
-      cachedType = type;
-    }
-    return cachedType;
-  }
+  Name get name => member.name;
 
-  String toString() {
-    return '$receiver.${element.name}';
-  }
+  DartType get type => member.type.substByContext(instance);
+
+  FunctionType get functionType => member.functionType.substByContext(instance);
+
+  bool get isGetter => member.isGetter;
+
+  bool get isSetter => member.isSetter;
+
+  bool get isMethod => member.isMethod;
+
+  Iterable<Member> get declarations => member.declarations;
 }
 
 abstract class DartTypeVisitor<R, A> {
@@ -965,6 +906,10 @@ abstract class AbstractTypeRelation extends DartTypeVisitor<bool, DartType> {
   bool invalidFunctionParameterTypes(DartType t, DartType s);
 
   bool invalidTypeVariableBounds(DartType bound, DartType s);
+
+  /// Handle as dynamic for both subtype and more specific relation to avoid
+  /// spurious errors from malformed types.
+  bool visitMalformedType(MalformedType t, DartType s) => true;
 
   bool visitInterfaceType(InterfaceType t, DartType s) {
 
@@ -1128,6 +1073,9 @@ class MoreSpecificVisitor extends AbstractTypeRelation {
         identical(t.element, compiler.nullClass)) {
       return true;
     }
+    if (t.isVoid || s.isVoid) {
+      return false;
+    }
     if (t.treatAsDynamic) {
       return false;
     }
@@ -1195,16 +1143,13 @@ class SubtypeVisitor extends MoreSpecificVisitor {
   bool visitInterfaceType(InterfaceType t, DartType s) {
     if (super.visitInterfaceType(t, s)) return true;
 
-    lookupCall(type) => type.lookupMember(Compiler.CALL_OPERATOR_NAME);
-
     if (s is InterfaceType &&
         s.element == compiler.functionClass &&
-        lookupCall(t) != null) {
+        t.element.callType != null) {
       return true;
     } else if (s is FunctionType) {
-      Member call = lookupCall(t);
-      if (call == null) return false;
-      return isSubtype(call.computeType(compiler), s);
+      FunctionType callType = t.callType;
+      return callType != null && isSubtype(callType, s);
     }
     return false;
   }
@@ -1305,8 +1250,7 @@ class Types {
     Link<DartType> typeVariables = element.typeVariables;
     while (!typeVariables.isEmpty && !typeArguments.isEmpty) {
       TypeVariableType typeVariable = typeVariables.head;
-      DartType bound = typeVariable.element.bound.subst(
-          type.typeArguments, element.typeVariables);
+      DartType bound = typeVariable.element.bound.substByContext(type);
       DartType typeArgument = typeArguments.head;
       checkTypeVariableBound(type, typeArgument, typeVariable, bound);
       typeVariables = typeVariables.tail;
@@ -1501,13 +1445,10 @@ class Types {
 
     /// Returns the set of supertypes of [type] at depth [depth].
     Set<DartType> getSupertypesAtDepth(InterfaceType type, int depth) {
-      ClassElement cls = type.element;
-      OrderedTypeSet types = cls.allSupertypesAndSelf;
-      Link<DartType> typeVariables = cls.typeVariables;
-      Link<DartType> typeArguments = type.typeArguments;
+      OrderedTypeSet types = type.element.allSupertypesAndSelf;
       Set<DartType> set = new Set<DartType>();
-      types.forEach(depth, (DartType type) {
-        set.add(type.subst(typeArguments, typeVariables));
+      types.forEach(depth, (DartType supertype) {
+        set.add(supertype.substByContext(type));
       });
       return set;
     }
@@ -1523,8 +1464,9 @@ class Types {
         return intersection.first;
       }
     }
-    assert(invariant(CURRENT_ELEMENT_SPANNABLE, false,
-        message: 'No least upper bound computed for $a and $b.'));
+    invariant(CURRENT_ELEMENT_SPANNABLE, false,
+        message: 'No least upper bound computed for $a and $b.');
+    return null;
   }
 
   /// Computes the least upper bound of the types in the longest prefix of [a]
@@ -1700,7 +1642,7 @@ class MoreSpecificSubtypeVisitor extends DartTypeVisitor<bool, DartType> {
       element.typeVariables.forEach((TypeVariableType typeVariable) {
         typeArguments.addLast(constraintMap[typeVariable]);
       });
-      return element.thisType._createType(typeArguments.toLink());
+      return element.thisType.createInstantiation(typeArguments.toLink());
     }
     return null;
   }
@@ -1760,3 +1702,115 @@ class MoreSpecificSubtypeVisitor extends DartTypeVisitor<bool, DartType> {
     return false;
   }
 }
+
+/// Visitor used to print type annotation like they used in the source code.
+/// The visitor is especially for printing a function type like
+/// `(Foo,[Bar])->Baz` as `Baz m(Foo a1, [Bar a2])`.
+class TypeDeclarationFormatter extends DartTypeVisitor<dynamic, String> {
+  Set<String> usedNames;
+  StringBuffer sb;
+
+  /// Creates textual representation of [type] as if a member by the [name] were
+  /// declared. For instance 'String foo' for `format(String, 'foo')`.
+  String format(DartType type, String name) {
+    sb = new StringBuffer();
+    usedNames = new Set<String>();
+    type.accept(this, name);
+    usedNames = null;
+    return sb.toString();
+  }
+
+  String createName(String name) {
+    if (name != null && !usedNames.contains(name)) {
+      usedNames.add(name);
+      return name;
+    }
+    int index = usedNames.length;
+    String proposal;
+    do {
+      proposal = '${name}${index++}';
+    } while (usedNames.contains(proposal));
+    usedNames.add(proposal);
+    return proposal;
+  }
+
+  void visit(DartType type) {
+    type.accept(this, null);
+  }
+
+  void visitTypes(Link<DartType> types, String prefix) {
+    bool needsComma = false;
+    for (Link<DartType> link = types;
+        !link.isEmpty;
+        link = link.tail) {
+      if (needsComma) {
+        sb.write(', ');
+      }
+      link.head.accept(this, prefix);
+      needsComma = true;
+    }  }
+
+  void visitType(DartType type, String name) {
+    if (name == null) {
+      sb.write(type);
+    } else {
+      sb.write('$type ${createName(name)}');
+    }
+  }
+
+  void visitGenericType(GenericType type, String name) {
+    sb.write(type.name);
+    if (!type.treatAsRaw) {
+      sb.write('<');
+      visitTypes(type.typeArguments, null);
+      sb.write('>');
+    }
+    if (name != null) {
+      sb.write(' ');
+      sb.write(createName(name));
+    }
+  }
+
+  void visitFunctionType(FunctionType type, String name) {
+    visit(type.returnType);
+    sb.write(' ');
+    if (name != null) {
+      sb.write(name);
+    } else {
+      sb.write(createName('f'));
+    }
+    sb.write('(');
+    visitTypes(type.parameterTypes, 'a');
+    bool needsComma = !type.parameterTypes.isEmpty;
+    if (!type.optionalParameterTypes.isEmpty) {
+      if (needsComma) {
+        sb.write(', ');
+      }
+      sb.write('[');
+      visitTypes(type.optionalParameterTypes, 'a');
+      sb.write(']');
+      needsComma = true;
+    }
+    if (!type.namedParameterTypes.isEmpty) {
+      if (needsComma) {
+        sb.write(', ');
+      }
+      sb.write('{');
+      Link<String> namedParameter = type.namedParameters;
+      Link<DartType> namedParameterType = type.namedParameterTypes;
+      needsComma = false;
+      while (!namedParameter.isEmpty && !namedParameterType.isEmpty) {
+        if (needsComma) {
+          sb.write(', ');
+        }
+        namedParameterType.head.accept(this, namedParameter.head);
+        namedParameter = namedParameter.tail;
+        namedParameterType = namedParameterType.tail;
+        needsComma = true;
+      }
+      sb.write('}');
+    }
+    sb.write(')');
+  }
+}
+

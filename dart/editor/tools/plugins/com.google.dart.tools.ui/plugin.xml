@@ -141,6 +141,8 @@
          categoryId="com.google.dart.tools.ui.javaNoTypeProposalCategory">
          <partition type="__dftl_partition_content_type"/>
          <partition type="__dart_string"/>
+         <partition type="__dart_doc"/>
+         <partition type="__dart_multiline_comment"/>
       </dartCompletionProposalComputer>
    </extension>
    <!-- Dart doc completions -->   
@@ -208,20 +210,6 @@
                   id="com.google.dart.tools.ui.BroadcastCommand"
                   name="BroadcastCommand">
             </command>
-       <command
-            categoryId="org.eclipse.ui.category.window"
-            defaultHandler="com.google.dart.tools.ui.internal.handlers.GenerateJavascriptHandler"
-            description="%command.generateJavascript.name"
-            id="com.google.dart.tools.ui.generateJavascript"
-            name="%command.generateJavascript.name">
-      </command>
-      <command
-            categoryId="org.eclipse.ui.category.window"
-            defaultHandler="com.google.dart.tools.ui.internal.handlers.GenerateDartdocHandler"
-            description="%command.generateDartdoc.name"
-            id="com.google.dart.tools.ui.generateDartdoc"
-            name="%command.generateDartdoc.name">
-      </command>
    </extension>
    
    <extension
@@ -492,15 +480,19 @@
    <extension
          point="org.eclipse.ui.editors.annotationTypes">
       <type
+            name="com.google.dart.tools.ui.angular_warning"
+            super="org.eclipse.ui.workbench.texteditor.warning"
+            markerType="com.google.dart.tools.core.angular_warning"
+            markerSeverity="1"/>
+      <type
             name="com.google.dart.tools.ui.error"
             super="org.eclipse.ui.workbench.texteditor.error"
             markerType="com.google.dart.tools.core.problem"
             markerSeverity="2"/>
       <type
             name="com.google.dart.tools.ui.info"
-            super="org.eclipse.ui.workbench.texteditor.warning"
             markerType="com.google.dart.tools.core.hint"
-            markerSeverity="1"/>
+            markerSeverity="0"/>
       <type
             name="com.google.dart.tools.ui.warning"
             super="org.eclipse.ui.workbench.texteditor.warning"
@@ -522,6 +514,26 @@
    
    <extension
          point="org.eclipse.ui.editors.markerAnnotationSpecification">
+       <specification
+           annotationType="com.google.dart.tools.ui.angular_warning"
+           colorPreferenceKey="angularWarningColor"
+           colorPreferenceValue="244,200,45"
+           contributesToHeader="true"
+           highlightPreferenceKey="angularWarningHighlighting"
+           highlightPreferenceValue="false"
+           icon="icons/full/dart16/angular_14_red.png"
+           label="Angular warning"
+           overviewRulerPreferenceKey="angularWarningIndicationInOverviewRuler"
+           overviewRulerPreferenceValue="true"
+           presentationLayer="4"
+           symbolicIcon="warning"
+           textPreferenceKey="angularWarningText"
+           textPreferenceValue="true"
+           textStylePreferenceKey="angularWarningTextStyle"
+           textStylePreferenceValue="PROBLEM_UNDERLINE"
+           verticalRulerPreferenceKey="angularWarningInVerticalRuler"
+           verticalRulerPreferenceValue="true">
+       </specification>
        <specification
            annotationType="com.google.dart.tools.ui.error"
            annotationImageProvider="com.google.dart.tools.ui.internal.text.editor.DartAnnotationImageProvider">
@@ -580,7 +592,7 @@
      <specification
            annotationType="com.google.dart.tools.ui.info"
            colorPreferenceKey="suggestionIndicationColor"
-           colorPreferenceValue="244,200,45"
+           colorPreferenceValue="180,180,180"
            icon="icons/full/misc/info.png"
            contributesToHeader="true"
            highlightPreferenceKey="suggestionIndicationHighlighting"
@@ -1234,6 +1246,12 @@
             defaultHandler="com.google.dart.tools.ui.internal.handlers.RunScriptHandler"
             id="com.google.dart.tools.ui.run.script.command"
             name="Run Script">
+      </command>
+      <command
+            defaultHandler="com.google.dart.tools.ui.internal.handlers.PubBuildHandler"
+            description="Runs pub build"
+            id="com.google.dart.tools.ui.commands.pubBuild"
+            name="Pub Build">
       </command>
    </extension>
       

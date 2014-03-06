@@ -457,20 +457,7 @@ public class DartIndenter {
    *         or <code>null</code> if it cannot be determined
    */
   public StringBuffer computeIndentation(int offset, boolean assumeOpeningBrace) {
-
     StringBuffer reference = getReferenceIndentation(offset, assumeOpeningBrace);
-
-    // TODO(pquitslund/messick): a minimal hack to ensure tabs are emitted when they should be
-    // Heuristics for extra indents (after braces, in constructor inits, etc.) 
-    // to be implemented in the overhaul
-    if (reference != null
-        && !DartToolsPlugin.getDefault().getPreferenceStore().getBoolean(
-            AbstractDecoratedTextEditorPreferenceConstants.EDITOR_SPACES_FOR_TABS)) {
-      // Note the hard-wired assumption that indents are 2 spaces
-      // (To be fixed in the re-write)
-      String tabbed = reference.toString().replaceAll("  ", "\t");
-      return new StringBuffer(tabbed);
-    }
 
     // handle special alignment
     if (fAlign != DartHeuristicScanner.NOT_FOUND) {
@@ -746,6 +733,13 @@ public class DartIndenter {
     // also account for a dangling else
     if (offset < fDocument.getLength()) {
       try {
+        boolean matchCascade = false;
+        if (fScanner.isCurrentTokenCascade()) {
+          matchCascade = true;
+          cascadeIndent = 2;
+          fAlign = -1;
+        }
+
         IRegion line = fDocument.getLineInformationOfOffset(offset);
         int lineOffset = line.getOffset();
         int prevPos = Math.max(offset - 1, 0);
@@ -754,6 +748,10 @@ public class DartIndenter {
         boolean bracelessBlockStart = fScanner.isBracelessBlockStart(
             prevPos,
             DartHeuristicScanner.UNBOUND);
+
+        if (fScanner.isCurrentTokenCascade() && matchCascade) {
+          return fScanner.getPosition();
+        }
 
         switch (nextToken) {
           case Symbols.TokenELSE:
@@ -786,9 +784,9 @@ public class DartIndenter {
             }
             break;
           case Symbols.TokenOTHER:
-            if (fScanner.isCurrentTokenCascade()) {
-              cascadeIndent = 1;
-            }
+//            if (fScanner.isCurrentTokenCascade()) {
+//              cascadeIndent = 1;
+//            }
             break;
         }
       } catch (BadLocationException e) {
@@ -807,6 +805,24 @@ public class DartIndenter {
     }
     extraIndent = cascadeIndent;
     return ref;
+  }
+
+  public String getBlockIndent() {
+    extraIndent = 1;
+    try {
+      return createIndent(0, 0, false).toString();
+    } finally {
+      extraIndent = 0;
+    }
+  }
+
+  public String getCascadeIndent() {
+    extraIndent = 2;
+    try {
+      return createIndent(0, 0, false).toString();
+    } finally {
+      extraIndent = 0;
+    }
   }
 
   /**
@@ -841,6 +857,31 @@ public class DartIndenter {
     }
     return getLeadingWhitespace(unit);
   }
+
+//  public boolean isAfterClassPrologue(int offset) {
+//    fPosition = offset;
+//    nextToken();
+//    if (fToken == Symbols.TokenLBRACE) {
+//      while (true) {
+//        nextToken();
+//        if (fToken == Symbols.TokenEOF) {
+//          return false;
+//        }
+//        if (fToken == Symbols.TokenIDENT) {
+//          nextToken();
+//          if (fToken == Symbols.TokenCLASS) {
+//            return true;
+//          }
+//          if (fToken == Symbols.TokenEXTENDS || fToken == Symbols.TokenIMPLEMENTS
+//              || fToken == Symbols.TokenCOMMA) {
+//            continue;
+//          }
+//          return false;
+//        }
+//      }
+//    }
+//    return false;
+//  }
 
   /**
    * Computes the length of a <code>CharacterSequence</code>, counting a tab character as the size
@@ -1089,6 +1130,16 @@ public class DartIndenter {
       case Symbols.TokenLBRACE:
         pos = fPosition; // store
 
+        // special: map literal {} in list literal or argument list
+        {
+          nextToken();
+          if (fToken == Symbols.TokenCOMMA) {
+            fIndent = fPrefs.prefBlockIndent;
+            return pos;
+          }
+          fPosition = pos;
+        }
+
         // special: array initializer
         if (looksLikeArrayInitializerIntro()) {
           if (fPrefs.prefArrayDeepIndent) {
@@ -1152,6 +1203,17 @@ public class DartIndenter {
     return false;
   }
 
+  private boolean isCascadeLine(int offset) {
+    try {
+      IRegion line = fDocument.getLineInformationOfOffset(offset);
+      String lineStr = fDocument.get(line.getOffset(), line.getLength());
+      lineStr = lineStr.trim();
+      return lineStr.startsWith("..");
+    } catch (BadLocationException e) {
+      return false;
+    }
+  }
+
   /**
    * Returns true if the colon at the current position is part of a conditional (ternary)
    * expression, false otherwise.
@@ -1190,6 +1252,8 @@ public class DartIndenter {
       switch (fToken) {
         case Symbols.TokenFOR:
           return true;
+        case Symbols.TokenIN:
+          return false;
         case Symbols.TokenLBRACE:
           return false;
         case Symbols.TokenSEMICOLON:
@@ -1230,6 +1294,26 @@ public class DartIndenter {
     return false;
   }
 
+  private boolean looksLikeArgumentListOpen() {
+    int fPosition_ = fPosition;
+    int fPreviousPos_ = fPreviousPos;
+    try {
+      if (fToken == Symbols.TokenLPAREN) {
+        nextToken();
+        if (fToken == Symbols.TokenIDENT) {
+          // OK, probably closure arguments
+          fPosition_ = fPosition;
+          fPreviousPos_ = fPreviousPos;
+          return true;
+        }
+      }
+      return false;
+    } finally {
+      fPosition = fPosition_;
+      fPreviousPos = fPreviousPos_;
+    }
+  }
+
   /**
    * Returns <code>true</code> if the next token received after calling <code>nextToken</code> is
    * either an equal sign or an array designator ('[]').
@@ -1259,6 +1343,9 @@ public class DartIndenter {
       if (fToken == Symbols.TokenIDENT) {
         pos = fPreviousPos;
         nextToken();
+      } else {
+        fPosition = p;
+        return false;
       }
     }
     // check for possible modifiers
@@ -1795,6 +1882,9 @@ public class DartIndenter {
         case Symbols.TokenEOF:
           if (isInBlock) {
             fIndent = getBlockIndent(mayBeMethodBody == READ_IDENT, isTypeBody);
+          }
+          if (looksLikeArgumentListOpen()) {
+            break;
           }
           // else: fIndent set by previous calls
           return fPreviousPos;

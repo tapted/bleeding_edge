@@ -13,6 +13,8 @@
  */
 package com.google.dart.engine.internal.element.handle;
 
+import com.google.dart.engine.ast.CompilationUnit;
+import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.element.ClassElement;
 import com.google.dart.engine.element.CompilationUnitElement;
 import com.google.dart.engine.element.ElementKind;
@@ -21,6 +23,7 @@ import com.google.dart.engine.element.FunctionTypeAliasElement;
 import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.PropertyAccessorElement;
 import com.google.dart.engine.element.TopLevelVariableElement;
+import com.google.dart.engine.element.angular.AngularViewElement;
 import com.google.dart.engine.source.Source;
 
 /**
@@ -45,6 +48,11 @@ public class CompilationUnitElementHandle extends ElementHandle implements Compi
   }
 
   @Override
+  public AngularViewElement[] getAngularViews() {
+    return getActualElement().getAngularViews();
+  }
+
+  @Override
   public LibraryElement getEnclosingElement() {
     return (LibraryElement) super.getEnclosingElement();
   }
@@ -62,6 +70,11 @@ public class CompilationUnitElementHandle extends ElementHandle implements Compi
   @Override
   public ElementKind getKind() {
     return ElementKind.COMPILATION_UNIT;
+  }
+
+  @Override
+  public CompilationUnit getNode() throws AnalysisException {
+    return getActualElement().getNode();
   }
 
   @Override

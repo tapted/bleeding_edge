@@ -21,21 +21,6 @@
 
 namespace dart {
 
-class IsolateStartData {
- public:
-  IsolateStartData(char* library_url,
-                   char* class_name,
-                   intptr_t port_id)
-      : library_url_(library_url),
-        class_name_(class_name),
-        port_id_(port_id) {}
-
-  char* library_url_;
-  char* class_name_;
-  intptr_t port_id_;
-};
-
-
 static uint8_t* allocator(uint8_t* ptr, intptr_t old_size, intptr_t new_size) {
   void* new_ptr = realloc(reinterpret_cast<void*>(ptr), new_size);
   return reinterpret_cast<uint8_t*>(new_ptr);
@@ -43,7 +28,7 @@ static uint8_t* allocator(uint8_t* ptr, intptr_t old_size, intptr_t new_size) {
 
 
 // TODO(turnidge): Move to DartLibraryCalls.
-static RawObject* ReceivePortCreate(intptr_t port_id) {
+static RawObject* ReceivePortCreate(Dart_Port port_id) {
   Isolate* isolate = Isolate::Current();
   Function& func =
       Function::Handle(isolate,
@@ -76,9 +61,8 @@ static RawObject* ReceivePortCreate(intptr_t port_id) {
 
 
 DEFINE_NATIVE_ENTRY(RawReceivePortImpl_factory, 1) {
-  ASSERT(AbstractTypeArguments::CheckedHandle(
-      arguments->NativeArgAt(0)).IsNull());
-  intptr_t port_id =
+  ASSERT(TypeArguments::CheckedHandle(arguments->NativeArgAt(0)).IsNull());
+  Dart_Port port_id =
       PortMap::CreatePort(arguments->isolate()->message_handler());
   const Object& port = Object::Handle(ReceivePortCreate(port_id));
   if (port.IsError()) {
@@ -105,7 +89,7 @@ DEFINE_NATIVE_ENTRY(SendPortImpl_sendInternal_, 2) {
   writer.WriteMessage(obj);
 
   // TODO(turnidge): Throw an exception when the return value is false?
-  PortMap::PostMessage(new Message(send_id.Value(), Message::kIllegalPort,
+  PortMap::PostMessage(new Message(send_id.Value(),
                                    data, writer.BytesWritten(),
                                    Message::kNormalPriority));
   return Object::null();
@@ -204,7 +188,7 @@ static RawObject* Spawn(NativeArguments* arguments, IsolateSpawnState* state) {
 
   // Start the new isolate if it is already marked as runnable.
   MutexLocker ml(state->isolate()->mutex());
-  state->isolate()->set_spawn_data(reinterpret_cast<uword>(state));
+  state->isolate()->set_spawn_state(state);
   if (state->isolate()->is_runnable()) {
     state->isolate()->Run();
   }

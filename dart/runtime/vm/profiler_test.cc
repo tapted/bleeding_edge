@@ -18,8 +18,8 @@ class ProfileSampleBufferTestHelper {
                                const SampleBuffer& sample_buffer) {
     intptr_t c = 0;
     for (intptr_t i = 0; i < sample_buffer.capacity(); i++) {
-      Sample* sample = sample_buffer.GetSample(i);
-      if (sample->isolate != isolate) {
+      Sample* sample = sample_buffer.At(i);
+      if (sample->isolate() != isolate) {
         continue;
       }
       c++;
@@ -32,11 +32,11 @@ class ProfileSampleBufferTestHelper {
                                const SampleBuffer& sample_buffer) {
     intptr_t c = 0;
     for (intptr_t i = 0; i < sample_buffer.capacity(); i++) {
-      Sample* sample = sample_buffer.GetSample(i);
-      if (sample->isolate != isolate) {
+      Sample* sample = sample_buffer.At(i);
+      if (sample->isolate() != isolate) {
         continue;
       }
-      c += sample->pcs[0];
+      c += sample->At(0);
     }
     return c;
   }
@@ -49,20 +49,20 @@ TEST_CASE(ProfilerSampleBufferWrapTest) {
   EXPECT_EQ(0, ProfileSampleBufferTestHelper::IterateSumPC(i, *sample_buffer));
   Sample* s;
   s = sample_buffer->ReserveSample();
-  s->isolate = i;
-  s->pcs[0] = 2;
+  s->Init(i, 0, 0);
+  s->SetAt(0, 2);
   EXPECT_EQ(2, ProfileSampleBufferTestHelper::IterateSumPC(i, *sample_buffer));
   s = sample_buffer->ReserveSample();
-  s->isolate = i;
-  s->pcs[0] = 4;
+  s->Init(i, 0, 0);
+  s->SetAt(0, 4);
   EXPECT_EQ(6, ProfileSampleBufferTestHelper::IterateSumPC(i, *sample_buffer));
   s = sample_buffer->ReserveSample();
-  s->isolate = i;
-  s->pcs[0] = 6;
+  s->Init(i, 0, 0);
+  s->SetAt(0, 6);
   EXPECT_EQ(12, ProfileSampleBufferTestHelper::IterateSumPC(i, *sample_buffer));
   s = sample_buffer->ReserveSample();
-  s->isolate = i;
-  s->pcs[0] = 8;
+  s->Init(i, 0, 0);
+  s->SetAt(0, 8);
   EXPECT_EQ(18, ProfileSampleBufferTestHelper::IterateSumPC(i, *sample_buffer));
   delete sample_buffer;
 }
@@ -74,16 +74,16 @@ TEST_CASE(ProfilerSampleBufferIterateTest) {
   EXPECT_EQ(0, ProfileSampleBufferTestHelper::IterateCount(i, *sample_buffer));
   Sample* s;
   s = sample_buffer->ReserveSample();
-  s->isolate = i;
+  s->Init(i, 0, 0);
   EXPECT_EQ(1, ProfileSampleBufferTestHelper::IterateCount(i, *sample_buffer));
   s = sample_buffer->ReserveSample();
-  s->isolate = i;
+  s->Init(i, 0, 0);
   EXPECT_EQ(2, ProfileSampleBufferTestHelper::IterateCount(i, *sample_buffer));
   s = sample_buffer->ReserveSample();
-  s->isolate = i;
+  s->Init(i, 0, 0);
   EXPECT_EQ(3, ProfileSampleBufferTestHelper::IterateCount(i, *sample_buffer));
   s = sample_buffer->ReserveSample();
-  s->isolate = i;
+  s->Init(i, 0, 0);
   EXPECT_EQ(3, ProfileSampleBufferTestHelper::IterateCount(i, *sample_buffer));
   delete sample_buffer;
 }

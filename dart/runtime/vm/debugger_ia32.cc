@@ -37,33 +37,57 @@ RawObject* ActivationFrame::GetClosureObject(intptr_t num_actual_args) {
 }
 
 
-void CodeBreakpoint::PatchFunctionReturn() {
-  uint8_t* code = reinterpret_cast<uint8_t*>(pc_ - 5);
-  ASSERT((code[0] == 0x89) && (code[1] == 0xEC));  // mov esp,ebp
-  ASSERT(code[2] == 0x5D);  // pop ebp
-  ASSERT(code[3] == 0xC3);  // ret
-  ASSERT(code[4] == 0x90);  // nop
-
-  // Smash code with call instruction and relative target address.
-  uword stub_addr = StubCode::BreakpointReturnEntryPoint();
-  code[0] = 0xE8;
-  *reinterpret_cast<uword*>(&code[1]) = stub_addr - pc_;
-  CPU::FlushICache(pc_ - 5, 5);
+uword CodeBreakpoint::OrigStubAddress() const {
+  return saved_value_;
 }
 
 
-void CodeBreakpoint::RestoreFunctionReturn() {
-  uint8_t* code = reinterpret_cast<uint8_t*>(pc_ - 5);
-  ASSERT(code[0] == 0xE8);
-  code[0] = 0x89;
-  code[1] = 0xEC;  // mov esp,ebp
-  code[2] = 0x5D;  // pop ebp
-  code[3] = 0xC3;  // ret
-  code[4] = 0x90;  // nop
-  CPU::FlushICache(pc_ - 5, 5);
+void CodeBreakpoint::PatchCode() {
+  ASSERT(!is_enabled_);
+  const Code& code = Code::Handle(code_);
+  const Instructions& instrs = Instructions::Handle(code.instructions());
+  {
+    WritableInstructionsScope writable(instrs.EntryPoint(), instrs.size());
+    switch (breakpoint_kind_) {
+      case PcDescriptors::kIcCall:
+      case PcDescriptors::kUnoptStaticCall:
+      case PcDescriptors::kRuntimeCall:
+      case PcDescriptors::kClosureCall:
+      case PcDescriptors::kReturn: {
+        saved_value_ = CodePatcher::GetStaticCallTargetAt(pc_, code);
+        CodePatcher::PatchStaticCallAt(pc_, code,
+                                       StubCode::BreakpointRuntimeEntryPoint());
+        break;
+      }
+      default:
+        UNREACHABLE();
+    }
+  }
+  is_enabled_ = true;
 }
 
 
+void CodeBreakpoint::RestoreCode() {
+  ASSERT(is_enabled_);
+  const Code& code = Code::Handle(code_);
+  const Instructions& instrs = Instructions::Handle(code.instructions());
+  {
+    WritableInstructionsScope writable(instrs.EntryPoint(), instrs.size());
+    switch (breakpoint_kind_) {
+      case PcDescriptors::kIcCall:
+      case PcDescriptors::kUnoptStaticCall:
+      case PcDescriptors::kClosureCall:
+      case PcDescriptors::kRuntimeCall:
+      case PcDescriptors::kReturn: {
+        CodePatcher::PatchStaticCallAt(pc_, code, saved_value_);
+        break;
+      }
+      default:
+        UNREACHABLE();
+    }
+  }
+  is_enabled_ = false;
+}
 
 }  // namespace dart
 

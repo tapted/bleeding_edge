@@ -11,6 +11,7 @@ class _ProcessUtils {
   external static void _setExitCode(int status);
   external static void _sleep(int millis);
   external static int _pid(Process process);
+  external static Stream<ProcessSignal> _watchSignal(ProcessSignal signal);
 }
 
 /**
@@ -84,10 +85,124 @@ void sleep(Duration duration) {
 int get pid => _ProcessUtils._pid(null);
 
 /**
- * [Process] is used to start new processes using the static
- * [start] and [run] methods.
+ * The means to execute a program.
+ * 
+ * Use the static [start] and [run] methods to start a new process.
+ * The run method executes the process non-interactively to completion.
+ * In contrast, the start method allows your code to interact with the
+ * running process.
+ *
+ * ## Start a process with the run method
+ *
+ * The following code sample uses the run method to create a process
+ * that runs the UNIX command `ls`, which lists the contents of a directory.
+ * The run method completes with a [ProcessResult] object when the process
+ * terminates. This provides access to the output and exit code from the
+ * process. The run method does not return a Process object; this prevents your
+ * code from interacting with the running process.
+ *
+ *     import 'dart:io';
+ *
+ *     main() {
+ *       // List all files in the current directory in UNIX-like systems.
+ *       Process.run('ls', ['-l']).then((ProcessResult results) {
+ *         print(results.stdout);
+ *       });
+ *     }
+ *
+ * ## Start a process with the start method
+ *
+ * The following example uses start to create the process.
+ * The start method returns a [Future] for a Process object.
+ * When the future completes the process is started and
+ * your code can interact with the
+ * Process: writing to stdin, listening to stdout, and so on.
+ *
+ * The following sample starts the UNIX `cat` utility, which when given no
+ * command-line arguments, echos its input.
+ * The program writes to the process's standard input stream
+ * and prints data from its standard output stream.
+ *
+ *     import 'dart:io';
+ *     import 'dart:convert';
+ *
+ *     main() {
+ *       Process.start('cat', []).then((Process process) {
+ *         process.stdout
+ *             .transform(UTF8.decoder)
+ *             .listen((data) { print(data); });
+ *         process.stdin.writeln('Hello, world!');
+ *         process.stdin.writeln('Hello, galaxy!');
+ *         process.stdin.writeln('Hello, universe!');
+ *       });
+ *     }
+ *
+ * ## Standard I/O streams
+ * 
+ * As seen in the previous code sample, you can interact with the Process's
+ * standard output stream through the getter [stdout],
+ * and you can interact with the Process's standard input stream through 
+ * the getter [stdin].
+ * In addition, Process provides a getter [stderr] for using the Process's
+ * standard error stream.
+ *
+ * A Process's streams are distinct from the top-level streams
+ * for the current program.
+ *
+ * ## Exit codes
+ *
+ * Call the [exitCode] method to get the exit code of the process.
+ * The exit code indicates whether the program terminated successfully
+ * (usually indicated with an exit code of 0) or with an error.
+ *
+ * If the start method is used, the exitCode is available through a future
+ * on the Process object (as shown in the example below).
+ * If the run method is used, the exitCode is available
+ * through a getter on the ProcessResult instance.
+ *
+ *     import 'dart:io';
+ *
+ *     main() {
+ *       Process.start('ls', ['-l']).then((process) {
+ *         // Get the exit code from the new process.
+ *         process.exitCode.then((exitCode) {
+ *           print('exit code: $exitCode');
+ *         });
+ *       });
+ *     }
+ *
+ * ## Other resources
+ *
+ * [Dart by Example](https://www.dartlang.org/dart-by-example/#dart-io-and-command-line-apps)
+ * provides additional task-oriented code samples that show how to use 
+ * various API from the [dart:io] library.
  */
 abstract class Process {
+  /**
+   * Returns a [:Future:] which completes with the exit code of the process
+   * when the process completes.
+   *
+   * The handling of exit codes is platform specific.
+   *
+   * On Linux and Mac a normal exit code will be a positive value in
+   * the range [0..255]. If the process was terminated due to a signal
+   * the exit code will be a negative value in the range [-255..-1],
+   * where the absolute value of the exit code is the signal
+   * number. For example, if a process crashes due to a segmentation
+   * violation the exit code will be -11, as the signal SIGSEGV has the
+   * number 11.
+   *
+   * On Windows a process can report any 32-bit value as an exit
+   * code. When returning the exit code this exit code is turned into
+   * a signed value. Some special values are used to report
+   * termination due to some system event. E.g. if a process crashes
+   * due to an access violation the 32-bit exit code is `0xc0000005`,
+   * which will be returned as the negative number `-1073741819`. To
+   * get the original 32-bit value use `(0x100000000 + exitCode) &
+   * 0xffffffff`.
+   */
+  Future<int> exitCode;
+
   /**
    * Starts a process running the [executable] with the specified
    * [arguments]. Returns a [:Future<Process>:] that completes with a
@@ -228,41 +343,14 @@ abstract class Process {
   int get pid;
 
   /**
-   * Returns a [:Future:] which completes with the exit code of the process
-   * when the process completes.
+   * On Linux and Mac OS, [kill] sends [signal] to the process. When the process
+   * terminates as a result of calling [kill], the value for [exitCode] may be a
+   * negative number corresponding to the provided [signal].
    *
-   * The handling of exit codes is platform specific.
+   * On Windows, [kill] kills the process, ignoring the [signal] flag.
    *
-   * On Linux and Mac a normal exit code will be a positive value in
-   * the range [0..255]. If the process was terminated due to a signal
-   * the exit code will be a negative value in the range [-255..0[,
-   * where the absolute value of the exit code is the signal
-   * number. For example, if a process crashes due to a segmentation
-   * violation the exit code will be -11, as the signal SIGSEGV has the
-   * number 11.
-   *
-   * On Windows a process can report any 32-bit value as an exit
-   * code. When returning the exit code this exit code is turned into
-   * a signed value. Some special values are used to report
-   * termination due to some system event. E.g. if a process crashes
-   * due to an access violation the 32-bit exit code is `0xc0000005`,
-   * which will be returned as the negative number `-1073741819`. To
-   * get the original 32-bit value use `(0x100000000 + exitCode) &
-   * 0xffffffff`.
-   */
-  Future<int> exitCode;
-
-  /**
-   * On Windows, [kill] kills the process, ignoring the [signal]
-   * flag. On Posix systems, [kill] sends [signal] to the
-   * process. Depending on the signal giving, it'll have different
-   * meanings. When the process terminates as a result of calling
-   * [kill] [onExit] is called.
-   *
-   * Returns [:true:] if the process is successfully killed (the
-   * signal is successfully sent). Returns [:false:] if the process
-   * could not be killed (the signal could not be sent). Usually,
-   * a [:false:] return value from kill means that the process is
+   * Returns [:true:] if the signal is successfully sent and process is killed.
+   * Otherwise the signal could not be sent, usually meaning that the process is
    * already dead.
    */
   bool kill([ProcessSignal signal = ProcessSignal.SIGTERM]);
@@ -310,51 +398,78 @@ abstract class ProcessResult {
  * to a child process, see [:Process.kill:].
  */
 class ProcessSignal {
-  static const ProcessSignal SIGHUP = const ProcessSignal._signal(1);
-  static const ProcessSignal SIGINT = const ProcessSignal._signal(2);
-  static const ProcessSignal SIGQUIT = const ProcessSignal._signal(3);
-  static const ProcessSignal SIGILL = const ProcessSignal._signal(4);
-  static const ProcessSignal SIGTRAP = const ProcessSignal._signal(5);
-  static const ProcessSignal SIGABRT = const ProcessSignal._signal(6);
-  static const ProcessSignal SIGBUS = const ProcessSignal._signal(7);
-  static const ProcessSignal SIGFPE = const ProcessSignal._signal(8);
-  static const ProcessSignal SIGKILL = const ProcessSignal._signal(9);
-  static const ProcessSignal SIGUSR1 = const ProcessSignal._signal(10);
-  static const ProcessSignal SIGSEGV = const ProcessSignal._signal(11);
-  static const ProcessSignal SIGUSR2 = const ProcessSignal._signal(12);
-  static const ProcessSignal SIGPIPE = const ProcessSignal._signal(13);
-  static const ProcessSignal SIGALRM = const ProcessSignal._signal(14);
-  static const ProcessSignal SIGTERM = const ProcessSignal._signal(15);
-  static const ProcessSignal SIGCHLD = const ProcessSignal._signal(17);
-  static const ProcessSignal SIGCONT = const ProcessSignal._signal(18);
-  static const ProcessSignal SIGSTOP = const ProcessSignal._signal(19);
-  static const ProcessSignal SIGTSTP = const ProcessSignal._signal(20);
-  static const ProcessSignal SIGTTIN = const ProcessSignal._signal(21);
-  static const ProcessSignal SIGTTOU = const ProcessSignal._signal(22);
-  static const ProcessSignal SIGURG = const ProcessSignal._signal(23);
-  static const ProcessSignal SIGXCPU = const ProcessSignal._signal(24);
-  static const ProcessSignal SIGXFSZ = const ProcessSignal._signal(25);
-  static const ProcessSignal SIGVTALRM = const ProcessSignal._signal(26);
-  static const ProcessSignal SIGPROF = const ProcessSignal._signal(27);
-  static const ProcessSignal SIGPOLL = const ProcessSignal._signal(29);
-  static const ProcessSignal SIGSYS = const ProcessSignal._signal(31);
+  static const ProcessSignal SIGHUP = const ProcessSignal._(1, "SIGHUP");
+  static const ProcessSignal SIGINT = const ProcessSignal._(2, "SIGINT");
+  static const ProcessSignal SIGQUIT = const ProcessSignal._(3, "SIGQUIT");
+  static const ProcessSignal SIGILL = const ProcessSignal._(4, "SIGILL");
+  static const ProcessSignal SIGTRAP = const ProcessSignal._(5, "SIGTRAP");
+  static const ProcessSignal SIGABRT = const ProcessSignal._(6, "SIGABRT");
+  static const ProcessSignal SIGBUS = const ProcessSignal._(7, "SIGBUS");
+  static const ProcessSignal SIGFPE = const ProcessSignal._(8, "SIGFPE");
+  static const ProcessSignal SIGKILL = const ProcessSignal._(9, "SIGKILL");
+  static const ProcessSignal SIGUSR1 = const ProcessSignal._(10, "SIGUSR1");
+  static const ProcessSignal SIGSEGV = const ProcessSignal._(11, "SIGSEGV");
+  static const ProcessSignal SIGUSR2 = const ProcessSignal._(12, "SIGUSR2");
+  static const ProcessSignal SIGPIPE = const ProcessSignal._(13, "SIGPIPE");
+  static const ProcessSignal SIGALRM = const ProcessSignal._(14, "SIGALRM");
+  static const ProcessSignal SIGTERM = const ProcessSignal._(15, "SIGTERM");
+  static const ProcessSignal SIGCHLD = const ProcessSignal._(17, "SIGCHLD");
+  static const ProcessSignal SIGCONT = const ProcessSignal._(18, "SIGCONT");
+  static const ProcessSignal SIGSTOP = const ProcessSignal._(19, "SIGSTOP");
+  static const ProcessSignal SIGTSTP = const ProcessSignal._(20, "SIGTSTP");
+  static const ProcessSignal SIGTTIN = const ProcessSignal._(21, "SIGTTIN");
+  static const ProcessSignal SIGTTOU = const ProcessSignal._(22, "SIGTTOU");
+  static const ProcessSignal SIGURG = const ProcessSignal._(23, "SIGURG");
+  static const ProcessSignal SIGXCPU = const ProcessSignal._(24, "SIGXCPU");
+  static const ProcessSignal SIGXFSZ = const ProcessSignal._(25, "SIGXFSZ");
+  static const ProcessSignal SIGVTALRM = const ProcessSignal._(26, "SIGVTALRM");
+  static const ProcessSignal SIGPROF = const ProcessSignal._(27, "SIGPROF");
+  static const ProcessSignal SIGWINCH = const ProcessSignal._(28, "SIGWINCH");
+  static const ProcessSignal SIGPOLL = const ProcessSignal._(29, "SIGPOLL");
+  static const ProcessSignal SIGSYS = const ProcessSignal._(31, "SIGSYS");
 
-  const ProcessSignal._signal(int this._signalNumber);
   final int _signalNumber;
+  final String _name;
+
+  const ProcessSignal._(this._signalNumber, this._name);
+
+  String toString() => _name;
+
+  /**
+   * Watch for process signals.
+   *
+   * The following [ProcessSignal]s can be listened to:
+   *
+   *   * [ProcessSignal.SIGHUP].
+   *   * [ProcessSignal.SIGINT].
+   *   * [ProcessSignal.SIGTERM]. Not available on Windows.
+   *   * [ProcessSignal.SIGUSR1]. Not available on Windows.
+   *   * [ProcessSignal.SIGUSR2]. Not available on Windows.
+   *   * [ProcessSignal.SIGWINCH]. Not available on Windows.
+   *
+   * Other signals are disallowed, as they may be used by the VM.
+   */
+  Stream<ProcessSignal> watch() => _ProcessUtils._watchSignal(this);
+}
+
+
+class SignalException implements IOException {
+  final String message;
+  final osError;
+
+  const SignalException(this.message, [this.osError = null]);
+
+  String toString() {
+    var msg = "";
+    if (osError != null) {
+      msg = ", osError: $osError";
+    }
+    return "SignalException: $message$msg";
+  }
 }
 
 
 class ProcessException implements IOException {
-  const ProcessException(String this.executable,
-                         List<String> this.arguments,
-                         [String this.message = "",
-                          int this.errorCode = 0]);
-  String toString() {
-    var msg = (message == null) ? 'OS error code: $errorCode' : message;
-    var args = arguments.join(' ');
-    return "ProcessException: $msg\n  Command: $executable $args";
-  }
-
   /**
    * Contains the executable provided for the process.
    */
@@ -374,4 +489,12 @@ class ProcessException implements IOException {
    * Contains the OS error code for the process exception if any.
    */
   final int errorCode;
+
+  const ProcessException(this.executable, this.arguments, [this.message = "",
+                         this.errorCode = 0]);
+  String toString() {
+    var msg = (message == null) ? 'OS error code: $errorCode' : message;
+    var args = arguments.join(' ');
+    return "ProcessException: $msg\n  Command: $executable $args";
+  }
 }

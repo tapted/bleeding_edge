@@ -311,6 +311,12 @@ const char* RangeBoundary::ToCString() const {
 }
 
 
+void DropTempsInstr::PrintOperandsTo(BufferFormatter* f) const {
+  f->Print("%" Pd ", ", num_temps());
+  value()->PrintTo(f);
+}
+
+
 void AssertAssignableInstr::PrintOperandsTo(BufferFormatter* f) const {
   value()->PrintTo(f);
   f->Print(", %s, '%s'",
@@ -420,9 +426,13 @@ void GuardFieldInstr::PrintOperandsTo(BufferFormatter* f) const {
 
 
 void StoreInstanceFieldInstr::PrintOperandsTo(BufferFormatter* f) const {
-  f->Print("%s {%" Pd "}, ",
-           String::Handle(field().name()).ToCString(),
-           field().Offset());
+  if (field().IsNull()) {
+    f->Print("{%" Pd "}, ", offset_in_bytes());
+  } else {
+    f->Print("%s {%" Pd "}, ",
+             String::Handle(field().name()).ToCString(),
+             field().Offset());
+  }
   instance()->PrintTo(f);
   f->Print(", ");
   value()->PrintTo(f);
@@ -479,16 +489,6 @@ void AllocateObjectInstr::PrintOperandsTo(BufferFormatter* f) const {
 }
 
 
-void AllocateObjectWithBoundsCheckInstr::PrintOperandsTo(
-    BufferFormatter* f) const {
-  f->Print("%s", Class::Handle(constructor().Owner()).ToCString());
-  for (intptr_t i = 0; i < InputCount(); i++) {
-    f->Print(", ");
-    InputAt(i)->PrintTo(f);
-  }
-}
-
-
 void MaterializeObjectInstr::PrintOperandsTo(BufferFormatter* f) const {
   f->Print("%s", String::Handle(cls_.Name()).ToCString());
   for (intptr_t i = 0; i < InputCount(); i++) {
@@ -506,15 +506,6 @@ void CreateArrayInstr::PrintOperandsTo(BufferFormatter* f) const {
   }
   if (ArgumentCount() > 0) f->Print(", ");
   element_type()->PrintTo(f);
-}
-
-
-void CreateClosureInstr::PrintOperandsTo(BufferFormatter* f) const {
-  f->Print("%s", function().ToCString());
-  for (intptr_t i = 0; i < ArgumentCount(); ++i) {
-    if (i > 0) f->Print(", ");
-    PushArgumentAt(i)->value()->PrintTo(f);
-  }
 }
 
 
@@ -540,13 +531,6 @@ void LoadFieldInstr::PrintOperandsTo(BufferFormatter* f) const {
 }
 
 
-void StoreVMFieldInstr::PrintOperandsTo(BufferFormatter* f) const {
-  dest()->PrintTo(f);
-  f->Print(", %" Pd ", ", offset_in_bytes());
-  value()->PrintTo(f);
-}
-
-
 void InstantiateTypeInstr::PrintOperandsTo(BufferFormatter* f) const {
   const String& type_name = String::Handle(type().Name());
   f->Print("%s, ", type_name.ToCString());
@@ -555,14 +539,6 @@ void InstantiateTypeInstr::PrintOperandsTo(BufferFormatter* f) const {
 
 
 void InstantiateTypeArgumentsInstr::PrintOperandsTo(BufferFormatter* f) const {
-  const String& type_args = String::Handle(type_arguments().Name());
-  f->Print("%s, ", type_args.ToCString());
-  instantiator()->PrintTo(f);
-}
-
-
-void ExtractConstructorTypeArgumentsInstr::PrintOperandsTo(
-    BufferFormatter* f) const {
   const String& type_args = String::Handle(type_arguments().Name());
   f->Print("%s, ", type_args.ToCString());
   instantiator()->PrintTo(f);

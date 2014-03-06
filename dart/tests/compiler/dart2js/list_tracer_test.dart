@@ -10,7 +10,7 @@ import
 
 import 'compiler_helper.dart';
 import 'parser_helper.dart';
-
+import 'type_mask_test_helper.dart';
 
 String generateTest(String listAllocation) {
   return """
@@ -117,7 +117,7 @@ main() {
   ((a) => a[0] = aDouble)(listPassedToClosure);
 
   listReturnedFromClosure[0] = anInt;
-  (() => listReturnedFromClosure)[0] = aDouble;
+  (() => listReturnedFromClosure)()[0] = aDouble;
 
   listInField[0] = anInt;
   new A(listInField).useField();
@@ -198,7 +198,8 @@ void main() {
 
 void doTest(String allocation, {bool nullify}) {
   Uri uri = new Uri(scheme: 'source');
-  var compiler = compilerFor(generateTest(allocation), uri);
+  var compiler = compilerFor(generateTest(allocation), uri,
+      expectedErrors: 0, expectedWarnings: 1);
   asyncTest(() => compiler.runCompiler(uri).then((_) {
     var typesTask = compiler.typesTask;
     var typesInferrer = typesTask.typesInferrer;
@@ -207,7 +208,7 @@ void doTest(String allocation, {bool nullify}) {
       var element = findElement(compiler, name);
       ContainerTypeMask mask = typesInferrer.getTypeOfElement(element);
       if (nullify) type = type.nullable();
-      Expect.equals(type, mask.elementType.simplify(compiler), name);
+      Expect.equals(type, simplify(mask.elementType, compiler), name);
     }
 
     checkType('listInField', typesTask.numType);

@@ -8,7 +8,9 @@
 #include "vm/debugger.h"
 
 #include "vm/assembler.h"
+#include "vm/code_patcher.h"
 #include "vm/cpu.h"
+#include "vm/instructions.h"
 #include "vm/stub_code.h"
 
 namespace dart {
@@ -33,40 +35,69 @@ RawObject* ActivationFrame::GetClosureObject(intptr_t num_actual_args) {
 }
 
 
-void CodeBreakpoint::PatchFunctionReturn() {
-  uint8_t* code = reinterpret_cast<uint8_t*>(pc_ - 13);
-  ASSERT((code[0] == 0x4c) && (code[1] == 0x8b) && (code[2] == 0x7d) &&
-         (code[3] == 0xf0));  // movq r15,[rbp-0x10]
-  ASSERT((code[4] == 0x48) && (code[5] == 0x89) &&
-         (code[6] == 0xec));  // mov rsp, rbp
-  ASSERT(code[7] == 0x5d);  // pop rbp
-  ASSERT(code[8] == 0xc3);  // ret
-  ASSERT((code[9] == 0x0F) && (code[10] == 0x1F) && (code[11] == 0x40) &&
-         (code[12] == 0x00));  // nops
-  // Smash code with call instruction and relative target address.
-  uword stub_addr = StubCode::BreakpointReturnEntryPoint();
-  code[0] = 0x49;
-  code[1] = 0xbb;
-  *reinterpret_cast<uword*>(&code[2]) = stub_addr;
-  code[10] = 0x41;
-  code[11] = 0xff;
-  code[12] = 0xd3;
-  CPU::FlushICache(pc_ - 13, 13);
+uword CodeBreakpoint::OrigStubAddress() const {
+  const Code& code = Code::Handle(code_);
+  const Array& object_pool = Array::Handle(code.ObjectPool());
+  uword offset = saved_value_ + kHeapObjectTag;
+  ASSERT((offset % kWordSize) == 0);
+  const intptr_t index = (offset - Array::data_offset()) / kWordSize;
+  const uword stub_address = reinterpret_cast<uword>(object_pool.At(index));
+  ASSERT(stub_address % kWordSize == 0);
+  return stub_address;
 }
 
 
-void CodeBreakpoint::RestoreFunctionReturn() {
-  uint8_t* code = reinterpret_cast<uint8_t*>(pc_ - 13);
-  ASSERT((code[0] == 0x49) && (code[1] == 0xbb));
-
-  MemoryRegion code_region(reinterpret_cast<void*>(pc_ - 13), 13);
-  Assembler assembler;
-
-  assembler.ReturnPatchable();
-  assembler.FinalizeInstructions(code_region);
-
-  CPU::FlushICache(pc_ - 13, 13);
+void CodeBreakpoint::PatchCode() {
+  ASSERT(!is_enabled_);
+  const Code& code = Code::Handle(code_);
+  const Instructions& instrs = Instructions::Handle(code.instructions());
+  {
+    WritableInstructionsScope writable(instrs.EntryPoint(), instrs.size());
+    switch (breakpoint_kind_) {
+      case PcDescriptors::kIcCall:
+      case PcDescriptors::kUnoptStaticCall:
+      case PcDescriptors::kRuntimeCall:
+      case PcDescriptors::kClosureCall:
+      case PcDescriptors::kReturn: {
+        int32_t offset = CodePatcher::GetPoolOffsetAt(pc_);
+        ASSERT((offset > 0) && ((offset % 8) == 7));
+        saved_value_ = static_cast<uword>(offset);
+        const uint32_t stub_offset =
+            InstructionPattern::OffsetFromPPIndex(
+                Assembler::kBreakpointRuntimeCPIndex);
+        CodePatcher::SetPoolOffsetAt(pc_, stub_offset);
+        break;
+      }
+      default:
+        UNREACHABLE();
+    }
+  }
+  is_enabled_ = true;
 }
+
+
+void CodeBreakpoint::RestoreCode() {
+  ASSERT(is_enabled_);
+  const Code& code = Code::Handle(code_);
+  const Instructions& instrs = Instructions::Handle(code.instructions());
+  {
+    WritableInstructionsScope writable(instrs.EntryPoint(), instrs.size());
+    switch (breakpoint_kind_) {
+      case PcDescriptors::kIcCall:
+      case PcDescriptors::kUnoptStaticCall:
+      case PcDescriptors::kClosureCall:
+      case PcDescriptors::kRuntimeCall:
+      case PcDescriptors::kReturn: {
+        CodePatcher::SetPoolOffsetAt(pc_, static_cast<int32_t>(saved_value_));
+        break;
+      }
+      default:
+        UNREACHABLE();
+    }
+  }
+  is_enabled_ = false;
+}
+
 
 }  // namespace dart
 

@@ -96,7 +96,9 @@ void FlowGraphTypePropagator::Propagate() {
         BranchInstr* branch = instr->AsBranch();
         if (branch != NULL) {
           ConstrainedCompileType* constrained_type = branch->constrained_type();
-          if (constrained_type != NULL) constrained_type->Update();
+          if (constrained_type != NULL) {
+            constrained_type->Update();
+          }
         }
       }
     }
@@ -225,7 +227,7 @@ void FlowGraphTypePropagator::SetCid(Definition* def, intptr_t cid) {
 ConstrainedCompileType* FlowGraphTypePropagator::MarkNonNullable(
     Definition* def) {
   CompileType* current = TypeOf(def);
-  if (current->is_nullable()) {
+  if (current->is_nullable() && (current->ToCid() != kNullCid)) {
     ConstrainedCompileType* constrained_type =
         new NotNullConstrainedCompileType(current);
     SetTypeOf(def, constrained_type->ToCompileType());
@@ -512,7 +514,7 @@ intptr_t CompileType::ToNullableCid() {
       if (FLAG_use_cha || IsKnownPrivateClass(type_class)) {
         // A known private class cannot be subclassed or implemented.
         if (!type_class.is_implemented() &&
-            !CHA::HasSubclasses(type_class.id())) {
+            !CHA::HasSubclassesSafe(type_class.id())) {
           cid_ = type_class.id();
         } else {
           cid_ = kDynamicCid;
@@ -749,7 +751,8 @@ CompileType ConstantInstr::ComputeType() const {
         value().GetClassId(),
         AbstractType::ZoneHandle(Instance::Cast(value()).GetType()));
   } else {
-    return CompileType::Dynamic();
+    // Type info for non-instance objects.
+    return CompileType::FromCid(value().GetClassId());
   }
 }
 
@@ -758,7 +761,7 @@ CompileType* AssertAssignableInstr::ComputeInitialType() const {
   CompileType* value_type = value()->Type();
 
   if (value_type->IsMoreSpecificThan(dst_type())) {
-    return value_type;
+    return ZoneCompileType::Wrap(*value_type);
   }
 
   if (dst_type().IsVoidType()) {
@@ -767,6 +770,14 @@ CompileType* AssertAssignableInstr::ComputeInitialType() const {
   }
 
   return ZoneCompileType::Wrap(CompileType::FromAbstractType(dst_type()));
+}
+
+
+bool AssertAssignableInstr::RecomputeType() {
+  CompileType* value_type = value()->Type();
+  return UpdateType(value_type->IsMoreSpecificThan(dst_type())
+                      ? *value_type
+                      : CompileType::FromAbstractType(dst_type()));
 }
 
 
@@ -808,17 +819,23 @@ CompileType RelationalOpInstr::ComputeType() const {
 
 
 CompileType CurrentContextInstr::ComputeType() const {
-  return CompileType::FromCid(kContextCid);
+  return CompileType(CompileType::kNonNullable,
+                     kContextCid,
+                     &AbstractType::ZoneHandle(Type::DynamicType()));
 }
 
 
 CompileType CloneContextInstr::ComputeType() const {
-  return CompileType::FromCid(kContextCid);
+  return CompileType(CompileType::kNonNullable,
+                     kContextCid,
+                     &AbstractType::ZoneHandle(Type::DynamicType()));
 }
 
 
 CompileType AllocateContextInstr::ComputeType() const {
-  return CompileType::FromCid(kContextCid);
+  return CompileType(CompileType::kNonNullable,
+                     kContextCid,
+                     &AbstractType::ZoneHandle(Type::DynamicType()));
 }
 
 
@@ -865,6 +882,11 @@ CompileType StringFromCharCodeInstr::ComputeType() const {
 }
 
 
+CompileType StringToCharCodeInstr::ComputeType() const {
+    return CompileType::FromCid(kSmiCid);
+}
+
+
 CompileType StringInterpolateInstr::ComputeType() const {
   // TODO(srdjan): Do better and determine if it is a one or two byte string.
   return CompileType::String();
@@ -903,16 +925,8 @@ CompileType* StoreStaticFieldInstr::ComputeInitialType() const {
 
 
 CompileType CreateArrayInstr::ComputeType() const {
-  return CompileType::FromAbstractType(type(), CompileType::kNonNullable);
-}
-
-
-CompileType CreateClosureInstr::ComputeType() const {
-  const Function& fun = function();
-  const Class& signature_class = Class::Handle(fun.signature_class());
-  return CompileType::FromAbstractType(
-      Type::ZoneHandle(signature_class.SignatureType()),
-      CompileType::kNonNullable);
+  // TODO(fschneider): Add abstract type and type arguments to the compile type.
+  return CompileType::FromCid(kArrayCid);
 }
 
 
@@ -965,11 +979,6 @@ CompileType LoadFieldInstr::ComputeType() const {
 
   ASSERT(!Field::IsExternalizableCid(result_cid_));
   return CompileType::FromCid(result_cid_);
-}
-
-
-CompileType* StoreVMFieldInstr::ComputeInitialType() const {
-  return value()->Type();
 }
 
 
@@ -1183,6 +1192,16 @@ CompileType BoxFloat32x4Instr::ComputeType() const {
 }
 
 
+CompileType UnboxFloat64x2Instr::ComputeType() const {
+  return CompileType::FromCid(kFloat64x2Cid);
+}
+
+
+CompileType BoxFloat64x2Instr::ComputeType() const {
+  return CompileType::FromCid(kFloat64x2Cid);
+}
+
+
 CompileType UnboxInt32x4Instr::ComputeType() const {
   return CompileType::FromCid(kInt32x4Cid);
 }
@@ -1199,6 +1218,17 @@ CompileType SmiToDoubleInstr::ComputeType() const {
 
 
 CompileType DoubleToDoubleInstr::ComputeType() const {
+  return CompileType::FromCid(kDoubleCid);
+}
+
+
+CompileType FloatToDoubleInstr::ComputeType() const {
+  return CompileType::FromCid(kDoubleCid);
+}
+
+
+CompileType DoubleToFloatInstr::ComputeType() const {
+  // Type is double when converted back.
   return CompileType::FromCid(kDoubleCid);
 }
 

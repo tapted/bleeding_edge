@@ -54,6 +54,32 @@ public class CompletionLibraryTests extends CompletionTestCase {
         "1+libFunction");
   }
 
+  public void test_importPrefix_hideCombinator() throws Exception {
+    ArrayList<Source> sources = new ArrayList<Source>();
+    test(//
+        src(//
+            "import 'dart:math' as math hide PI;",
+            "main() {",
+            "  math.!1",
+            "}"),
+        sources,
+        "1-PI",
+        "1+LN10");
+  }
+
+  public void test_importPrefix_showCombinator() throws Exception {
+    ArrayList<Source> sources = new ArrayList<Source>();
+    test(//
+        src(//
+            "import 'dart:math' as math show PI;",
+            "main() {",
+            "  math.!1",
+            "}"),
+        sources,
+        "1+PI",
+        "1-LN10");
+  }
+
   public void test_noPrivateElement_otherLibrary_constructor() throws Exception {
     ArrayList<Source> sources = new ArrayList<Source>();
     sources.add(addSource(//
@@ -265,6 +291,47 @@ public class CompletionLibraryTests extends CompletionTestCase {
         sources,
         "1-privateMethod",
         "1+publicMethod");
+  }
+
+  public void test009() throws Exception {
+    ArrayList<Source> sources = new ArrayList<Source>();
+    // Exercise library prefixes.
+    sources.add(addSource(//
+        "/lib.dart",
+        src(//
+            "library lib;",
+            "int X = 1;",
+            "void m(){}",
+            "class Y {}",
+            "")));
+    test(//
+        src(//
+            "import 'lib.dart' as Q;",
+            "void a() {",
+            "  var x = Q.!1",
+            "}",
+            "void b() {",
+            "  var x = [Q.!2]",
+            "}",
+            "void c() {",
+            "  var x = new List([Q.!3])",
+            "}",
+            "void d() {",
+            "  new Q.!4",
+            "}"),
+        sources,
+        "1+X",
+        "1+m",
+        "1+Y",
+        "2+X",
+        "2+m",
+        "2+Y",
+        "3+X",
+        "3+m",
+        "3+Y",
+        "4+Y",
+        "4-m",
+        "4-X");
   }
 
 }

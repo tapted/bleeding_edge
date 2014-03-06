@@ -45,49 +45,23 @@ const List<String> EXCLUDED_ENVIRONMENT_VARIABLES =
 
 /** A command executed as a step in a test case. */
 class Command {
-  /** Path to the executable of this command. */
-  String executable;
+  /** A descriptive name for this command. */
+  String displayName;
 
   /** The actual command line that will be executed. */
   String commandLine;
 
-  /** A descriptive name for this command. */
-  String displayName;
-
-  /** Command line arguments to the executable. */
-  List<String> arguments;
-
-  /** Environment for the command */
-  Map<String, String> environmentOverrides;
-
   /** Number of times this command *can* be retried */
   int get maxNumRetries => 2;
+
+  /** Reproduction command */
+  String get reproductionCommand => null;
 
   // We compute the Command.hashCode lazily and cache it here, since it might
   // be expensive to compute (and hashCode is called often).
   int _cachedHashCode;
 
-  Command._(this.displayName, this.executable,
-            this.arguments, String configurationDir,
-            [this.environmentOverrides = null]) {
-    if (io.Platform.operatingSystem == 'windows') {
-      // Windows can't handle the first command if it is a .bat file or the like
-      // with the slashes going the other direction.
-      // TODO(efortuna): Remove this when fixed (Issue 1306).
-      executable = executable.replaceAll('/', '\\');
-    }
-    var quotedArguments = [];
-    quotedArguments.add(escapeCommandLineArgument(executable));
-    quotedArguments.addAll(arguments.map(escapeCommandLineArgument));
-    commandLine = quotedArguments.join(' ');
-
-    if (configurationDir != null) {
-      if (environmentOverrides == null) {
-        environmentOverrides = new Map<String, String>();
-      }
-      environmentOverrides['DART_CONFIGURATION'] = configurationDir;
-    }
-  }
+  Command._(this.displayName);
 
   int get hashCode {
     if (_cachedHashCode == null) {
@@ -106,9 +80,51 @@ class Command {
   }
 
   void _buildHashCode(HashCodeBuilder builder) {
-    builder.add(executable);
     builder.add(commandLine);
     builder.add(displayName);
+  }
+
+  bool _equal(Command other) {
+    return hashCode == other.hashCode &&
+        commandLine == other.commandLine &&
+        displayName == other.displayName;
+  }
+
+  String toString() => reproductionCommand;
+
+  Future<bool> get outputIsUpToDate => new Future.value(false);
+}
+
+class ProcessCommand extends Command {
+  /** Path to the executable of this command. */
+  String executable;
+
+  /** Command line arguments to the executable. */
+  List<String> arguments;
+
+  /** Environment for the command */
+  Map<String, String> environmentOverrides;
+
+  /** Working directory for the command */
+  final String workingDirectory;
+
+  ProcessCommand._(String displayName, this.executable,
+                   this.arguments,
+                   [this.environmentOverrides = null,
+                    this.workingDirectory = null])
+      : super._(displayName) {
+    if (io.Platform.operatingSystem == 'windows') {
+      // Windows can't handle the first command if it is a .bat file or the like
+      // with the slashes going the other direction.
+      // NOTE: Issue 1306
+      executable = executable.replaceAll('/', '\\');
+    }
+  }
+
+  void _buildHashCode(HashCodeBuilder builder) {
+    super._buildHashCode(builder);
+    builder.add(executable);
+    builder.add(workingDirectory);
     for (var object in arguments) builder.add(object);
     if (environmentOverrides != null) {
       for (var key in environmentOverrides.keys) {
@@ -119,45 +135,39 @@ class Command {
   }
 
   bool _equal(Command other) {
-    if (hashCode != other.hashCode ||
-        executable != other.executable ||
-        commandLine != other.commandLine ||
-        displayName != other.displayName ||
-        arguments.length != other.arguments.length) {
-      return false;
-    }
+    if (other is ProcessCommand) {
+      if (!super._equal(other)) return false;
 
-    if ((environmentOverrides != other.environmentOverrides) &&
-        (environmentOverrides == null || other.environmentOverrides == null)) {
-      return false;
-    }
-
-    if (environmentOverrides != null &&
-        environmentOverrides.length != other.environmentOverrides.length) {
-      return false;
-    }
-
-    for (var i = 0; i < arguments.length; i++) {
-      if (arguments[i] != other.arguments[i]) return false;
-    }
-
-    if (environmentOverrides != null) {
-      for (var key in environmentOverrides.keys) {
-        if (!other.environmentOverrides.containsKey(key) ||
-            environmentOverrides[key] != other.environmentOverrides[key]) {
-          return false;
-        }
+      if (hashCode != other.hashCode ||
+          executable != other.executable ||
+          arguments.length != other.arguments.length) {
+        return false;
       }
+
+      if (!deepJsonCompare(arguments, other.arguments)) return false;
+      if (workingDirectory != other.workingDirectory) return false;
+      if (!deepJsonCompare(environmentOverrides, other.environmentOverrides)) {
+        return false;
+      }
+
+      return true;
     }
-    return true;
+    return false;
   }
 
-  String toString() => commandLine;
+  String get reproductionCommand {
+    var command = ([executable]..addAll(arguments))
+        .map(escapeCommandLineArgument).join(' ');
+    if (workingDirectory != null) {
+      command = "$command (working directory: $workingDirectory)";
+    }
+    return command;
+  }
 
   Future<bool> get outputIsUpToDate => new Future.value(false);
 }
 
-class CompilationCommand extends Command {
+class CompilationCommand extends ProcessCommand {
   String _outputFile;
   bool _neverSkipCompilation;
   List<Uri> _bootstrapDependencies;
@@ -165,11 +175,11 @@ class CompilationCommand extends Command {
   CompilationCommand._(String displayName,
                        this._outputFile,
                        this._neverSkipCompilation,
-                       List<String> bootstrapDependencies,
+                       List<Uri> bootstrapDependencies,
                        String executable,
                        List<String> arguments,
-                       String configurationDir)
-      : super._(displayName, executable, arguments, configurationDir) {
+                       Map<String, String> environmentOverrides)
+      : super._(displayName, executable, arguments, environmentOverrides) {
     // We sort here, so we can do a fast hashCode/operator==
     _bootstrapDependencies = new List.from(bootstrapDependencies);
     _bootstrapDependencies.sort();
@@ -240,24 +250,26 @@ class CompilationCommand extends Command {
   }
 }
 
-class ContentShellCommand extends Command {
+class ContentShellCommand extends ProcessCommand {
   ContentShellCommand._(String executable,
                         String htmlFile,
                         List<String> options,
                         List<String> dartFlags,
-                        String configurationDir)
+                        Map<String, String> environmentOverrides)
       : super._("content_shell",
                executable,
                _getArguments(options, htmlFile),
-               configurationDir,
-               _getEnvironment(dartFlags));
+               _getEnvironment(environmentOverrides, dartFlags));
 
-  static Map _getEnvironment(List<String> dartFlags) {
+  static Map _getEnvironment(Map<String, String> env, List<String> dartFlags) {
     var needDartFlags = dartFlags != null && dartFlags.length > 0;
 
-    var env = null;
     if (needDartFlags) {
-      env = new Map<String, String>();
+      if (env != null) {
+        env = new Map<String, String>.from(env);
+      } else {
+        env = new Map<String, String>();
+      }
       env['DART_FLAGS'] = dartFlags.join(" ");
       env['DART_FORWARDING_PRINT'] = '1';
     }
@@ -285,12 +297,8 @@ class BrowserTestCommand extends Command {
 
   BrowserTestCommand._(String _browser,
                        this.url,
-                       String executable,
-                       List<String> arguments,
-                       String configurationDir,
                        {bool this.checkedMode: false})
-      : super._(_browser, executable, arguments, configurationDir),
-        browser = _browser;
+      : super._(_browser), browser = _browser;
 
   void _buildHashCode(HashCodeBuilder builder) {
     super._buildHashCode(builder);
@@ -307,17 +315,25 @@ class BrowserTestCommand extends Command {
         url == other.url &&
         checkedMode == other.checkedMode;
   }
+
+  String get reproductionCommand {
+    var parts = [TestUtils.dartTestExecutable.toString(),
+                'tools/testing/dart/launch_browser.dart',
+                browser,
+                url];
+    return parts.map(escapeCommandLineArgument).join(' ');
+  }
 }
 
-class AnalysisCommand extends Command {
+class AnalysisCommand extends ProcessCommand {
   final String flavor;
 
   AnalysisCommand._(this.flavor,
                     String displayName,
                     String executable,
                     List<String> arguments,
-                    String configurationDir)
-      : super._(displayName, executable, arguments, configurationDir);
+                    Map<String, String> environmentOverrides)
+      : super._(displayName, executable, arguments, environmentOverrides);
 
   void _buildHashCode(HashCodeBuilder builder) {
     super._buildHashCode(builder);
@@ -332,28 +348,233 @@ class AnalysisCommand extends Command {
   }
 }
 
-class VmCommand extends Command {
+class VmCommand extends ProcessCommand {
   VmCommand._(String executable,
               List<String> arguments,
-              String configurationDir)
-      : super._("vm", executable, arguments, configurationDir);
+              Map<String,String> environmentOverrides)
+      : super._("vm", executable, arguments, environmentOverrides);
 }
 
-class JSCommandlineCommand extends Command {
+class JSCommandlineCommand extends ProcessCommand {
   JSCommandlineCommand._(String displayName,
                          String executable,
                          List<String> arguments,
-                         String configurationDir,
                          [Map<String, String> environmentOverrides = null])
       : super._(displayName,
                 executable,
                 arguments,
-                configurationDir,
                 environmentOverrides);
 }
 
+class PubCommand extends ProcessCommand {
+  final String command;
+
+  PubCommand._(String pubCommand,
+               String pubExecutable,
+               String pubspecYamlDirectory,
+               String pubCacheDirectory)
+      : super._('pub_$pubCommand',
+                new io.File(pubExecutable).absolute.path,
+                [pubCommand],
+                {'PUB_CACHE' : pubCacheDirectory},
+                pubspecYamlDirectory), command = pubCommand;
+
+  void _buildHashCode(HashCodeBuilder builder) {
+    super._buildHashCode(builder);
+    builder.add(command);
+  }
+
+  bool _equal(Command other) {
+    return
+        other is PubCommand &&
+        super._equal(other) &&
+        command == other.command;
+  }
+}
+
+/* [ScriptCommand]s are executed by dart code. */
+abstract class ScriptCommand extends Command {
+  ScriptCommand._(String displayName) : super._(displayName);
+
+  Future<ScriptCommandOutputImpl> run();
+}
+
+class CleanDirectoryCopyCommand extends ScriptCommand {
+  final String _sourceDirectory;
+  final String _destinationDirectory;
+
+  CleanDirectoryCopyCommand._(this._sourceDirectory, this._destinationDirectory)
+    : super._('dir_copy');
+
+  String get reproductionCommand =>
+      "Copying '$_sourceDirectory' to '$_destinationDirectory'.";
+
+  Future<ScriptCommandOutputImpl> run() {
+    var watch = new Stopwatch()..start();
+
+    var source = new io.Directory(_sourceDirectory);
+    var destination = new io.Directory(_destinationDirectory);
+
+    return destination.exists().then((bool exists) {
+      var cleanDirectoryFuture;
+      if (exists) {
+        cleanDirectoryFuture = destination.delete(recursive: true);
+      } else {
+        cleanDirectoryFuture = new Future.value(null);
+      }
+      return cleanDirectoryFuture.then((_) {
+        return TestUtils.copyDirectory(_sourceDirectory, _destinationDirectory);
+      });
+    }).then((_) {
+      return new ScriptCommandOutputImpl(
+          this, Expectation.PASS, "", watch.elapsed);
+    }).catchError((error) {
+      return new ScriptCommandOutputImpl(
+          this, Expectation.FAIL, "An error occured: $error.", watch.elapsed);
+    });
+  }
+
+  void _buildHashCode(HashCodeBuilder builder) {
+    super._buildHashCode(builder);
+    builder.add(_sourceDirectory);
+    builder.add(_destinationDirectory);
+  }
+
+  bool _equal(Command other) {
+    return
+        other is CleanDirectoryCopyCommand &&
+        super._equal(other) &&
+        _sourceDirectory == other._sourceDirectory &&
+        _destinationDirectory == other._destinationDirectory;
+  }
+}
+
+class ModifyPubspecYamlCommand extends ScriptCommand {
+  String _pubspecYamlFile;
+  String _destinationFile;
+  Map<String, Map> _dependencyOverrides;
+
+  ModifyPubspecYamlCommand._(this._pubspecYamlFile,
+                             this._destinationFile,
+                             this._dependencyOverrides)
+    : super._("modify_pubspec") {
+    assert(_pubspecYamlFile.endsWith("pubspec.yaml"));
+    assert(_destinationFile.endsWith("pubspec.yaml"));
+  }
+
+  String get reproductionCommand =>
+      "Adding necessary dependency overrides to '$_pubspecYamlFile' "
+      "(destination = $_destinationFile).";
+
+  Future<ScriptCommandOutputImpl> run() {
+    var watch = new Stopwatch()..start();
+
+    var pubspecLockFile =
+        _destinationFile.substring(0, _destinationFile.length - ".yaml".length)
+        + ".lock";
+
+    var file = new io.File(_pubspecYamlFile);
+    var destinationFile = new io.File(_destinationFile);
+    var lockfile = new io.File(pubspecLockFile);
+    return file.readAsString().then((String yamlString) {
+      var dependencyOverrideSection = new StringBuffer();
+      if (_dependencyOverrides.isNotEmpty) {
+        dependencyOverrideSection.write(
+            "\n"
+            "# This section was autogenerated by test.py!\n"
+            "dependency_overrides:\n");
+        _dependencyOverrides.forEach((String packageName, Map override) {
+          dependencyOverrideSection.write("  $packageName:\n");
+          override.forEach((overrideKey, overrideValue) {
+            dependencyOverrideSection.write(
+                "    $overrideKey: $overrideValue\n");
+          });
+        });
+      }
+      var modifiedYamlString = "$yamlString\n$dependencyOverrideSection";
+      return destinationFile.writeAsString(modifiedYamlString).then((_) {
+        lockfile.exists().then((bool lockfileExists) {
+          if (lockfileExists) {
+            return lockfile.delete();
+          }
+        });
+      });
+    }).then((_) {
+      return new ScriptCommandOutputImpl(
+          this, Expectation.PASS, "", watch.elapsed);
+    }).catchError((error) {
+      return new ScriptCommandOutputImpl(
+          this, Expectation.FAIL, "An error occured: $error.", watch.elapsed);
+    });
+  }
+
+  void _buildHashCode(HashCodeBuilder builder) {
+    super._buildHashCode(builder);
+    builder.add(_pubspecYamlFile);
+    builder.add(_destinationFile);
+    builder.addJson(_dependencyOverrides);
+  }
+
+  bool _equal(Command other) {
+    return
+        other is ModifyPubspecYamlCommand &&
+        super._equal(other) &&
+        _pubspecYamlFile == other._pubspecYamlFile &&
+        _destinationFile == other._destinationFile &&
+        deepJsonCompare(_dependencyOverrides, other._dependencyOverrides);
+  }
+}
+
+/*
+ * [MakeSymlinkCommand] makes a symbolic link to another directory.
+ */
+class MakeSymlinkCommand extends ScriptCommand {
+  String _link;
+  String _target;
+
+  MakeSymlinkCommand._(this._link, this._target) : super._('make_symlink');
+
+  String get reproductionCommand =>
+      "Make symbolic link '$_link' (target: $_target)'.";
+
+  Future<ScriptCommandOutputImpl> run() {
+    var watch = new Stopwatch()..start();
+    var targetFile = new io.Directory(_target);
+    return targetFile.exists().then((bool targetExists) {
+      if (!targetExists) {
+        throw new Exception("Target '$_target' does not exist");
+      }
+      var link = new io.Link(_link);
+
+      return link.exists()
+          .then((bool exists) { if (exists) return link.delete(); })
+          .then((_) => link.create(_target));
+    }).then((_) {
+      return new ScriptCommandOutputImpl(
+          this, Expectation.PASS, "", watch.elapsed);
+    }).catchError((error) {
+      return new ScriptCommandOutputImpl(
+          this, Expectation.FAIL, "An error occured: $error.", watch.elapsed);
+    });
+  }
+
+  void _buildHashCode(HashCodeBuilder builder) {
+    super._buildHashCode(builder);
+    builder.add(_link);
+    builder.add(_target);
+  }
+
+  bool _equal(Command other) {
+    return
+        other is MakeSymlinkCommand &&
+        super._equal(other) &&
+        _link == other._link &&
+        _target == other._target;
+  }
+}
+
 class CommandBuilder {
-  static final instance = new CommandBuilder._();
+  static final CommandBuilder instance = new CommandBuilder._();
 
   final _cachedCommands = new Map<Command, Command>();
 
@@ -363,65 +584,89 @@ class CommandBuilder {
                                              String htmlFile,
                                              List<String> options,
                                              List<String> dartFlags,
-                                             String configurationDir) {
+                                             Map<String, String> environment) {
     ContentShellCommand command = new ContentShellCommand._(
-        executable, htmlFile, options, dartFlags, configurationDir);
+        executable, htmlFile, options, dartFlags, environment);
     return _getUniqueCommand(command);
   }
 
   BrowserTestCommand getBrowserTestCommand(String browser,
                                            String url,
-                                           String executable,
-                                           List<String> arguments,
-                                           String configurationDir,
                                            {bool checkedMode: false}) {
     var command = new BrowserTestCommand._(
-        browser, url, executable, arguments, configurationDir,
-        checkedMode: checkedMode);
+        browser, url, checkedMode: checkedMode);
     return _getUniqueCommand(command);
   }
 
   CompilationCommand getCompilationCommand(String displayName,
                                            outputFile,
                                            neverSkipCompilation,
-                                           List<String> bootstrapDependencies,
+                                           List<Uri> bootstrapDependencies,
                                            String executable,
                                            List<String> arguments,
-                                           String configurationDir) {
+                                           Map<String, String> environment) {
     var command =
-        new CompilationCommand._(displayName, outputFile, neverSkipCompilation,
-                                 bootstrapDependencies, executable, arguments,
-                                 configurationDir);
+        new CompilationCommand._(
+            displayName, outputFile, neverSkipCompilation,
+            bootstrapDependencies, executable, arguments, environment);
     return _getUniqueCommand(command);
   }
 
   AnalysisCommand getAnalysisCommand(
-      String displayName, executable, arguments, String configurationDir,
+      String displayName, executable, arguments, environmentOverrides,
       {String flavor: 'dartanalyzer'}) {
     var command = new AnalysisCommand._(
-        flavor, displayName, executable, arguments, configurationDir);
+        flavor, displayName, executable, arguments, environmentOverrides);
     return _getUniqueCommand(command);
   }
 
   VmCommand getVmCommand(String executable,
                          List<String> arguments,
-                         String configurationDir) {
-    var command = new VmCommand._(executable, arguments, configurationDir);
+                         Map<String, String> environmentOverrides) {
+    var command = new VmCommand._(executable, arguments, environmentOverrides);
     return _getUniqueCommand(command);
   }
 
   Command getJSCommandlineCommand(String displayName, executable, arguments,
-                     String configurationDir, [environment = null]) {
+                                  [environment = null]) {
     var command = new JSCommandlineCommand._(displayName, executable, arguments,
-                                             configurationDir, environment);
+                                             environment);
     return _getUniqueCommand(command);
   }
 
-  Command getCommand(String displayName, executable, arguments,
-                     String configurationDir, [environment = null]) {
-    var command = new Command._(displayName, executable, arguments,
-                                configurationDir, environment);
+  Command getProcessCommand(String displayName, executable, arguments,
+                     [environment = null, workingDirectory = null]) {
+    var command = new ProcessCommand._(displayName, executable, arguments,
+                                       environment, workingDirectory);
     return _getUniqueCommand(command);
+  }
+
+  Command getCopyCommand(String sourceDirectory, String destinationDirectory) {
+    var command = new CleanDirectoryCopyCommand._(sourceDirectory,
+                                                  destinationDirectory);
+    return _getUniqueCommand(command);
+  }
+
+  Command getPubCommand(String pubCommand,
+                        String pubExecutable,
+                        String pubspecYamlDirectory,
+                        String pubCacheDirectory) {
+    var command = new PubCommand._(pubCommand,
+                                   pubExecutable,
+                                   pubspecYamlDirectory,
+                                   pubCacheDirectory);
+    return _getUniqueCommand(command);
+  }
+
+  Command getMakeSymlinkCommand(String link, String target) {
+    return _getUniqueCommand(new MakeSymlinkCommand._(link, target));
+  }
+
+  Command getModifyPubspecCommand(String pubspecYamlFile, Map depsOverrides,
+                                  {String destinationFile: null}) {
+    if (destinationFile == null) destinationFile = pubspecYamlFile;
+    return _getUniqueCommand(new ModifyPubspecYamlCommand._(
+        pubspecYamlFile, destinationFile, depsOverrides));
   }
 
   Command _getUniqueCommand(Command command) {
@@ -499,6 +744,15 @@ class TestCase extends UniqueObject {
     return commandOutputs[commands[commandOutputs.length - 1]];
   }
 
+  Command get lastCommandExecuted {
+    if (commandOutputs.length == 0) {
+      throw new Exception("CommandOutputs is empty, maybe no command was run? ("
+                          "displayName: '$displayName', "
+                          "configurationString: '$configurationString')");
+    }
+    return commands[commandOutputs.length - 1];
+  }
+
   int get timeout {
     if (expectedOutcomes.contains(Expectation.SLOW)) {
       return configuration['timeout'] * SLOW_TIMEOUT_MULTIPLIER;
@@ -516,7 +770,10 @@ class TestCase extends UniqueObject {
     return "$compiler-$runtime$checked ${mode}_$arch";
   }
 
-  List<String> get batchTestArguments => commands.last.arguments;
+  List<String> get batchTestArguments {
+    assert(commands.last is ProcessCommand);
+    return (commands.last as ProcessCommand).arguments;
+  }
 
   bool get isFlaky {
       if (expectedOutcomes.contains(Expectation.SKIP) ||
@@ -529,8 +786,9 @@ class TestCase extends UniqueObject {
   }
 
   bool get isFinished {
-    return !lastCommandOutput.successful ||
-           commands.length == commandOutputs.length;
+    return commandOutputs.length > 0 &&
+        (!lastCommandOutput.successful ||
+         commands.length == commandOutputs.length);
   }
 }
 
@@ -603,6 +861,8 @@ abstract class CommandOutput {
 
   int get exitCode;
 
+  int get pid;
+
   List<int> get stdout;
 
   List<int> get stderr;
@@ -622,6 +882,7 @@ class CommandOutputImpl extends UniqueObject implements CommandOutput {
   Duration time;
   List<String> diagnostics;
   bool compilationSkipped;
+  int pid;
 
   /**
    * A flag to indicate we have already printed a warning about ignoring the VM
@@ -636,7 +897,8 @@ class CommandOutputImpl extends UniqueObject implements CommandOutput {
                     List<int> this.stdout,
                     List<int> this.stderr,
                     Duration this.time,
-                    bool this.compilationSkipped) {
+                    bool this.compilationSkipped,
+                    int this.pid) {
     diagnostics = [];
   }
 
@@ -722,7 +984,8 @@ class BrowserCommandOutputImpl extends CommandOutputImpl {
           stdout,
           stderr,
           time,
-          compilationSkipped) {
+          compilationSkipped,
+          0) {
     _failedBecauseOfMissingXDisplay = _didFailBecauseOfMissingXDisplay();
     if (_failedBecauseOfMissingXDisplay) {
       DebugLogger.warning("Warning: Test failure because of missing XDisplay");
@@ -1072,7 +1335,7 @@ class BrowserControllerTestOutcome extends CommandOutputImpl
       Command command, BrowserTestOutput result, this._rawOutcome,
       List<int> stdout, List<int> stderr)
       : super(command, 0, result.didTimeout, stdout, stderr, result.duration,
-              false) {
+              false, 0) {
     _result = result;
   }
 
@@ -1114,7 +1377,8 @@ class AnalysisCommandOutputImpl extends CommandOutputImpl {
           stdout,
           stderr,
           time,
-          compilationSkipped);
+          compilationSkipped,
+          0);
 
   Expectation result(TestCase testCase) {
     // TODO(kustermann): If we run the analyzer not in batch mode, make sure
@@ -1207,8 +1471,9 @@ class VmCommandOutputImpl extends CommandOutputImpl
   static const DART_VM_EXITCODE_UNCAUGHT_EXCEPTION = 255;
 
   VmCommandOutputImpl(Command command, int exitCode, bool timedOut,
-      List<int> stdout, List<int> stderr, Duration time)
-      : super(command, exitCode, timedOut, stdout, stderr, time, false);
+                      List<int> stdout, List<int> stderr, Duration time,
+                      int pid)
+      : super(command, exitCode, timedOut, stdout, stderr, time, false, pid);
 
   Expectation result(TestCase testCase) {
     // Handle crashes and timeouts first
@@ -1258,7 +1523,7 @@ class CompilationCommandOutputImpl extends CommandOutputImpl {
       List<int> stdout, List<int> stderr, Duration time,
       bool compilationSkipped)
       : super(command, exitCode, timedOut, stdout, stderr, time,
-              compilationSkipped);
+              compilationSkipped, 0);
 
   Expectation result(TestCase testCase) {
     // Handle general crash/timeout detection.
@@ -1302,7 +1567,7 @@ class JsCommandlineOutputImpl extends CommandOutputImpl
                               with UnittestSuiteMessagesMixin {
   JsCommandlineOutputImpl(Command command, int exitCode, bool timedOut,
       List<int> stdout, List<int> stderr, Duration time)
-      : super(command, exitCode, timedOut, stdout, stderr, time, false);
+      : super(command, exitCode, timedOut, stdout, stderr, time, false, 0);
 
   Expectation result(TestCase testCase) {
     // Handle crashes and timeouts first
@@ -1320,13 +1585,52 @@ class JsCommandlineOutputImpl extends CommandOutputImpl
   }
 }
 
+class PubCommandOutputImpl extends CommandOutputImpl {
+  PubCommandOutputImpl(PubCommand command, int exitCode, bool timedOut,
+      List<int> stdout, List<int> stderr, Duration time)
+  : super(command, exitCode, timedOut, stdout, stderr, time, false, 0);
+
+  Expectation result(TestCase testCase) {
+    // Handle crashes and timeouts first
+    if (hasCrashed) return Expectation.CRASH;
+    if (hasTimedOut) return Expectation.TIMEOUT;
+
+    if (exitCode == 0) {
+      return Expectation.PASS;
+    } else if ((command as PubCommand).command == 'get') {
+      return Expectation.PUB_GET_ERROR;
+    } else {
+      return Expectation.FAIL;
+    }
+  }
+}
+
+class ScriptCommandOutputImpl extends CommandOutputImpl {
+  final Expectation _result;
+
+  ScriptCommandOutputImpl(ScriptCommand command, this._result,
+                          String scriptExecutionInformation, Duration time)
+  : super(command, 0, false, [], [], time, false, 0) {
+    var lines = scriptExecutionInformation.split("\n");
+    diagnostics.addAll(lines);
+  }
+
+  Expectation result(TestCase testCase) => _result;
+
+  bool get canRunDependendCommands => _result == Expectation.PASS;
+
+  bool get successful => _result == Expectation.PASS;
+
+}
+
 CommandOutput createCommandOutput(Command command,
                                   int exitCode,
                                   bool timedOut,
                                   List<int> stdout,
                                   List<int> stderr,
                                   Duration time,
-                                  bool compilationSkipped) {
+                                  bool compilationSkipped,
+                                  [int pid = 0]) {
   if (command is ContentShellCommand) {
     return new BrowserCommandOutputImpl(
         command, exitCode, timedOut, stdout, stderr,
@@ -1341,18 +1645,21 @@ CommandOutput createCommandOutput(Command command,
         time, compilationSkipped);
   } else if (command is VmCommand) {
     return new VmCommandOutputImpl(
-        command, exitCode, timedOut, stdout, stderr, time);
+        command, exitCode, timedOut, stdout, stderr, time, pid);
   } else if (command is CompilationCommand) {
     return new CompilationCommandOutputImpl(
         command, exitCode, timedOut, stdout, stderr, time, compilationSkipped);
   } else if (command is JSCommandlineCommand) {
     return new JsCommandlineOutputImpl(
         command, exitCode, timedOut, stdout, stderr, time);
+  } else if (command is PubCommand) {
+    return new PubCommandOutputImpl(
+        command, exitCode, timedOut, stdout, stderr, time);
   }
 
   return new CommandOutputImpl(
       command, exitCode, timedOut, stdout, stderr,
-      time, compilationSkipped);
+      time, compilationSkipped, pid);
 }
 
 
@@ -1367,17 +1674,18 @@ CommandOutput createCommandOutput(Command command,
  * be garbage collected as soon as it is done.
  */
 class RunningProcess {
-  Command command;
+  ProcessCommand command;
   int timeout;
   bool timedOut = false;
   DateTime startTime;
   Timer timeoutTimer;
+  int pid;
   List<int> stdout = <int>[];
   List<int> stderr = <int>[];
   bool compilationSkipped = false;
   Completer<CommandOutput> completer;
 
-  RunningProcess(Command this.command, this.timeout);
+  RunningProcess(this.command, this.timeout);
 
   Future<CommandOutput> run() {
     completer = new Completer<CommandOutput>();
@@ -1396,20 +1704,79 @@ class RunningProcess {
         Future processFuture =
             io.Process.start(command.executable,
                              command.arguments,
-                             environment: processEnvironment);
+                             environment: processEnvironment,
+                             workingDirectory: command.workingDirectory);
         processFuture.then((io.Process process) {
+          StreamSubscription stdoutSubscription =
+              _drainStream(process.stdout, stdout);
+          StreamSubscription stderrSubscription =
+              _drainStream(process.stderr, stderr);
+
+          var stdoutCompleter = new Completer();
+          var stderrCompleter = new Completer();
+
+          bool stdoutDone = false;
+          bool stderrDone = false;
+          pid = process.pid;
+
+          // This timer is used to close stdio to the subprocess once we got
+          // the exitCode. Sometimes descendants of the subprocess keep stdio
+          // handles alive even though the direct subprocess is dead.
+          Timer watchdogTimer;
+
+          closeStdout([_]) {
+            if (!stdoutDone) {
+              stdoutCompleter.complete();
+              stdoutDone = true;
+              if (stderrDone && watchdogTimer != null) {
+                watchdogTimer.cancel();
+              }
+            }
+          }
+          closeStderr([_]) {
+            if (!stderrDone) {
+              stderrCompleter.complete();
+              stderrDone = true;
+
+              if (stdoutDone && watchdogTimer != null) {
+                watchdogTimer.cancel();
+              }
+            }
+          }
+
           // Close stdin so that tests that try to block on input will fail.
           process.stdin.close();
           void timeoutHandler() {
             timedOut = true;
             if (process != null) {
-              process.kill();
+              if (!process.kill()) {
+                DebugLogger.error("Unable to kill ${process.pid}");
+              }
             }
           }
-          Future.wait([process.exitCode,
-                       _drainStream(process.stdout, stdout),
-                       _drainStream(process.stderr, stderr)])
-              .then((values) => _commandComplete(values[0]));
+
+          stdoutSubscription.asFuture().then(closeStdout);
+          stderrSubscription.asFuture().then(closeStderr);
+
+          process.exitCode.then((exitCode) {
+            if (!stdoutDone || !stderrDone) {
+              watchdogTimer = new Timer(MAX_STDIO_DELAY, () {
+                DebugLogger.warning(
+                    "$MAX_STDIO_DELAY_PASSED_MESSAGE (command: $command)");
+                watchdogTimer = null;
+                stdoutSubscription.cancel();
+                stderrSubscription.cancel();
+                closeStdout();
+                closeStderr();
+              });
+            }
+
+            Future.wait([stdoutCompleter.future,
+                         stderrCompleter.future]).then((_) {
+              _commandComplete(exitCode);
+            });
+          });
+
           timeoutTimer = new Timer(new Duration(seconds: timeout),
                                    timeoutHandler);
         }).catchError((e) {
@@ -1432,7 +1799,7 @@ class RunningProcess {
     completer.complete(commandOutput);
   }
 
-  CommandOutput _createCommandOutput(Command command, int exitCode) {
+  CommandOutput _createCommandOutput(ProcessCommand command, int exitCode) {
     var commandOutput = createCommandOutput(
         command,
         exitCode,
@@ -1440,16 +1807,18 @@ class RunningProcess {
         stdout,
         stderr,
         new DateTime.now().difference(startTime),
-        compilationSkipped);
+        compilationSkipped,
+        pid);
     return commandOutput;
   }
 
-  Future _drainStream(Stream<List<int>> source, List<int> destination) {
-    return source.listen(destination.addAll).asFuture();
+  StreamSubscription _drainStream(Stream<List<int>> source,
+                                  List<int> destination) {
+    return source.listen(destination.addAll);
   }
 
   Map<String, String> _createProcessEnvironment() {
-    var environment = io.Platform.environment;
+    var environment = new Map.from(io.Platform.environment);
 
     if (command.environmentOverrides != null) {
       for (var key in command.environmentOverrides.keys) {
@@ -1504,7 +1873,7 @@ class BatchRunnerProcess {
 
   BatchRunnerProcess();
 
-  Future<CommandOutput> runCommand(String runnerType, Command command,
+  Future<CommandOutput> runCommand(String runnerType, ProcessCommand command,
                                    int timeout, List<String> arguments) {
     assert(_completer == null);
     assert(!_currentlyRunning);
@@ -1794,10 +2163,12 @@ class CommandEnqueuer {
     });
 
     eventCondition((e) => e is dgraph.StateChangedEvent).listen((event) {
-      if (event.from == dgraph.NodeState.Processing) {
-        assert(FINISHED_STATES.contains(event.to));
-        for (var dependendNode in event.node.neededFor) {
-          _changeNodeStateIfNecessary(dependendNode);
+      if ([dgraph.NodeState.Waiting,
+           dgraph.NodeState.Processing].contains(event.from)) {
+        if (FINISHED_STATES.contains(event.to)){
+          for (var dependendNode in event.node.neededFor) {
+            _changeNodeStateIfNecessary(dependendNode);
+          }
         }
       }
     });
@@ -1806,23 +2177,25 @@ class CommandEnqueuer {
   // Called when either a new node was added or if one of it's dependencies
   // changed it's state.
   void _changeNodeStateIfNecessary(dgraph.Node node) {
-    assert(INIT_STATES.contains(node.state));
-    bool allDependenciesFinished =
-        node.dependencies.every((node) => FINISHED_STATES.contains(node.state));
+    if (INIT_STATES.contains(node.state)) {
+      bool anyDependenciesUnsuccessful = node.dependencies.any(
+          (dep) => [dgraph.NodeState.Failed,
+                    dgraph.NodeState.UnableToRun].contains(dep.state));
 
-    var newState = dgraph.NodeState.Waiting;
-    if (allDependenciesFinished) {
-      bool allDependenciesSuccessful = node.dependencies.every(
-          (dep) => dep.state == dgraph.NodeState.Successful);
-
-      if (allDependenciesSuccessful) {
-        newState = dgraph.NodeState.Enqueuing;
-      } else {
+      var newState = dgraph.NodeState.Waiting;
+      if (anyDependenciesUnsuccessful) {
         newState = dgraph.NodeState.UnableToRun;
+      } else {
+        bool allDependenciesSuccessful = node.dependencies.every(
+            (dep) => dep.state == dgraph.NodeState.Successful);
+
+        if (allDependenciesSuccessful) {
+          newState = dgraph.NodeState.Enqueuing;
+        }
       }
-    }
-    if (node.state != newState) {
-      _graph.changeState(node, newState);
+      if (node.state != newState) {
+        _graph.changeState(node, newState);
+      }
     }
   }
 }
@@ -1958,6 +2331,19 @@ class CommandQueue {
       });
     }
   }
+
+  void dumpState() {
+    print("");
+    print("CommandQueue state:");
+    print("  Processes: used: $_numProcesses max: $_maxProcesses");
+    print("  BrowserProcesses: used: $_numBrowserProcesses "
+          "max: $_maxBrowserProcesses");
+    print("  Finishing: $_finishing");
+    print("  Queue (length = ${_runQueue.length}):");
+    for (var command in _runQueue) {
+      print("      $command");
+    }
+  }
 }
 
 
@@ -2040,6 +2426,8 @@ class CommandExecutorImpl implements CommandExecutor {
     } else if (command is AnalysisCommand && batchMode) {
       return _getBatchRunner(command.flavor)
           .runCommand(command.flavor, command, timeout, command.arguments);
+    } else if (command is ScriptCommand) {
+      return command.run();
     } else {
       return new RunningProcess(command, timeout).run();
     }
@@ -2113,7 +2501,7 @@ class RecordingCommandExecutor implements CommandExecutor {
   RecordingCommandExecutor(Path path)
       : _recorder = new TestCaseRecorder(path);
 
-  Future<CommandOutput> runCommand(node, Command command, int timeout) {
+  Future<CommandOutput> runCommand(node, ProcessCommand command, int timeout) {
     assert(node.dependencies.length == 0);
     assert(_cleanEnvironmentOverrides(command.environmentOverrides));
     _recorder.nextCommand(command, timeout);
@@ -2147,7 +2535,7 @@ class ReplayingCommandExecutor implements CommandExecutor {
 
   Future cleanup() => new Future.value();
 
-  Future<CommandOutput> runCommand(node, Command command, int timeout) {
+  Future<CommandOutput> runCommand(node, ProcessCommand command, int timeout) {
     assert(node.dependencies.length == 0);
     return new Future.value(_archive.outputOf(command));
   }
@@ -2325,6 +2713,7 @@ class ProcessQueue {
     }
 
     var testCaseEnqueuer;
+    CommandQueue commandQueue;
     void setupForRunning(TestCaseEnqueuer testCaseEnqueuer) {
       Timer _debugTimer;
       // If we haven't seen a single test finishing during a 10 minute period
@@ -2342,6 +2731,8 @@ class ProcessQueue {
         _debugTimer = new Timer(debugTimerDuration, () {
           print("The debug timer of test.dart expired. Please report this issue"
                 " to ricow/kustermann and provide the following information:");
+          print("");
+          print("Graph is sealed: ${_graph.isSealed}");
           print("");
           _graph.DumpCounts();
           print("");
@@ -2372,6 +2763,10 @@ class ProcessQueue {
               print("");
             }
           }
+
+          if (commandQueue != null) {
+            commandQueue.dumpState();
+          }
         });
       }
 
@@ -2400,7 +2795,7 @@ class ProcessQueue {
 
       // Run "runnable commands" using [executor] subject to
       // maxProcesses/maxBrowserProcesses constraint
-      var commandQueue = new CommandQueue(
+      commandQueue = new CommandQueue(
           _graph, testCaseEnqueuer, executor, maxProcesses, maxBrowserProcesses,
           verbose);
 

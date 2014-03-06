@@ -17,6 +17,7 @@ import com.google.dart.engine.ast.Identifier;
 import com.google.dart.engine.element.ElementKind;
 import com.google.dart.engine.element.ElementVisitor;
 import com.google.dart.engine.element.LocalVariableElement;
+import com.google.dart.engine.element.ToolkitObjectElement;
 import com.google.dart.engine.utilities.source.SourceRange;
 
 /**
@@ -28,12 +29,12 @@ public class LocalVariableElementImpl extends VariableElementImpl implements Loc
   /**
    * Is {@code true} if this variable is potentially mutated somewhere in its scope.
    */
-  private boolean isPotentiallyMutatedInScope;
+  private boolean potentiallyMutatedInScope;
 
   /**
    * Is {@code true} if this variable is potentially mutated somewhere in closure.
    */
-  private boolean isPotentiallyMutatedInClosure;
+  private boolean potentiallyMutatedInClosure;
 
   /**
    * The offset to the beginning of the visible range for this element.
@@ -71,6 +72,15 @@ public class LocalVariableElementImpl extends VariableElementImpl implements Loc
   }
 
   @Override
+  public ToolkitObjectElement[] getToolkitObjects() {
+    CompilationUnitElementImpl unit = getAncestor(CompilationUnitElementImpl.class);
+    if (unit == null) {
+      return ToolkitObjectElement.EMPTY_ARRAY;
+    }
+    return unit.getToolkitObjects(this);
+  }
+
+  @Override
   public SourceRange getVisibleRange() {
     if (visibleRangeLength < 0) {
       return null;
@@ -80,26 +90,39 @@ public class LocalVariableElementImpl extends VariableElementImpl implements Loc
 
   @Override
   public boolean isPotentiallyMutatedInClosure() {
-    return isPotentiallyMutatedInClosure;
+    return potentiallyMutatedInClosure;
   }
 
   @Override
   public boolean isPotentiallyMutatedInScope() {
-    return isPotentiallyMutatedInScope;
+    return potentiallyMutatedInScope;
   }
 
   /**
    * Specifies that this variable is potentially mutated somewhere in closure.
    */
   public void markPotentiallyMutatedInClosure() {
-    isPotentiallyMutatedInClosure = true;
+    potentiallyMutatedInClosure = true;
   }
 
   /**
    * Specifies that this variable is potentially mutated somewhere in its scope.
    */
   public void markPotentiallyMutatedInScope() {
-    isPotentiallyMutatedInScope = true;
+    potentiallyMutatedInScope = true;
+  }
+
+  /**
+   * Set the toolkit specific information objects attached to this variable.
+   * 
+   * @param toolkitObjects the toolkit objects attached to this variable
+   */
+  public void setToolkitObjects(ToolkitObjectElement[] toolkitObjects) {
+    CompilationUnitElementImpl unit = getAncestor(CompilationUnitElementImpl.class);
+    if (unit == null) {
+      return;
+    }
+    unit.setToolkitObjects(this, toolkitObjects);
   }
 
   /**

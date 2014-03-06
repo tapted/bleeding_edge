@@ -26,6 +26,7 @@ public class XmlAttributeNode extends XmlNode {
   private final Token name;
   private final Token equals;
   private final Token value;
+  private XmlExpression[] expressions = XmlExpression.EMPTY_ARRAY;
 
   /**
    * Construct a new instance representing an XML attribute.
@@ -71,16 +72,26 @@ public class XmlAttributeNode extends XmlNode {
    * 
    * @return the expressions that are embedded in the attribute's value
    */
-  public EmbeddedExpression[] getExpressions() {
-    return EmbeddedExpression.EMPTY_ARRAY;
+  public XmlExpression[] getExpressions() {
+    return expressions;
   }
 
   /**
-   * Answer the attribute name. This may be a zero length token if the attribute is badly formed.
+   * Answer the attribute name. This may be a zero length string if the attribute is badly formed.
    * 
    * @return the name (not {@code null})
    */
-  public Token getName() {
+  public String getName() {
+    return name.getLexeme();
+  }
+
+  /**
+   * Answer the attribute name token. This may be a zero length token if the attribute is badly
+   * formed.
+   * 
+   * @return the name token (not {@code null})
+   */
+  public Token getNameToken() {
     return name;
   }
 
@@ -115,13 +126,22 @@ public class XmlAttributeNode extends XmlNode {
   }
 
   /**
-   * Answer the attribute value. A properly formed value will start and end with matching quote
-   * characters, but the value returned may not be properly formed.
+   * Answer the attribute value token. A properly formed value will start and end with matching
+   * quote characters, but the value returned may not be properly formed.
    * 
-   * @return the value or {@code null} if this represents a badly formed attribute
+   * @return the value token or {@code null} if this represents a badly formed attribute
    */
-  public Token getValue() {
+  public Token getValueToken() {
     return value;
+  }
+
+  /**
+   * Set the expressions that are embedded in the attribute's value.
+   * 
+   * @param expressions expressions that are embedded in the attribute's value
+   */
+  public void setExpressions(XmlExpression[] expressions) {
+    this.expressions = expressions;
   }
 
   @Override

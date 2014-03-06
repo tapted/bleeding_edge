@@ -11,17 +11,17 @@
 namespace dart {
 
 class AbstractType;
-class MixinAppType;
-class AbstractTypeArguments;
 class Class;
 class Error;
 class Function;
 class GrowableObjectArray;
+class MixinAppType;
 class RawAbstractType;
 class RawClass;
 class RawType;
 class Script;
 class Type;
+class TypeArguments;
 class UnresolvedClass;
 
 // Traverses all pending, unfinalized classes, validates and marks them as
@@ -97,6 +97,9 @@ class ClassFinalizer : public AllStatic {
   // needed during bootstrapping where the classes have been preloaded.
   static void VerifyBootstrapClasses();
 
+  // Resolve the class of the type, but not the type's type arguments.
+  static void ResolveTypeClass(const Class& cls, const AbstractType& type);
+
   // Resolve the type and target of the redirecting factory.
   static void ResolveRedirectingFactory(const Class& cls,
                                         const Function& factory);
@@ -117,12 +120,14 @@ class ClassFinalizer : public AllStatic {
   static void CheckForLegalConstClass(const Class& cls);
   static RawClass* ResolveClass(const Class& cls,
                                 const UnresolvedClass& unresolved_class);
+  static void ResolveType(const Class& cls, const AbstractType& type);
   static void ResolveRedirectingFactoryTarget(
       const Class& cls,
       const Function& factory,
       const GrowableObjectArray& visited_factories);
   static void CloneMixinAppTypeParameters(const Class& mixin_app_class);
-  static void ApplyMixinAppAlias(const Class& mixin_app_class);
+  static void ApplyMixinAppAlias(const Class& mixin_app_class,
+                                 bool has_uninstantiated_bounds);
   static void ApplyMixinMembers(const Class& cls);
   static void CreateForwardingConstructors(
       const Class& mixin_app,
@@ -137,17 +142,14 @@ class ClassFinalizer : public AllStatic {
   static void FinalizeTypeParameters(const Class& cls,
                                      GrowableObjectArray* pending_types = NULL);
   static void FinalizeTypeArguments(const Class& cls,
-                                    const AbstractTypeArguments& arguments,
+                                    const TypeArguments& arguments,
                                     intptr_t num_uninitialized_arguments,
                                     Error* bound_error,
                                     GrowableObjectArray* pending_types);
   static void CheckTypeBounds(const Class& cls, const Type& type);
   static void CheckTypeArgumentBounds(const Class& cls,
-                                      const AbstractTypeArguments& arguments,
+                                      const TypeArguments& arguments,
                                       Error* bound_error);
-  static void ResolveType(const Class& cls,
-                          const AbstractType& type,
-                          FinalizationKind finalization);
   static void ResolveUpperBounds(const Class& cls);
   static void FinalizeUpperBounds(const Class& cls);
   static void ResolveAndFinalizeSignature(const Class& cls,

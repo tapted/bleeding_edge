@@ -317,24 +317,6 @@ class Label : public ValueObject {
 };
 
 
-class CPUFeatures : public AllStatic {
- public:
-  static void InitOnce();
-  // x64 always has at least SSE2.
-  static bool sse2_supported() { return true; }
-  static bool sse4_1_supported();
-  static bool double_truncate_round_supported() { return sse4_1_supported(); }
-
- private:
-  static const uint64_t kSSE4_1BitMask = static_cast<uint64_t>(1) << 51;
-
-  static bool sse4_1_supported_;
-#ifdef DEBUG
-  static bool initialized_;
-#endif
-};
-
-
 class Assembler : public ValueObject {
  public:
   explicit Assembler(bool use_far_branches = false);
@@ -459,6 +441,18 @@ class Assembler : public ValueObject {
 
   void set1ps(XmmRegister dst, Register tmp, const Immediate& imm);
   void shufps(XmmRegister dst, XmmRegister src, const Immediate& mask);
+
+  void addpd(XmmRegister dst, XmmRegister src);
+  void negatepd(XmmRegister dst);
+  void subpd(XmmRegister dst, XmmRegister src);
+  void mulpd(XmmRegister dst, XmmRegister src);
+  void divpd(XmmRegister dst, XmmRegister src);
+  void abspd(XmmRegister dst);
+  void minpd(XmmRegister dst, XmmRegister src);
+  void maxpd(XmmRegister dst, XmmRegister src);
+  void sqrtpd(XmmRegister dst);
+  void cvtps2pd(XmmRegister dst, XmmRegister src);
+  void cvtpd2ps(XmmRegister dst, XmmRegister src);
 
   void comisd(XmmRegister a, XmmRegister b);
   void cvtsi2sd(XmmRegister a, Register b);
@@ -716,7 +710,6 @@ class Assembler : public ValueObject {
 
   void EnterFrame(intptr_t frame_space);
   void LeaveFrame();
-  void ReturnPatchable();
   void ReserveAlignedFrameSpace(intptr_t frame_space);
 
   // Create a frame for calling into runtime that preserves all volatile
@@ -759,6 +752,13 @@ class Assembler : public ValueObject {
 
   intptr_t CodeSize() const { return buffer_.Size(); }
   intptr_t prologue_offset() const { return prologue_offset_; }
+
+  // Count the fixups that produce a pointer offset, without processing
+  // the fixups.
+  intptr_t CountPointerOffsets() const {
+    return buffer_.CountPointerOffsets();
+  }
+
   const ZoneGrowableArray<intptr_t>& GetPointerOffsets() const {
     return buffer_.pointer_offsets();
   }
@@ -767,6 +767,9 @@ class Assembler : public ValueObject {
   void FinalizeInstructions(const MemoryRegion& region) {
     buffer_.FinalizeInstructions(region);
   }
+
+  // Index of constant pool entries pointing to debugger stubs.
+  static const int kBreakpointRuntimeCPIndex = 5;
 
   void LoadPoolPointer(Register pp);
 
@@ -824,6 +827,13 @@ class Assembler : public ValueObject {
   //   call L             (size is 5 bytes)
   //   L:
   static const intptr_t kEntryPointToPcMarkerOffset = 9;
+
+  void UpdateAllocationStats(intptr_t cid,
+                             Heap::Space space = Heap::kNew);
+
+  void UpdateAllocationStatsWithSize(intptr_t cid,
+                                     Register size_reg,
+                                     Heap::Space space = Heap::kNew);
 
   // Inlined allocation of an instance of class 'cls', code has no runtime
   // calls. Jump to 'failure' if the instance cannot be allocated here.

@@ -13,8 +13,12 @@
  */
 package com.google.dart.engine.internal.element;
 
+import com.google.common.collect.Maps;
+import com.google.dart.engine.ast.CompilationUnit;
+import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.element.ClassElement;
 import com.google.dart.engine.element.CompilationUnitElement;
+import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ElementKind;
 import com.google.dart.engine.element.ElementVisitor;
 import com.google.dart.engine.element.ExecutableElement;
@@ -22,9 +26,14 @@ import com.google.dart.engine.element.FunctionElement;
 import com.google.dart.engine.element.FunctionTypeAliasElement;
 import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.PropertyAccessorElement;
+import com.google.dart.engine.element.ToolkitObjectElement;
 import com.google.dart.engine.element.TopLevelVariableElement;
 import com.google.dart.engine.element.VariableElement;
+import com.google.dart.engine.element.angular.AngularViewElement;
+import com.google.dart.engine.internal.element.angular.AngularViewElementImpl;
 import com.google.dart.engine.source.Source;
+
+import java.util.Map;
 
 /**
  * Instances of the class {@code CompilationUnitElementImpl} implement a
@@ -39,6 +48,11 @@ public class CompilationUnitElementImpl extends ElementImpl implements Compilati
   public static final CompilationUnitElement[] EMPTY_ARRAY = new CompilationUnitElement[0];
 
   /**
+   * The source that corresponds to this compilation unit.
+   */
+  private Source source;
+
+  /**
    * An array containing all of the top-level accessors (getters and setters) contained in this
    * compilation unit.
    */
@@ -50,14 +64,9 @@ public class CompilationUnitElementImpl extends ElementImpl implements Compilati
   private FunctionElement[] functions = FunctionElementImpl.EMPTY_ARRAY;
 
   /**
-   * An array containing all of the variables contained in this compilation unit.
+   * A table mapping elements to associated toolkit objects.
    */
-  private TopLevelVariableElement[] variables = TopLevelVariableElementImpl.EMPTY_ARRAY;
-
-  /**
-   * The source that corresponds to this compilation unit.
-   */
-  private Source source;
+  private Map<Element, ToolkitObjectElement[]> toolkitObjects = Maps.newHashMap();
 
   /**
    * An array containing all of the function type aliases contained in this compilation unit.
@@ -70,10 +79,20 @@ public class CompilationUnitElementImpl extends ElementImpl implements Compilati
   private ClassElement[] types = ClassElementImpl.EMPTY_ARRAY;
 
   /**
+   * An array containing all of the variables contained in this compilation unit.
+   */
+  private TopLevelVariableElement[] variables = TopLevelVariableElementImpl.EMPTY_ARRAY;
+
+  /**
    * The URI that is specified by the "part" directive in the enclosing library, or {@code null} if
    * this is the defining compilation unit of a library.
    */
   private String uri;
+
+  /**
+   * An array containing all of the Angular views contained in this compilation unit.
+   */
+  private AngularViewElement[] angularViews = AngularViewElement.EMPTY_ARRAY;
 
   /**
    * Initialize a newly created compilation unit element to have the given name.
@@ -99,6 +118,11 @@ public class CompilationUnitElementImpl extends ElementImpl implements Compilati
   @Override
   public PropertyAccessorElement[] getAccessors() {
     return accessors;
+  }
+
+  @Override
+  public AngularViewElement[] getAngularViews() {
+    return angularViews;
   }
 
   @Override
@@ -156,6 +180,11 @@ public class CompilationUnitElementImpl extends ElementImpl implements Compilati
   }
 
   @Override
+  public CompilationUnit getNode() throws AnalysisException {
+    return getUnit();
+  }
+
+  @Override
   public Source getSource() {
     return source;
   }
@@ -201,6 +230,18 @@ public class CompilationUnitElementImpl extends ElementImpl implements Compilati
       ((PropertyAccessorElementImpl) accessor).setEnclosingElement(this);
     }
     this.accessors = accessors;
+  }
+
+  /**
+   * Set the Angular views defined in this compilation unit.
+   * 
+   * @param angularViews the Angular views defined in this compilation unit
+   */
+  public void setAngularViews(AngularViewElement[] angularViews) {
+    for (AngularViewElement view : angularViews) {
+      ((AngularViewElementImpl) view).setEnclosingElement(this);
+    }
+    this.angularViews = angularViews;
   }
 
   /**
@@ -277,6 +318,7 @@ public class CompilationUnitElementImpl extends ElementImpl implements Compilati
     safelyVisitChildren(typeAliases, visitor);
     safelyVisitChildren(types, visitor);
     safelyVisitChildren(variables, visitor);
+    safelyVisitChildren(angularViews, visitor);
   }
 
   @Override
@@ -291,5 +333,29 @@ public class CompilationUnitElementImpl extends ElementImpl implements Compilati
   @Override
   protected String getIdentifier() {
     return getSource().getEncoding();
+  }
+
+  /**
+   * Returns the associated toolkit objects.
+   * 
+   * @param element the {@link Element} to get toolkit objects for
+   * @return the associated toolkit objects, may be empty, but not {@code null}
+   */
+  ToolkitObjectElement[] getToolkitObjects(Element element) {
+    ToolkitObjectElement[] objects = toolkitObjects.get(element);
+    if (objects != null) {
+      return objects;
+    }
+    return ToolkitObjectElement.EMPTY_ARRAY;
+  }
+
+  /**
+   * Sets the toolkit objects that are associated with the given {@link Element}.
+   * 
+   * @param element the {@link Element} to associate toolkit objects with
+   * @param objects the toolkit objects to associate
+   */
+  void setToolkitObjects(Element element, ToolkitObjectElement[] objects) {
+    toolkitObjects.put(element, objects);
   }
 }

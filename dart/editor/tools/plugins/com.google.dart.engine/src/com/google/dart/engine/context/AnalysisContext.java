@@ -14,13 +14,16 @@
 package com.google.dart.engine.context;
 
 import com.google.dart.engine.ast.CompilationUnit;
+import com.google.dart.engine.element.CompilationUnitElement;
 import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ElementLocation;
 import com.google.dart.engine.element.HtmlElement;
 import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.error.AnalysisError;
 import com.google.dart.engine.html.ast.HtmlUnit;
+import com.google.dart.engine.internal.context.TimestampedData;
 import com.google.dart.engine.source.Source;
+import com.google.dart.engine.source.Source.ContentReceiver;
 import com.google.dart.engine.source.SourceContainer;
 import com.google.dart.engine.source.SourceFactory;
 import com.google.dart.engine.source.SourceKind;
@@ -151,6 +154,18 @@ public interface AnalysisContext {
   public LineInfo computeLineInfo(Source source) throws AnalysisException;
 
   /**
+   * Return {@code true} if the given source exists.
+   * <p>
+   * This method should be used rather than the method {@link Source#exists()} because contexts can
+   * have local overrides of the content of a source that the source is not aware of and a source
+   * with local content is considered to exist even if there is no file on disk.
+   * 
+   * @param source the source whose modification stamp is to be returned
+   * @return {@code true} if the source exists
+   */
+  public boolean exists(Source source);
+
+  /**
    * Create a new context in which analysis can be performed. Any sources in the specified container
    * will be removed from this context and added to the newly created context.
    * 
@@ -168,6 +183,44 @@ public interface AnalysisContext {
    * @return the set of analysis options controlling the behavior of this context
    */
   public AnalysisOptions getAnalysisOptions();
+
+  /**
+   * Return the element model corresponding to the compilation unit defined by the given source in
+   * the library defined by the given source, or {@code null} if the element model does not
+   * currently exist or if the library cannot be analyzed for some reason.
+   * 
+   * @param unitSource the source of the compilation unit
+   * @param librarySource the source of the defining compilation unit of the library containing the
+   *          compilation unit
+   * @return the element model corresponding to the compilation unit defined by the given source
+   */
+  public CompilationUnitElement getCompilationUnitElement(Source unitSource, Source librarySource);
+
+  /**
+   * Get the contents and timestamp of the given source.
+   * <p>
+   * This method should be used rather than the method {@link Source#getContents()} because contexts
+   * can have local overrides of the content of a source that the source is not aware of.
+   * 
+   * @param source the source whose content is to be returned
+   * @return the contents and timestamp of the source
+   * @throws Exception if the contents of the source could not be accessed
+   */
+  public TimestampedData<CharSequence> getContents(Source source) throws Exception;
+
+  /**
+   * Get the contents of the given source and pass it to the given content receiver.
+   * <p>
+   * This method should be used rather than the method {@link Source#getContentsToReceiver(ContentReceiver)}
+   * because contexts can have local overrides of the content of a source that the source is not
+   * aware of.
+   * 
+   * @param source the source whose content is to be returned
+   * @param receiver the content receiver to which the content of the source will be passed
+   * @throws Exception if the contents of the source could not be accessed
+   */
+  @Deprecated
+  public void getContentsToReceiver(Source source, ContentReceiver receiver) throws Exception;
 
   /**
    * Return the element referenced by the given location, or {@code null} if the element is not
@@ -308,6 +361,21 @@ public interface AnalysisContext {
   public LineInfo getLineInfo(Source source);
 
   /**
+   * Return the modification stamp for the given source. A modification stamp is a non-negative
+   * integer with the property that if the contents of the source have not been modified since the
+   * last time the modification stamp was accessed then the same value will be returned, but if the
+   * contents of the source have been modified one or more times (even if the net change is zero)
+   * the stamps will be different.
+   * <p>
+   * This method should be used rather than the method {@link Source#getModificationStamp()} because
+   * contexts can have local overrides of the content of a source that the source is not aware of.
+   * 
+   * @param source the source whose modification stamp is to be returned
+   * @return the modification stamp for the source
+   */
+  public long getModificationStamp(Source source);
+
+  /**
    * Return an array containing all of the sources known to this context and their resolution state
    * is not valid or flush. So, these sources are not safe to update during refactoring, because we
    * may be don't know all the references in them.
@@ -338,6 +406,16 @@ public interface AnalysisContext {
    * @see #resolveCompilationUnit(Source, Source)
    */
   public CompilationUnit getResolvedCompilationUnit(Source unitSource, Source librarySource);
+
+  /**
+   * Return a fully resolved HTML unit, or {@code null} if the resolved unit is not already
+   * computed.
+   * 
+   * @param htmlSource the source of the HTML unit
+   * @return a fully resolved HTML unit
+   * @see #resolveHtmlUnit(Source)
+   */
+  public HtmlUnit getResolvedHtmlUnit(Source htmlSource);
 
   /**
    * Return the source factory used to create the sources that can be analyzed in this context.
@@ -505,15 +583,4 @@ public interface AnalysisContext {
    *          context
    */
   public void setSourceFactory(SourceFactory factory);
-
-  /**
-   * Given a collection of sources with content that has changed, return an {@link Iterable}
-   * identifying the sources that need to be resolved.
-   * 
-   * @param changedSources an array of sources (not {@code null}, contains no {@code null}s)
-   * @return An iterable returning the sources to be resolved
-   */
-  // Soon to be deprecated, but the replacement isn't quite ready yet
-  // * @deprecated Use the ChangeResult returned by {@link #changed(ChangeSet)}.
-  public Iterable<Source> sourcesToResolve(Source[] changedSources);
 }

@@ -24,6 +24,46 @@ import java.io.File;
  */
 public class SemanticTest extends AbstractSemanticTest {
 
+  public void test_anonymousClass_extendsClass() throws Exception {
+    setFileLines(
+        "test/Test.java",
+        toString(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "package test;",
+            "public class Test {",
+            "  public Test(int i) {",
+            "  }",
+            "  public boolean foo() {",
+            "    return false;",
+            "  }",
+            "  public static main() {",
+            "    Test v = new Test(42) {",
+            "      public boolean foo() {",
+            "        return true;",
+            "      }",
+            "    };",
+            "  }",
+            "}"));
+    Context context = new Context();
+    context.addSourceFolder(tmpFolder);
+    context.addSourceFiles(tmpFolder);
+    CompilationUnit unit = context.translate();
+    assertEquals(
+        toString(
+            "class Test {",
+            "  Test(int i);",
+            "  bool foo() => false;",
+            "  static main() {",
+            "    Test v = new Test_main(42);",
+            "  }",
+            "}",
+            "class Test_main extends Test {",
+            "  Test_main(int arg0) : super(arg0);",
+            "  bool foo() => true;",
+            "}"),
+        getFormattedSource(unit));
+  }
+
   public void test_anonymousClass_extendsClass_referenceFinalVariables() throws Exception {
     setFileLines(
         "test/Test.java",
@@ -52,12 +92,12 @@ public class SemanticTest extends AbstractSemanticTest {
             "  Test(int i, double f);",
             "  static main() {",
             "    int myValue = 5;",
-            "    Test v = new Test_0(1, 2.3, myValue);",
+            "    Test v = new Test_main(1, 2.3, myValue);",
             "  }",
             "}",
-            "class Test_0 extends Test {",
+            "class Test_main extends Test {",
             "  int myValue = 0;",
-            "  Test_0(int arg0, double arg1, this.myValue) : super(arg0, arg1);",
+            "  Test_main(int arg0, double arg1, this.myValue) : super(arg0, arg1);",
             "  int foo() => myValue;",
             "}"),
         getFormattedSource(unit));
@@ -92,10 +132,10 @@ public class SemanticTest extends AbstractSemanticTest {
             "}",
             "class Test {",
             "  static main() {",
-            "    MyInterface v = new MyInterface_0();",
+            "    MyInterface v = new MyInterface_Test_main();",
             "  }",
             "}",
-            "class MyInterface_0 implements MyInterface {",
+            "class MyInterface_Test_main implements MyInterface {",
             "}"),
         getFormattedSource(unit));
   }
@@ -137,12 +177,12 @@ public class SemanticTest extends AbstractSemanticTest {
             "class Test {",
             "  static void main() {",
             "    List<bool> hasErrors = [false];",
-            "    ErrorListener v = new ErrorListener_0(hasErrors);",
+            "    ErrorListener v = new ErrorListener_Test_main(hasErrors);",
             "  }",
             "}",
-            "class ErrorListener_0 implements ErrorListener {",
+            "class ErrorListener_Test_main implements ErrorListener {",
             "  List<bool> hasErrors;",
-            "  ErrorListener_0(this.hasErrors);",
+            "  ErrorListener_Test_main(this.hasErrors);",
             "  void onError() {",
             "    hasErrors[0] = false;",
             "    hasErrors[0] = true;",
@@ -191,12 +231,12 @@ public class SemanticTest extends AbstractSemanticTest {
             "  void foo() {",
             "  }",
             "  void main() {",
-            "    ErrorListener v = new ErrorListener_0(this);",
+            "    ErrorListener v = new ErrorListener_Test_main(this);",
             "  }",
             "}",
-            "class ErrorListener_0 implements ErrorListener {",
+            "class ErrorListener_Test_main implements ErrorListener {",
             "  final Test Test_this;",
-            "  ErrorListener_0(this.Test_this);",
+            "  ErrorListener_Test_main(this.Test_this);",
             "  void onError() {",
             "    Test_this.foo();",
             "    Test_this.hasErrors = true;",
@@ -339,12 +379,15 @@ public class SemanticTest extends AbstractSemanticTest {
             "    void test() {",
             "      A.this.outerField = 5;",
             "      A.this.outerMethod();",
+            "      test3(A.this);",
             "    }",
             "  }",
             "  int outerField;",
             "  void outerMethod() {}",
             "  B test2() {",
             "    return new B();",
+            "  }",
+            "  void test3(A) {",
             "  }",
             "}"));
     Context context = new Context();
@@ -359,6 +402,8 @@ public class SemanticTest extends AbstractSemanticTest {
             "  void outerMethod() {",
             "  }",
             "  A_B test2() => new A_B(this);",
+            "  void test3() {",
+            "  }",
             "}",
             "class A_B {",
             "  final A A_this;",
@@ -366,6 +411,7 @@ public class SemanticTest extends AbstractSemanticTest {
             "  void test() {",
             "    A_this.outerField = 5;",
             "    A_this.outerMethod();",
+            "    A_this.test3(A_this);",
             "  }",
             "}"),
         getFormattedSource(unit));
@@ -396,15 +442,15 @@ public class SemanticTest extends AbstractSemanticTest {
     assertEquals(
         toString(
             "class A {",
-            "  void test(A_B p) => new Object_0(p);",
+            "  void test(A_B p) => new Object_A_test(p);",
             "}",
             "class A_B {",
             "  void foo() {",
             "  }",
             "}",
-            "class Object_0 extends Object {",
+            "class Object_A_test extends Object {",
             "  A_B p;",
-            "  Object_0(this.p) : super();",
+            "  Object_A_test(this.p) : super();",
             "  void main() {",
             "    p.foo();",
             "  }",
@@ -490,11 +536,11 @@ public class SemanticTest extends AbstractSemanticTest {
             "class A {",
             "  void test1(A_B p) {",
             "  }",
-            "  A_B test2() => new A_B_0();",
+            "  A_B test2() => new A_B_A_test2();",
             "}",
             "abstract class A_B {",
             "}",
-            "class A_B_0 implements A_B {",
+            "class A_B_A_test2 implements A_B {",
             "}"),
         getFormattedSource(unit));
   }
@@ -522,11 +568,11 @@ public class SemanticTest extends AbstractSemanticTest {
             "class A {",
             "  void test1(A_B p) {",
             "  }",
-            "  A_B test2() => new A_B_0();",
+            "  A_B test2() => new A_B_A_test2();",
             "}",
             "class A_B {",
             "}",
-            "class A_B_0 extends A_B {",
+            "class A_B_A_test2 extends A_B {",
             "}"),
         getFormattedSource(unit));
   }
@@ -750,6 +796,46 @@ public class SemanticTest extends AbstractSemanticTest {
             "    new Test();",
             "    new Test.con1(2);",
             "    new Test.con2(3.0);",
+            "  }",
+            "}"),
+        getFormattedSource(unit));
+  }
+
+  public void test_constructor_typeArgs() throws Exception {
+    setFileLines(
+        "test/Test.java",
+        toString(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "package test;",
+            "public class Test<T> {",
+            "  Test() {",
+            "    print(0);",
+            "  }",
+            "  Test(int p) {",
+            "    print(1);",
+            "  }",
+            "  static void main() {",
+            "    new Test<String>();",
+            "    new Test<String>(2);",
+            "  }",
+            "}",
+            ""));
+    Context context = new Context();
+    context.addSourceFolder(tmpFolder);
+    context.addSourceFiles(tmpFolder);
+    CompilationUnit unit = context.translate();
+    assertEquals(
+        toString(
+            "class Test<T> {",
+            "  Test() {",
+            "    print(0);",
+            "  }",
+            "  Test.con1(int p) {",
+            "    print(1);",
+            "  }",
+            "  static void main() {",
+            "    new Test<String>();",
+            "    new Test<String>.con1(2);",
             "  }",
             "}"),
         getFormattedSource(unit));

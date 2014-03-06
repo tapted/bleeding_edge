@@ -30,6 +30,7 @@ import com.google.dart.engine.resolver.ResolverErrorCode;
 import com.google.dart.engine.services.assist.AssistContext;
 import com.google.dart.engine.services.change.Edit;
 import com.google.dart.engine.services.change.SourceChange;
+import com.google.dart.engine.services.correction.AddDependencyCorrectionProposal;
 import com.google.dart.engine.services.correction.CorrectionKind;
 import com.google.dart.engine.services.correction.CorrectionProcessors;
 import com.google.dart.engine.services.correction.CorrectionProposal;
@@ -70,7 +71,7 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
     // process "libSource"
     {
       ChangeSet changeSet = new ChangeSet();
-      changeSet.added(libSource);
+      changeSet.addedSource(libSource);
       analysisContext.applyChanges(changeSet);
     }
     // process unit
@@ -92,6 +93,24 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "  myTopLevelVariable = null;",
             "}",
             ""));
+  }
+
+  public void test_addPackageDependency() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "import 'package:path/path.dart';",
+        "");
+    AddDependencyCorrectionProposal proposal = (AddDependencyCorrectionProposal) findProposal(CorrectionKind.QF_ADD_PACKAGE_DEPENDENCY);
+    assertEquals("path", proposal.getPackageName());
+  }
+
+  public void test_addPackageDependency_notPackedImport() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "import 'dart:no_such_library';",
+        "");
+    CorrectionProposal proposal = findProposal(CorrectionKind.QF_ADD_PACKAGE_DEPENDENCY);
+    assertNull(proposal);
   }
 
   public void test_boolean() throws Exception {
@@ -229,6 +248,183 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
         resultProposal.getLinkedPositions());
   }
 
+  public void test_createConstructor_hasNotSyntheticDefault() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "class A {",
+        "  A() {}",
+        "}",
+        "main() {",
+        "  new A(1, 2.0);",
+        "}",
+        "");
+    assertNoFix(CorrectionKind.QF_CREATE_CONSTRUCTOR);
+  }
+
+  public void test_createConstructor_insteadOfSyntheticDefault() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "class A {",
+        "  int field;",
+        "",
+        "  method() {}",
+        "}",
+        "main() {",
+        "  new A(1, 2.0);",
+        "}",
+        "");
+    assert_runProcessor(
+        CorrectionKind.QF_CREATE_CONSTRUCTOR,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "class A {",
+            "  int field;",
+            "",
+            "  A(int i, double d) {",
+            "  }",
+            "",
+            "  method() {}",
+            "}",
+            "main() {",
+            "  new A(1, 2.0);",
+            "}",
+            ""));
+    // linked positions
+    {
+      Map<String, List<SourceRange>> expected = Maps.newHashMap();
+      expected.put("TYPE0", getResultRanges("int i"));
+      expected.put("ARG0", getResultRanges("i,"));
+      expected.put("TYPE1", getResultRanges("double d"));
+      expected.put("ARG1", getResultRanges("d) {"));
+      assertEquals(expected, resultProposal.getLinkedPositions());
+    }
+  }
+
+  public void test_createConstructor_named() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "class A {",
+        "  method() {}",
+        "}",
+        "main() {",
+        "  new A.named(1, 2.0);",
+        "}",
+        "");
+    assert_runProcessor(
+        CorrectionKind.QF_CREATE_CONSTRUCTOR,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "class A {",
+            "  A.named(int i, double d) {",
+            "  }",
+            "",
+            "  method() {}",
+            "}",
+            "main() {",
+            "  new A.named(1, 2.0);",
+            "}",
+            ""));
+    // linked positions
+    {
+      Map<String, List<SourceRange>> expected = Maps.newHashMap();
+      expected.put("NAME", getResultRanges("named(1, 2.0);", "named(int i"));
+      expected.put("TYPE0", getResultRanges("int i"));
+      expected.put("ARG0", getResultRanges("i,"));
+      expected.put("TYPE1", getResultRanges("double d"));
+      expected.put("ARG1", getResultRanges("d) {"));
+      assertEquals(expected, resultProposal.getLinkedPositions());
+    }
+  }
+
+  public void test_createConstructor_named_afterLeadingFields() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "class A {",
+        "  int fieldA;",
+        "  int fieldB;",
+        "",
+        "  method() {}",
+        "",
+        "  int fieldC;",
+        "}",
+        "main() {",
+        "  new A.named(1, 2.0);",
+        "}",
+        "");
+    assert_runProcessor(
+        CorrectionKind.QF_CREATE_CONSTRUCTOR,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "class A {",
+            "  int fieldA;",
+            "  int fieldB;",
+            "",
+            "  A.named(int i, double d) {",
+            "  }",
+            "",
+            "  method() {}",
+            "",
+            "  int fieldC;",
+            "}",
+            "main() {",
+            "  new A.named(1, 2.0);",
+            "}",
+            ""));
+  }
+
+  public void test_createConstructor_named_afterOtherConstructors() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "class A {",
+        "  A() {}",
+        "",
+        "  method() {}",
+        "}",
+        "main() {",
+        "  new A.named(1, 2.0);",
+        "}",
+        "");
+    assert_runProcessor(
+        CorrectionKind.QF_CREATE_CONSTRUCTOR,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "class A {",
+            "  A() {}",
+            "",
+            "  A.named(int i, double d) {",
+            "  }",
+            "",
+            "  method() {}",
+            "}",
+            "main() {",
+            "  new A.named(1, 2.0);",
+            "}",
+            ""));
+  }
+
+  public void test_createConstructor_named_noOtherMembers() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "class A {",
+        "}",
+        "main() {",
+        "  new A.named(1, 2.0);",
+        "}",
+        "");
+    assert_runProcessor(
+        CorrectionKind.QF_CREATE_CONSTRUCTOR,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "class A {",
+            "  A.named(int i, double d) {",
+            "  }",
+            "}",
+            "main() {",
+            "  new A.named(1, 2.0);",
+            "}",
+            ""));
+  }
+
   public void test_createConstructorSuperExplicit() throws Exception {
     prepareProblemWithFix(
         "// filler filler filler filler filler filler filler filler filler filler",
@@ -313,7 +509,9 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
         "  A(p1, int p2, List<String> p3, [int p4]);",
         "}",
         "class B extends A {",
-        "  int existingMember;",
+        "  int existingField;",
+        "",
+        "  int existingMethod() {}",
         "}");
     assert_runProcessor(
         CorrectionKind.QF_CREATE_CONSTRUCTOR_SUPER,
@@ -323,9 +521,11 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "  A(p1, int p2, List<String> p3, [int p4]);",
             "}",
             "class B extends A {",
+            "  int existingField;",
+            "",
             "  B(p1, int p2, List<String> p3) : super(p1, p2, p3);",
             "",
-            "  int existingMember;",
+            "  int existingMethod() {}",
             "}"));
   }
 
@@ -337,6 +537,9 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
         "  A(this._field);",
         "}",
         "class B extends A {",
+        "  int existingField;",
+        "",
+        "  int existingMethod() {}",
         "}");
     assert_runProcessor(
         CorrectionKind.QF_CREATE_CONSTRUCTOR_SUPER,
@@ -347,7 +550,11 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "  A(this._field);",
             "}",
             "class B extends A {",
+            "  int existingField;",
+            "",
             "  B(int field) : super(field);",
+            "",
+            "  int existingMethod() {}",
             "}"));
   }
 
@@ -358,6 +565,9 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
         "  A.named(p1, int p2);",
         "}",
         "class B extends A {",
+        "  int existingField;",
+        "",
+        "  int existingMethod() {}",
         "}");
     assert_runProcessor(
         CorrectionKind.QF_CREATE_CONSTRUCTOR_SUPER,
@@ -367,7 +577,11 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "  A.named(p1, int p2);",
             "}",
             "class B extends A {",
+            "  int existingField;",
+            "",
             "  B.named(p1, int p2) : super.named(p1, p2);",
+            "",
+            "  int existingMethod() {}",
             "}"));
   }
 
@@ -400,6 +614,7 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "}",
             "",
             "class B extends A {",
+            "  @override",
             "  forEach(int f(double p1, String p2)) {",
             "    // TODO: implement forEach",
             "  }",
@@ -419,6 +634,7 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "import 'dart:collection';",
             "class Test extends IterableMixin<int> {",
             "  // TODO: implement iterator",
+            "  @override",
             "  Iterator<int> get iterator => null;",
             "}"));
   }
@@ -444,9 +660,11 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "",
             "class B extends A {",
             "  // TODO: implement g1",
+            "  @override",
             "  get g1 => null;",
             "",
             "  // TODO: implement g2",
+            "  @override",
             "  int get g2 => null;",
             "}"));
   }
@@ -471,6 +689,7 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "}",
             "",
             "class B extends A {",
+            "  @override",
             "  Map<aaa.Future, List<aaa.Future>> g(aaa.Future p) {",
             "    // TODO: implement g",
             "  }",
@@ -491,44 +710,62 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
         "",
         "class B extends A {",
         "}");
-    assert_runProcessor(
-        CorrectionKind.QF_CREATE_MISSING_OVERRIDES,
-        makeSource(
-            "// filler filler filler filler filler filler filler filler filler filler",
-            "abstract class A {",
-            "  m1();",
-            "  int m2();",
-            "  String m3(int p1, double p2, Map<int, List<String>> p3);",
-            "  String m4(p1, p2);",
-            "  String m5(p1, [int p2 = 2, int p3, p4 = 4]);",
-            "  String m6(p1, {int p2: 2, int p3, p4: 4});",
-            "}",
-            "",
-            "class B extends A {",
-            "  m1() {",
-            "    // TODO: implement m1",
-            "  }",
-            "",
-            "  int m2() {",
-            "    // TODO: implement m2",
-            "  }",
-            "",
-            "  String m3(int p1, double p2, Map<int, List<String>> p3) {",
-            "    // TODO: implement m3",
-            "  }",
-            "",
-            "  String m4(p1, p2) {",
-            "    // TODO: implement m4",
-            "  }",
-            "",
-            "  String m5(p1, [int p2 = 2, int p3, p4 = 4]) {",
-            "    // TODO: implement m5",
-            "  }",
-            "",
-            "  String m6(p1, {int p2: 2, int p3, p4: 4}) {",
-            "    // TODO: implement m6",
-            "  }",
-            "}"));
+    String expectedSource = makeSource(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "abstract class A {",
+        "  m1();",
+        "  int m2();",
+        "  String m3(int p1, double p2, Map<int, List<String>> p3);",
+        "  String m4(p1, p2);",
+        "  String m5(p1, [int p2 = 2, int p3, p4 = 4]);",
+        "  String m6(p1, {int p2: 2, int p3, p4: 4});",
+        "}",
+        "",
+        "class B extends A {",
+        "  @override",
+        "  m1() {",
+        "    // TODO: implement m1",
+        "  }",
+        "",
+        "  @override",
+        "  int m2() {",
+        "    // TODO: implement m2",
+        "  }",
+        "",
+        "  @override",
+        "  String m3(int p1, double p2, Map<int, List<String>> p3) {",
+        "    // TODO: implement m3",
+        "  }",
+        "",
+        "  @override",
+        "  String m4(p1, p2) {",
+        "    // TODO: implement m4",
+        "  }",
+        "",
+        "  @override",
+        "  String m5(p1, [int p2 = 2, int p3, p4 = 4]) {",
+        "    // TODO: implement m5",
+        "  }",
+        "",
+        "  @override",
+        "  String m6(p1, {int p2: 2, int p3, p4: 4}) {",
+        "    // TODO: implement m6",
+        "  }",
+        "}");
+    assert_runProcessor(CorrectionKind.QF_CREATE_MISSING_OVERRIDES, expectedSource);
+    // end position should be on "m1", not on "m2", "m3", etc
+    {
+      SourceRange endRange = resultProposal.getEndRange();
+      assertNotNull(endRange);
+      int endOffset = endRange.getOffset();
+      String endString = expectedSource.substring(endOffset, endOffset + 25);
+      assertTrue(endString.contains("m1"));
+      assertFalse(endString.contains("m2"));
+      assertFalse(endString.contains("m3"));
+      assertFalse(endString.contains("m4"));
+      assertFalse(endString.contains("m5"));
+      assertFalse(endString.contains("m6"));
+    }
   }
 
   public void test_createMissingOverrides_operator() throws Exception {
@@ -551,10 +788,12 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "}",
             "",
             "class B extends A {",
+            "  @override",
             "  int operator [](int index) {",
             "    // TODO: implement []",
             "  }",
             "",
+            "  @override",
             "  void operator []=(int index, String value) {",
             "    // TODO: implement []=",
             "  }",
@@ -583,17 +822,47 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "}",
             "",
             "class B extends A {",
+            "  @override",
             "  set s1(x) {",
             "    // TODO: implement s1",
             "  }",
             "",
+            "  @override",
             "  set s2(int x) {",
             "    // TODO: implement s2",
             "  }",
             "",
+            "  @override",
             "  void set s3(String x) {",
             "    // TODO: implement s3",
             "  }",
+            "}"));
+  }
+
+  public void test_createNoSuchMethod() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "abstract class A {",
+        "  m1();",
+        "  int m2();",
+        "}",
+        "",
+        "class B extends A {",
+        "  existing() {}",
+        "}");
+    assert_runProcessor(
+        CorrectionKind.QF_CREATE_NO_SUCH_METHOD,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "abstract class A {",
+            "  m1();",
+            "  int m2();",
+            "}",
+            "",
+            "class B extends A {",
+            "  existing() {}",
+            "",
+            "  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);",
             "}"));
   }
 
@@ -676,6 +945,32 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "int test(double a, String b) {",
             "}",
             ""));
+  }
+
+  public void test_creationFunction_forFunctionType_method_enclosingClass_static() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "class A {",
+        "  static foo() {",
+        "    useFunction(test);",
+        "  }",
+        "}",
+        "",
+        "useFunction(int g(double a, String b)) {}");
+    assert_runProcessor(
+        CorrectionKind.QF_CREATE_METHOD,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "class A {",
+            "  static foo() {",
+            "    useFunction(test);",
+            "  }",
+            "  ",
+            "  static int test(double a, String b) {",
+            "  }",
+            "}",
+            "",
+            "useFunction(int g(double a, String b)) {}"));
   }
 
   public void test_creationFunction_forFunctionType_method_targetClass() throws Exception {
@@ -784,19 +1079,6 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
     assertNull(QuickFixProcessorImpl.getSourceFile(source));
   }
 
-  // TODO(scheglov) waiting https://code.google.com/p/dart/issues/detail?id=10116
-  public void test_importLibrary_fromSDK_notType() throws Exception {
-//    ensureSdkLibraryAsync();
-//    prepareProblemWithFix(
-//        "// filler filler filler filler filler filler filler filler filler filler",
-//        "main() {",
-//        "  print v = null;",
-//        "}",
-//        "");
-//    // "print" is used as type, but it isn't
-//    assertNoFix();
-  }
-
   public void test_importLibrary_privateName() throws Exception {
     prepareProblemWithFix(
         "// filler filler filler filler filler filler filler filler filler filler",
@@ -822,7 +1104,7 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
     // process "libSource"
     {
       ChangeSet changeSet = new ChangeSet();
-      changeSet.added(libSource);
+      changeSet.addedSource(libSource);
       analysisContext.applyChanges(changeSet);
     }
     // process unit
@@ -844,6 +1126,54 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             "  myFunction();",
             "}",
             ""));
+  }
+
+  public void test_importLibrary_withTopLevelFunction_upDownPath() throws Exception {
+    Source libSource = setFileContent(
+        "aaa/lib_a.dart",
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "library A;",
+            "class AAA {}"));
+    testSource = setFileContent(
+        "bbb/Test.dart",
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "main() {",
+            "  AAA a = null;",
+            "}"));
+    // prepare AnalysisContext
+    ensureAnalysisContext();
+    {
+      ChangeSet changeSet = new ChangeSet();
+      changeSet.addedSource(libSource);
+      changeSet.addedSource(testSource);
+      analysisContext.applyChanges(changeSet);
+    }
+    // fill "test*" fields
+    testLibraryElement = analysisContext.computeLibraryElement(testSource);
+    testUnit = analysisContext.resolveCompilationUnit(testSource, testLibraryElement);
+    // process "libSource"
+    analysisContext.computeLibraryElement(libSource);
+    // prepare proposal
+    prepareProblemWithFix();
+    SourceCorrectionProposal proposal = (SourceCorrectionProposal) findProposal(CorrectionKind.QF_IMPORT_LIBRARY_PROJECT);
+    assertNotNull(proposal);
+    // we have "fix", note that preview is for library
+    SourceChange appChange = proposal.getChange();
+    assertSame(testSource, appChange.getSource());
+    assertChangeResult(
+        analysisContext,
+        appChange,
+        testSource,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "",
+            "import '../aaa/lib_a.dart';",
+            "",
+            "main() {",
+            "  AAA a = null;",
+            "}"));
   }
 
   public void test_importLibrary_withType_hasDirectiveImport() throws Exception {
@@ -877,9 +1207,9 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
     ensureAnalysisContext();
     {
       ChangeSet changeSet = new ChangeSet();
-      changeSet.added(libSource);
-      changeSet.added(appSource);
-      changeSet.added(partSource);
+      changeSet.addedSource(libSource);
+      changeSet.addedSource(appSource);
+      changeSet.addedSource(partSource);
       analysisContext.applyChanges(changeSet);
     }
     // fill "test*" fields
@@ -895,6 +1225,7 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
     SourceChange appChange = proposal.getChange();
     assertSame(appSource, appChange.getSource());
     assertChangeResult(
+        analysisContext,
         appChange,
         appSource,
         makeSource(
@@ -1181,6 +1512,61 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
             ""));
   }
 
+  public void test_removeUnusedImport() throws Exception {
+    enableContextHints();
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "import 'dart:math';",
+        "",
+        "main() {",
+        "}");
+    assert_runProcessor(
+        CorrectionKind.QF_REMOVE_UNUSED_IMPORT,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "",
+            "main() {",
+            "}"));
+  }
+
+  public void test_removeUnusedImport_anotherImportOnLine() throws Exception {
+    enableContextHints();
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "import 'dart:math'; import 'dart:async';",
+        "",
+        "main() {",
+        "  Future f;",
+        "}");
+    assert_runProcessor(
+        CorrectionKind.QF_REMOVE_UNUSED_IMPORT,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "import 'dart:async';",
+            "",
+            "main() {",
+            "  Future f;",
+            "}"));
+  }
+
+  public void test_removeUnusedImport_severalLines() throws Exception {
+    enableContextHints();
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "import ",
+        "  'dart:math';",
+        "",
+        "main() {",
+        "}");
+    assert_runProcessor(
+        CorrectionKind.QF_REMOVE_UNUSED_IMPORT,
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "",
+            "main() {",
+            "}"));
+  }
+
   public void test_undefinedClass_useSimilar_fromThisLibrary() throws Exception {
     prepareProblemWithFix(
         "// filler filler filler filler filler filler filler filler filler filler",
@@ -1377,6 +1763,17 @@ public class QuickFixProcessorImplTest extends RefactoringImplTest {
       expected.put("NAME", getResultRanges("myUndefinedMethod();", "myUndefinedMethod() {"));
       assertEquals(expected, resultProposal.getLinkedPositions());
     }
+  }
+
+  public void test_undefinedMethod_createQualified_targetIsFunctionType() throws Exception {
+    prepareProblemWithFix(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "typedef A();",
+        "main() {",
+        "  A.myUndefinedMethod();",
+        "}",
+        "");
+    assertNoFix(CorrectionKind.QF_CREATE_METHOD);
   }
 
   public void test_undefinedMethod_createUnqualified_parameters() throws Exception {

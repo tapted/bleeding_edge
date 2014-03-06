@@ -15,6 +15,8 @@ namespace dart {
 class ActiveVariables;
 class CodeBreakpoint;
 class Isolate;
+class JSONArray;
+class JSONStream;
 class ObjectPointerVisitor;
 class RemoteObjectCache;
 class SourceBreakpoint;
@@ -25,14 +27,13 @@ class StackFrame;
 // SourceBreakpoint.
 class SourceBreakpoint {
  public:
-  SourceBreakpoint(intptr_t id, const Function& func, intptr_t token_pos);
+  SourceBreakpoint(intptr_t id, const Script& script, intptr_t token_pos);
 
   RawFunction* function() const { return function_; }
   intptr_t token_pos() const { return token_pos_; }
-  void set_token_pos(intptr_t value) { token_pos_ = value; }
   intptr_t id() const { return id_; }
 
-  RawScript* SourceCode();
+  RawScript* script() { return script_; }
   RawString* SourceUrl();
   intptr_t LineNumber();
 
@@ -41,21 +42,27 @@ class SourceBreakpoint {
   void Enable();
   void Disable();
   bool IsEnabled() const { return is_enabled_; }
+  bool IsResolved() { return is_resolved_; }
+
+  void PrintToJSONStream(JSONStream* stream);
 
  private:
   void VisitObjectPointers(ObjectPointerVisitor* visitor);
 
-  void set_function(const Function& func);
+  void SetResolved(const Function& func, intptr_t token_pos);
   void set_next(SourceBreakpoint* value) { next_ = value; }
   SourceBreakpoint* next() const { return this->next_; }
 
   const intptr_t id_;
-  RawFunction* function_;
+  RawScript* script_;
   intptr_t token_pos_;
-  intptr_t line_number_;
+  bool is_resolved_;
   bool is_enabled_;
-
   SourceBreakpoint* next_;
+
+  // Valid for resolved breakpoints:
+  RawFunction* function_;
+  intptr_t line_number_;
 
   friend class Debugger;
   DISALLOW_COPY_AND_ASSIGN(SourceBreakpoint);
@@ -67,10 +74,10 @@ class SourceBreakpoint {
 // function gets compiled as a regular function and as a closure.
 class CodeBreakpoint {
  public:
-  CodeBreakpoint(const Function& func, intptr_t pc_desc_index);
+  CodeBreakpoint(const Code& code, intptr_t pc_desc_index);
   ~CodeBreakpoint();
 
-  RawFunction* function() const { return function_; }
+  RawFunction* function() const;
   uword pc() const { return pc_; }
   intptr_t token_pos() const { return token_pos_; }
   bool IsInternal() const { return src_bpt_ == NULL; }
@@ -82,6 +89,8 @@ class CodeBreakpoint {
   void Enable();
   void Disable();
   bool IsEnabled() const { return is_enabled_; }
+
+  uword OrigStubAddress() const;
 
  private:
   void VisitObjectPointers(ObjectPointerVisitor* visitor);
@@ -95,10 +104,8 @@ class CodeBreakpoint {
 
   void PatchCode();
   void RestoreCode();
-  void PatchFunctionReturn();
-  void RestoreFunctionReturn();
 
-  RawFunction* function_;
+  RawCode* code_;
   intptr_t pc_desc_index_;
   intptr_t token_pos_;
   uword pc_;
@@ -109,10 +116,7 @@ class CodeBreakpoint {
   CodeBreakpoint* next_;
 
   PcDescriptors::Kind breakpoint_kind_;
-  union {
-    uword target_address_;
-    uint8_t raw[2 * sizeof(uword)];
-  } saved_bytes_;
+  uword saved_value_;
 
   friend class Debugger;
   DISALLOW_COPY_AND_ASSIGN(CodeBreakpoint);
@@ -169,6 +173,8 @@ class ActivationFrame : public ZoneAllocated {
   RawArray* GetLocalVariables();
   RawContext* GetSavedEntryContext();
   RawContext* GetSavedCurrentContext();
+
+  void PrintToJSONObject(JSONObject* jsobj);
 
  private:
   intptr_t PcDescIndex();
@@ -298,6 +304,14 @@ class Debugger {
   void SetStepOut();
   bool IsStepping() const { return resume_action_ != kContinue; }
 
+  bool IsPaused() const { return pause_event_ != NULL; }
+
+  // Indicates why the debugger is currently paused.  If the debugger
+  // is not paused, this returns NULL.  Note that the debugger can be
+  // paused for breakpoints, isolate interruption, and (sometimes)
+  // exceptions.
+  const DebuggerEvent* PauseEvent() const { return pause_event_; }
+
   void SetExceptionPauseInfo(Dart_ExceptionPauseInfo pause_info);
   Dart_ExceptionPauseInfo GetExceptionPauseInfo();
 
@@ -306,9 +320,14 @@ class Debugger {
   // Called from Runtime when a breakpoint in Dart code is reached.
   void BreakpointCallback();
 
-  // Returns true if there is at least one breakpoint set in func.
+  // Returns true if there is at least one breakpoint set in func or code.
   // Checks for both user-defined and internal temporary breakpoints.
   bool HasBreakpoint(const Function& func);
+  bool HasBreakpoint(const Code& code);
+
+  // Returns true if the call at address pc is patched to point to
+  // a debugger stub.
+  bool HasActiveBreakpoint(uword pc);
 
   // Returns a stack trace with frames corresponding to invisible functions
   // omitted. CurrentStackTrace always returns a new trace on the current stack.
@@ -345,12 +364,15 @@ class Debugger {
                             const String& field_name);
 
   void SignalBpReached();
-  void SingleStepCallback();
+  void DebuggerStepCallback();
 
   void SignalExceptionThrown(const Instance& exc);
-  static void SignalIsolateEvent(EventType type);
+  void SignalIsolateEvent(EventType type);
+  static void SignalIsolateInterrupted();
 
   uword GetPatchedStubAddress(uword breakpoint_address);
+
+  void PrintBreakpointsToJSONArray(JSONArray* jsarr) const;
 
   static bool IsDebuggable(const Function& func);
 
@@ -362,11 +384,18 @@ class Debugger {
     kSingleStep
   };
 
+  void FindCompiledFunctions(const Script& script,
+                             intptr_t start_pos,
+                             intptr_t end_pos,
+                             GrowableObjectArray* function_list);
+  RawFunction* FindBestFit(const Script& script, intptr_t token_pos);
+  RawFunction* FindInnermostClosure(const Function& function,
+                                    intptr_t token_pos);
   intptr_t ResolveBreakpointPos(const Function& func,
-                                intptr_t first_token_pos,
-                                intptr_t last_token_pos);
+                                intptr_t requested_token_pos);
   void DeoptimizeWorld();
-  void InstrumentForStepping(const Function& target_function);
+  void SetInternalBreakpoints(const Function& target_function);
+  SourceBreakpoint* SetBreakpoint(const Script& script, intptr_t token_pos);
   SourceBreakpoint* SetBreakpoint(const Function& target_function,
                                   intptr_t first_token_pos,
                                   intptr_t last_token_pos);
@@ -374,10 +403,9 @@ class Debugger {
   void UnlinkCodeBreakpoints(SourceBreakpoint* src_bpt);
   void RegisterSourceBreakpoint(SourceBreakpoint* bpt);
   void RegisterCodeBreakpoint(CodeBreakpoint* bpt);
-  SourceBreakpoint* GetSourceBreakpoint(const Function& func,
+  SourceBreakpoint* GetSourceBreakpoint(const Script& script,
                                         intptr_t token_pos);
   void MakeCodeBreakpointsAt(const Function& func,
-                             intptr_t token_pos,
                              SourceBreakpoint* bpt);
   // Returns NULL if no breakpoint exists for the given address.
   CodeBreakpoint* GetCodeBreakpoint(uword breakpoint_address);
@@ -411,6 +439,12 @@ class Debugger {
                             const String& prefix,
                             bool include_private_fields);
 
+  // Handles any events which pause vm execution.  Breakpoints,
+  // interrupts, etc.
+  void Pause(DebuggerEvent* event);
+
+  void HandleSteppingRequest(DebuggerStackTrace* stack_trace);
+
   Isolate* isolate_;
   Dart_Port isolate_id_;  // A unique ID for the isolate in the debugger.
   bool initialized_;
@@ -418,10 +452,6 @@ class Debugger {
   // ID number generator.
   intptr_t next_id_;
 
-  // Current stack trace. Valid while executing breakpoint callback code.
-  DebuggerStackTrace* stack_trace_;
-
-  RemoteObjectCache* obj_cache_;
 
   SourceBreakpoint* src_breakpoints_;
   CodeBreakpoint* code_breakpoints_;
@@ -434,9 +464,22 @@ class Debugger {
   // be run as a side effect of getting values of fields.
   bool ignore_breakpoints_;
 
-  // True while debugger calls event_handler_. Used to prevent recursive
-  // debugger events.
-  bool in_event_notification_;
+  // Indicates why the debugger is currently paused.  If the debugger
+  // is not paused, this is NULL.  Note that the debugger can be
+  // paused for breakpoints, isolate interruption, and (sometimes)
+  // exceptions.
+  DebuggerEvent* pause_event_;
+
+  // An id -> object map.  Valid only while IsPaused().
+  RemoteObjectCache* obj_cache_;
+
+  // Current stack trace. Valid only while IsPaused().
+  DebuggerStackTrace* stack_trace_;
+
+  // When stepping through code, only pause the program if the top
+  // frame corresponds to this fp value, or if the top frame is
+  // lower on the stack.
+  uword stepping_fp_;
 
   Dart_ExceptionPauseInfo exc_pause_info_;
 

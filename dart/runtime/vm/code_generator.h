@@ -17,15 +17,9 @@ class Instance;
 
 // Declaration of runtime entries called from stub or generated code.
 DECLARE_RUNTIME_ENTRY(AllocateArray);
-DECLARE_RUNTIME_ENTRY(AllocateClosure);
-DECLARE_RUNTIME_ENTRY(AllocateImplicitInstanceClosure);
 DECLARE_RUNTIME_ENTRY(AllocateContext);
 DECLARE_RUNTIME_ENTRY(AllocateObject);
-DECLARE_RUNTIME_ENTRY(AllocateObjectWithBoundsCheck);
 DECLARE_RUNTIME_ENTRY(BreakpointRuntimeHandler);
-DECLARE_RUNTIME_ENTRY(BreakpointStaticHandler);
-DECLARE_RUNTIME_ENTRY(BreakpointReturnHandler);
-DECLARE_RUNTIME_ENTRY(BreakpointDynamicHandler);
 DECLARE_RUNTIME_ENTRY(SingleStepHandler);
 DECLARE_RUNTIME_ENTRY(CloneContext);
 DECLARE_RUNTIME_ENTRY(Deoptimize);
@@ -75,6 +69,7 @@ DECLARE_RUNTIME_ENTRY(UpdateFieldCid);
   V(UnaryOp)                                                                   \
   V(UnboxInteger)                                                              \
   V(CheckClass)                                                                \
+  V(HoistedCheckClass)                                                         \
   V(CheckSmi)                                                                  \
   V(CheckArrayBound)                                                           \
   V(AtCall)                                                                    \
@@ -99,7 +94,6 @@ RawCode* ResolveCompileInstanceCallTarget(const Instance& receiver,
 
 void DeoptimizeAt(const Code& optimized_code, uword pc);
 void DeoptimizeAll();
-void DeoptimizeIfOwner(const GrowableArray<intptr_t>& classes);
 
 double DartModulo(double a, double b);
 void SinCos(double arg, double* sin_res, double* cos_res);

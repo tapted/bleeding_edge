@@ -14,8 +14,10 @@
 package com.google.dart.engine.internal.cache;
 
 import com.google.dart.engine.element.HtmlElement;
+import com.google.dart.engine.element.angular.AngularComponentElement;
 import com.google.dart.engine.error.AnalysisError;
 import com.google.dart.engine.html.ast.HtmlUnit;
+import com.google.dart.engine.internal.element.angular.AngularApplication;
 import com.google.dart.engine.source.Source;
 import com.google.dart.engine.source.SourceKind;
 
@@ -36,6 +38,16 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
    * The parsed HTML unit, or {@code null} if the parsed HTML unit is not currently cached.
    */
   private HtmlUnit parsedUnit;
+
+  /**
+   * The state of the cached resolved HTML unit.
+   */
+  private CacheState resolvedUnitState = CacheState.INVALID;
+
+  /**
+   * The resolved HTML unit, or {@code null} if the resolved HTML unit is not currently cached.
+   */
+  private HtmlUnit resolvedUnit;
 
   /**
    * The state of the cached parse errors.
@@ -81,6 +93,47 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
   private HtmlElement element;
 
   /**
+   * The state of the {@link #angularApplication}.
+   */
+  private CacheState angularApplicationState = CacheState.VALID;
+
+  /**
+   * Information about the Angular Application this unit is used in.
+   */
+  private AngularApplication angularApplication;
+
+  /**
+   * The state of the {@link #angularEntry}.
+   */
+  private CacheState angularEntryState = CacheState.INVALID;
+
+  /**
+   * Information about the Angular Application this unit is entry point for.
+   */
+  private AngularApplication angularEntry = null;
+
+  /**
+   * The state of the {@link #angularComponent}.
+   */
+  private CacheState angularComponentState = CacheState.VALID;
+
+  /**
+   * Information about the {@link AngularComponentElement} this unit is used as template for.
+   */
+  private AngularComponentElement angularComponent = null;
+
+  /**
+   * The state of the Angular resolution errors.
+   */
+  private CacheState angularErrorsState = CacheState.INVALID;
+
+  /**
+   * The hints produced while performing Angular resolution, or an empty array if the error are not
+   * currently cached.
+   */
+  private AnalysisError[] angularErrors = AnalysisError.NO_ERRORS;
+
+  /**
    * The state of the cached hints.
    */
   private CacheState hintsState = CacheState.INVALID;
@@ -98,22 +151,60 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
     super();
   }
 
+  /**
+   * Flush any AST structures being maintained by this entry.
+   */
+  public void flushAstStructures() {
+    if (parsedUnitState == CacheState.VALID) {
+      parsedUnitState = CacheState.FLUSHED;
+      parsedUnit = null;
+    }
+    if (resolvedUnitState == CacheState.VALID) {
+      resolvedUnitState = CacheState.FLUSHED;
+      resolvedUnit = null;
+    }
+  }
+
   @Override
   public AnalysisError[] getAllErrors() {
     ArrayList<AnalysisError> errors = new ArrayList<AnalysisError>();
-    for (AnalysisError error : parseErrors) {
-      errors.add(error);
+    if (parseErrors != null) {
+      for (AnalysisError error : parseErrors) {
+        errors.add(error);
+      }
     }
-    for (AnalysisError error : resolutionErrors) {
-      errors.add(error);
+    if (resolutionErrors != null) {
+      for (AnalysisError error : resolutionErrors) {
+        errors.add(error);
+      }
     }
-    for (AnalysisError error : hints) {
-      errors.add(error);
+    if (angularErrors != null) {
+      for (AnalysisError error : angularErrors) {
+        errors.add(error);
+      }
+    }
+    if (hints != null) {
+      for (AnalysisError error : hints) {
+        errors.add(error);
+      }
     }
     if (errors.size() == 0) {
       return AnalysisError.NO_ERRORS;
     }
     return errors.toArray(new AnalysisError[errors.size()]);
+  }
+
+  @Override
+  public HtmlUnit getAnyParsedUnit() {
+    if (parsedUnitState == CacheState.VALID) {
+//      parsedUnitAccessed = true;
+      return parsedUnit;
+    }
+    if (resolvedUnitState == CacheState.VALID) {
+//      resovledUnitAccessed = true;
+      return resolvedUnit;
+    }
+    return null;
   }
 
   @Override
@@ -123,12 +214,22 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
 
   @Override
   public CacheState getState(DataDescriptor<?> descriptor) {
-    if (descriptor == ELEMENT) {
+    if (descriptor == ANGULAR_APPLICATION) {
+      return angularApplicationState;
+    } else if (descriptor == ANGULAR_COMPONENT) {
+      return angularComponentState;
+    } else if (descriptor == ANGULAR_ENTRY) {
+      return angularEntryState;
+    } else if (descriptor == ANGULAR_ERRORS) {
+      return angularErrorsState;
+    } else if (descriptor == ELEMENT) {
       return elementState;
     } else if (descriptor == PARSE_ERRORS) {
       return parseErrorsState;
     } else if (descriptor == PARSED_UNIT) {
       return parsedUnitState;
+    } else if (descriptor == RESOLVED_UNIT) {
+      return resolvedUnitState;
     } else if (descriptor == REFERENCED_LIBRARIES) {
       return referencedLibrariesState;
     } else if (descriptor == RESOLUTION_ERRORS) {
@@ -142,12 +243,22 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
   @Override
   @SuppressWarnings("unchecked")
   public <E> E getValue(DataDescriptor<E> descriptor) {
-    if (descriptor == ELEMENT) {
+    if (descriptor == ANGULAR_APPLICATION) {
+      return (E) angularApplication;
+    } else if (descriptor == ANGULAR_COMPONENT) {
+      return (E) angularComponent;
+    } else if (descriptor == ANGULAR_ENTRY) {
+      return (E) angularEntry;
+    } else if (descriptor == ANGULAR_ERRORS) {
+      return (E) angularErrors;
+    } else if (descriptor == ELEMENT) {
       return (E) element;
     } else if (descriptor == PARSE_ERRORS) {
       return (E) parseErrors;
     } else if (descriptor == PARSED_UNIT) {
       return (E) parsedUnit;
+    } else if (descriptor == RESOLVED_UNIT) {
+      return (E) resolvedUnit;
     } else if (descriptor == REFERENCED_LIBRARIES) {
       return (E) referencedLibraries;
     } else if (descriptor == RESOLUTION_ERRORS) {
@@ -165,16 +276,16 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
     return copy;
   }
 
-  /**
-   * Invalidate all of the information associated with the HTML file.
-   */
+  @Override
   public void invalidateAllInformation() {
-    setState(LINE_INFO, CacheState.INVALID);
+    super.invalidateAllInformation();
 
     parseErrors = AnalysisError.NO_ERRORS;
     parseErrorsState = CacheState.INVALID;
     parsedUnit = null;
     parsedUnitState = CacheState.INVALID;
+    resolvedUnit = null;
+    resolvedUnitState = CacheState.INVALID;
 
     referencedLibraries = Source.EMPTY_ARRAY;
     referencedLibrariesState = CacheState.INVALID;
@@ -186,6 +297,12 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
    * Invalidate all of the resolution information associated with the HTML file.
    */
   public void invalidateAllResolutionInformation() {
+    angularEntry = null;
+    angularEntryState = CacheState.INVALID;
+
+    angularErrors = AnalysisError.NO_ERRORS;
+    angularErrorsState = CacheState.INVALID;
+
     element = null;
     elementState = CacheState.INVALID;
 
@@ -194,6 +311,12 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
 
     hints = AnalysisError.NO_ERRORS;
     hintsState = CacheState.INVALID;
+  }
+
+  @Override
+  public void recordContentError() {
+    super.recordContentError();
+    recordParseError();
   }
 
   /**
@@ -213,6 +336,8 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
    * this entry.
    */
   public void recordResolutionError() {
+    setState(HtmlEntry.ANGULAR_ERRORS, CacheState.ERROR);
+    setState(HtmlEntry.RESOLVED_UNIT, CacheState.ERROR);
     setState(HtmlEntry.ELEMENT, CacheState.ERROR);
     setState(HtmlEntry.RESOLUTION_ERRORS, CacheState.ERROR);
     setState(HtmlEntry.HINTS, CacheState.ERROR);
@@ -220,7 +345,19 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
 
   @Override
   public void setState(DataDescriptor<?> descriptor, CacheState state) {
-    if (descriptor == ELEMENT) {
+    if (descriptor == ANGULAR_APPLICATION) {
+      angularApplication = updatedValue(state, angularApplication, null);
+      angularApplicationState = state;
+    } else if (descriptor == ANGULAR_COMPONENT) {
+      angularComponent = updatedValue(state, angularComponent, null);
+      angularComponentState = state;
+    } else if (descriptor == ANGULAR_ENTRY) {
+      angularEntry = updatedValue(state, angularEntry, null);
+      angularEntryState = state;
+    } else if (descriptor == ANGULAR_ERRORS) {
+      angularErrors = updatedValue(state, angularErrors, null);
+      angularErrorsState = state;
+    } else if (descriptor == ELEMENT) {
       element = updatedValue(state, element, null);
       elementState = state;
     } else if (descriptor == PARSE_ERRORS) {
@@ -229,6 +366,9 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
     } else if (descriptor == PARSED_UNIT) {
       parsedUnit = updatedValue(state, parsedUnit, null);
       parsedUnitState = state;
+    } else if (descriptor == RESOLVED_UNIT) {
+      resolvedUnit = updatedValue(state, resolvedUnit, null);
+      resolvedUnitState = state;
     } else if (descriptor == REFERENCED_LIBRARIES) {
       referencedLibraries = updatedValue(state, referencedLibraries, Source.EMPTY_ARRAY);
       referencedLibrariesState = state;
@@ -245,7 +385,19 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
 
   @Override
   public <E> void setValue(DataDescriptor<E> descriptor, E value) {
-    if (descriptor == ELEMENT) {
+    if (descriptor == ANGULAR_APPLICATION) {
+      angularApplication = (AngularApplication) value;
+      angularApplicationState = CacheState.VALID;
+    } else if (descriptor == ANGULAR_COMPONENT) {
+      angularComponent = (AngularComponentElement) value;
+      angularComponentState = CacheState.VALID;
+    } else if (descriptor == ANGULAR_ENTRY) {
+      angularEntry = (AngularApplication) value;
+      angularEntryState = CacheState.VALID;
+    } else if (descriptor == ANGULAR_ERRORS) {
+      angularErrors = (AnalysisError[]) value;
+      angularErrorsState = CacheState.VALID;
+    } else if (descriptor == ELEMENT) {
       element = (HtmlElement) value;
       elementState = CacheState.VALID;
     } else if (descriptor == PARSE_ERRORS) {
@@ -254,6 +406,9 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
     } else if (descriptor == PARSED_UNIT) {
       parsedUnit = (HtmlUnit) value;
       parsedUnitState = CacheState.VALID;
+    } else if (descriptor == RESOLVED_UNIT) {
+      resolvedUnit = (HtmlUnit) value;
+      resolvedUnitState = CacheState.VALID;
     } else if (descriptor == REFERENCED_LIBRARIES) {
       referencedLibraries = value == null ? Source.EMPTY_ARRAY : (Source[]) value;
       referencedLibrariesState = CacheState.VALID;
@@ -272,10 +427,20 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
   protected void copyFrom(SourceEntryImpl entry) {
     super.copyFrom(entry);
     HtmlEntryImpl other = (HtmlEntryImpl) entry;
+    angularApplicationState = other.angularApplicationState;
+    angularApplication = other.angularApplication;
+    angularComponentState = other.angularComponentState;
+    angularComponent = other.angularComponent;
+    angularEntryState = other.angularEntryState;
+    angularEntry = other.angularEntry;
+    angularErrorsState = other.angularErrorsState;
+    angularErrors = other.angularErrors;
     parseErrorsState = other.parseErrorsState;
     parseErrors = other.parseErrors;
     parsedUnitState = other.parsedUnitState;
     parsedUnit = other.parsedUnit;
+    resolvedUnitState = other.resolvedUnitState;
+    resolvedUnit = other.resolvedUnit;
     referencedLibrariesState = other.referencedLibrariesState;
     referencedLibraries = other.referencedLibraries;
     resolutionErrors = other.resolutionErrors;
@@ -287,6 +452,15 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
   }
 
   @Override
+  protected boolean hasErrorState() {
+    return super.hasErrorState() || parsedUnitState == CacheState.ERROR
+        || resolvedUnitState == CacheState.ERROR || parseErrorsState == CacheState.ERROR
+        || resolutionErrorsState == CacheState.ERROR
+        || referencedLibrariesState == CacheState.ERROR || elementState == CacheState.ERROR
+        || angularErrorsState == CacheState.ERROR || hintsState == CacheState.ERROR;
+  }
+
+  @Override
   protected void writeOn(StringBuilder builder) {
     builder.append("Html: ");
     super.writeOn(builder);
@@ -294,11 +468,21 @@ public class HtmlEntryImpl extends SourceEntryImpl implements HtmlEntry {
     builder.append(parseErrorsState);
     builder.append("; parsedUnit = ");
     builder.append(parsedUnitState);
+    builder.append("; resolvedUnit = ");
+    builder.append(resolvedUnitState);
     builder.append("; resolutionErrors = ");
     builder.append(resolutionErrorsState);
     builder.append("; referencedLibraries = ");
     builder.append(referencedLibrariesState);
     builder.append("; element = ");
     builder.append(elementState);
+    builder.append("; angularApplication = ");
+    builder.append(angularApplicationState);
+    builder.append("; angularComponent = ");
+    builder.append(angularComponentState);
+    builder.append("; angularEntry = ");
+    builder.append(angularEntryState);
+    builder.append("; angularErrors = ");
+    builder.append(angularErrorsState);
   }
 }

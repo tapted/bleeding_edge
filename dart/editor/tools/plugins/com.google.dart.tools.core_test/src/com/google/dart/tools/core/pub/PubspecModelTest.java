@@ -40,6 +40,11 @@ public class PubspecModelTest extends TestCase {
   private static final String YAML_NO_ERRORS2 = "name: Yes\n"
       + "description: A sample command-line application\n#dependencies: \n#  browser: any";
 
+  private static final String YAML_HOSTED_DEP = "name:  yes\n" + "dependencies:\n"
+      + "  transmogrify: \n"
+      + "    hosted:\n      name: transmogrify\n      url: http://some-package-server.com\n"
+      + "    version: '>=1.0.0 <2.0.0'";
+
   // Assert dependency can be added/removed to model
   public void test_addDependency() {
     PubspecModel pubspecModel = new PubspecModel(null);
@@ -94,6 +99,32 @@ public class PubspecModelTest extends TestCase {
 
   }
 
+  // Assert that there is no info lost in getContents conversion to yaml 
+  public void test_getContents() {
+    PubspecModel pubspecModel1 = new PubspecModel(PubYamlUtilsTest.pubspecYamlString);
+    String pubspecModelString = pubspecModel1.getContents();
+    PubspecModel pubspecModel2 = new PubspecModel(pubspecModelString);
+    assertEquals(pubspecModel2.getName(), pubspecModel1.getName());
+    assertEquals(pubspecModel2.getDescription(), pubspecModel1.getDescription());
+    assertEquals(pubspecModel2.getVersion(), pubspecModel1.getVersion());
+    assertEquals(pubspecModel2.getAuthor(), pubspecModel1.getAuthor());
+    assertEquals(pubspecModel2.getHomepage(), pubspecModel1.getHomepage());
+    assertEquals(pubspecModel2.getDocumentation(), pubspecModel1.getDocumentation());
+    List<Object> list1 = Arrays.asList(pubspecModel1.getDependecies());
+    List<Object> list2 = Arrays.asList(pubspecModel2.getDependecies());
+    assertEquals(list1.size(), list2.size());
+    assertTrue(list1.containsAll(list2));
+  }
+
+  public void test_getContents_hosted() {
+    PubspecModel pubspecModel = new PubspecModel(YAML_HOSTED_DEP);
+    String pubspecModelString = pubspecModel.getContents();
+    assertTrue(pubspecModelString.contains("hosted:"));
+    assertTrue(pubspecModelString.contains("url:"));
+    assertTrue(pubspecModelString.contains("http://some-package-server.com"));
+    assertTrue(pubspecModelString.contains("name: transmogrify"));
+  }
+
   // Assert model can be initialized from pubspec yaml string
   public void test_initialize() {
     PubspecModel pubspecModel = new PubspecModel(null);
@@ -122,27 +153,17 @@ public class PubspecModelTest extends TestCase {
 
   }
 
-  // Assert that there is no info lost in getContents conversion to yaml 
-  public void xtest_getContents() {
-    PubspecModel pubspecModel1 = new PubspecModel(PubYamlUtilsTest.pubspecYamlString);
-    String pubspecModelString = pubspecModel1.getContents();
-    PubspecModel pubspecModel2 = new PubspecModel(pubspecModelString);
-    assertEquals(pubspecModel2.getName(), pubspecModel1.getName());
-    assertEquals(pubspecModel2.getDescription(), pubspecModel1.getDescription());
-    assertEquals(pubspecModel2.getVersion(), pubspecModel1.getVersion());
-    assertEquals(pubspecModel2.getAuthor(), pubspecModel1.getAuthor());
-    assertEquals(pubspecModel2.getHomepage(), pubspecModel1.getHomepage());
-    assertEquals(pubspecModel2.getDocumentation(), pubspecModel1.getDocumentation());
-    List<Object> list1 = Arrays.asList(pubspecModel1.getDependecies());
-    List<Object> list2 = Arrays.asList(pubspecModel2.getDependecies());
-    assertEquals(list1.size(), list2.size());
-    assertTrue(list1.containsAll(list2));
-    String string1 = pubspecModel1.getContents();
-    String string2 = pubspecModel2.getContents();
-    assertTrue(string1.contains("test_field: testing an unknown field"));
-    assertTrue(string2.contains("test_field: testing an unknown field"));
-    assertTrue(string1.contains("test_field2: yet another unknown"));
-    assertTrue(string2.contains("test_field2: yet another unknown"));
+  public void test_removeDependencies() {
+    PubspecModel model1 = new PubspecModel(PubYamlUtilsTest.pubspecYamlString2);
+    assertEquals(model1.getDependecies().length, 2);
+    DependencyObject dep = (DependencyObject) model1.getDependecies()[0];
+    model1.remove(new DependencyObject[] {dep}, false);
+    PubspecModel model2 = new PubspecModel(model1.getContents());
+    assertEquals(model2.getDependecies().length, 1);
+    dep = (DependencyObject) model2.getDependecies()[0];
+    model2.remove(new DependencyObject[] {dep}, false);
+    PubspecModel model3 = new PubspecModel(model2.getContents());
+    assertEquals(model3.getDependecies().length, 0);
   }
 
 }

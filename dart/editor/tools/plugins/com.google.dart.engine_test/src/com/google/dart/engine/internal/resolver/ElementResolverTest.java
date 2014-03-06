@@ -14,7 +14,7 @@
 package com.google.dart.engine.internal.resolver;
 
 import com.google.dart.engine.EngineTestCase;
-import com.google.dart.engine.ast.ASTNode;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.AssignmentExpression;
 import com.google.dart.engine.ast.BinaryExpression;
 import com.google.dart.engine.ast.BreakStatement;
@@ -50,6 +50,8 @@ import com.google.dart.engine.internal.context.AnalysisContextImpl;
 import com.google.dart.engine.internal.element.ClassElementImpl;
 import com.google.dart.engine.internal.element.CompilationUnitElementImpl;
 import com.google.dart.engine.internal.element.ConstructorElementImpl;
+import com.google.dart.engine.internal.element.FieldElementImpl;
+import com.google.dart.engine.internal.element.FieldFormalParameterElementImpl;
 import com.google.dart.engine.internal.element.LabelElementImpl;
 import com.google.dart.engine.internal.element.LibraryElementImpl;
 import com.google.dart.engine.internal.element.MethodElementImpl;
@@ -61,7 +63,6 @@ import com.google.dart.engine.internal.scope.Scope;
 import com.google.dart.engine.scanner.Keyword;
 import com.google.dart.engine.scanner.TokenType;
 import com.google.dart.engine.sdk.DirectoryBasedDartSdk;
-import com.google.dart.engine.source.ContentCache;
 import com.google.dart.engine.source.DartUriResolver;
 import com.google.dart.engine.source.FileBasedSource;
 import com.google.dart.engine.source.SourceFactory;
@@ -69,32 +70,33 @@ import com.google.dart.engine.type.InterfaceType;
 import com.google.dart.engine.type.Type;
 import com.google.dart.engine.utilities.io.FileUtilities2;
 
-import static com.google.dart.engine.ast.ASTFactory.assignmentExpression;
-import static com.google.dart.engine.ast.ASTFactory.binaryExpression;
-import static com.google.dart.engine.ast.ASTFactory.breakStatement;
-import static com.google.dart.engine.ast.ASTFactory.constructorName;
-import static com.google.dart.engine.ast.ASTFactory.continueStatement;
-import static com.google.dart.engine.ast.ASTFactory.exportDirective;
-import static com.google.dart.engine.ast.ASTFactory.expressionFunctionBody;
-import static com.google.dart.engine.ast.ASTFactory.fieldFormalParameter;
-import static com.google.dart.engine.ast.ASTFactory.formalParameterList;
-import static com.google.dart.engine.ast.ASTFactory.hideCombinator;
-import static com.google.dart.engine.ast.ASTFactory.identifier;
-import static com.google.dart.engine.ast.ASTFactory.importDirective;
-import static com.google.dart.engine.ast.ASTFactory.indexExpression;
-import static com.google.dart.engine.ast.ASTFactory.instanceCreationExpression;
-import static com.google.dart.engine.ast.ASTFactory.integer;
-import static com.google.dart.engine.ast.ASTFactory.methodDeclaration;
-import static com.google.dart.engine.ast.ASTFactory.methodInvocation;
-import static com.google.dart.engine.ast.ASTFactory.namedExpression;
-import static com.google.dart.engine.ast.ASTFactory.postfixExpression;
-import static com.google.dart.engine.ast.ASTFactory.prefixExpression;
-import static com.google.dart.engine.ast.ASTFactory.propertyAccess;
-import static com.google.dart.engine.ast.ASTFactory.showCombinator;
-import static com.google.dart.engine.ast.ASTFactory.superConstructorInvocation;
-import static com.google.dart.engine.ast.ASTFactory.superExpression;
-import static com.google.dart.engine.ast.ASTFactory.thisExpression;
-import static com.google.dart.engine.ast.ASTFactory.typeName;
+import static com.google.dart.engine.ast.AstFactory.assignmentExpression;
+import static com.google.dart.engine.ast.AstFactory.binaryExpression;
+import static com.google.dart.engine.ast.AstFactory.breakStatement;
+import static com.google.dart.engine.ast.AstFactory.constructorName;
+import static com.google.dart.engine.ast.AstFactory.continueStatement;
+import static com.google.dart.engine.ast.AstFactory.exportDirective;
+import static com.google.dart.engine.ast.AstFactory.expressionFunctionBody;
+import static com.google.dart.engine.ast.AstFactory.fieldFormalParameter;
+import static com.google.dart.engine.ast.AstFactory.formalParameterList;
+import static com.google.dart.engine.ast.AstFactory.hideCombinator;
+import static com.google.dart.engine.ast.AstFactory.identifier;
+import static com.google.dart.engine.ast.AstFactory.importDirective;
+import static com.google.dart.engine.ast.AstFactory.indexExpression;
+import static com.google.dart.engine.ast.AstFactory.instanceCreationExpression;
+import static com.google.dart.engine.ast.AstFactory.integer;
+import static com.google.dart.engine.ast.AstFactory.methodDeclaration;
+import static com.google.dart.engine.ast.AstFactory.methodInvocation;
+import static com.google.dart.engine.ast.AstFactory.namedExpression;
+import static com.google.dart.engine.ast.AstFactory.nullLiteral;
+import static com.google.dart.engine.ast.AstFactory.postfixExpression;
+import static com.google.dart.engine.ast.AstFactory.prefixExpression;
+import static com.google.dart.engine.ast.AstFactory.propertyAccess;
+import static com.google.dart.engine.ast.AstFactory.showCombinator;
+import static com.google.dart.engine.ast.AstFactory.superConstructorInvocation;
+import static com.google.dart.engine.ast.AstFactory.superExpression;
+import static com.google.dart.engine.ast.AstFactory.thisExpression;
+import static com.google.dart.engine.ast.AstFactory.typeName;
 import static com.google.dart.engine.element.ElementFactory.classElement;
 import static com.google.dart.engine.element.ElementFactory.constructorElement;
 import static com.google.dart.engine.element.ElementFactory.exportFor;
@@ -308,13 +310,17 @@ public class ElementResolverTest extends EngineTestCase {
   }
 
   public void test_visitFieldFormalParameter() throws Exception {
-    InterfaceType intType = typeProvider.getIntType();
     String fieldName = "f";
+    InterfaceType intType = typeProvider.getIntType();
+    FieldElementImpl fieldElement = fieldElement(fieldName, false, false, false, intType);
     ClassElementImpl classA = classElement("A");
-    classA.setFields(new FieldElement[] {fieldElement(fieldName, false, false, false, intType)});
+    classA.setFields(new FieldElement[] {fieldElement});
 
     FieldFormalParameter parameter = fieldFormalParameter(fieldName);
-    parameter.getIdentifier().setStaticElement(fieldFormalParameter(parameter.getIdentifier()));
+    FieldFormalParameterElementImpl parameterElement = fieldFormalParameter(parameter.getIdentifier());
+    parameterElement.setField(fieldElement);
+    parameterElement.setType(intType);
+    parameter.getIdentifier().setStaticElement(parameterElement);
 
     resolveInClass(parameter, classA);
     assertSame(intType, parameter.getElement().getType());
@@ -489,6 +495,67 @@ public class ElementResolverTest extends EngineTestCase {
     listener.assertNoErrors();
   }
 
+  public void test_visitPrefixedIdentifier_staticClassMember_getter() throws Exception {
+    ClassElementImpl classA = classElement("A");
+    // set accessors
+    String propName = "b";
+    PropertyAccessorElement getter = getterElement(propName, false, typeProvider.getIntType());
+    PropertyAccessorElement setter = setterElement(propName, false, typeProvider.getIntType());
+    classA.setAccessors(new PropertyAccessorElement[] {getter, setter});
+    // prepare "A.m"
+    SimpleIdentifier target = identifier("A");
+    target.setStaticElement(classA);
+    target.setStaticType(classA.getType());
+    PrefixedIdentifier identifier = identifier(target, identifier(propName));
+    // resolve
+    resolveNode(identifier);
+    assertSame(getter, identifier.getStaticElement());
+    assertSame(getter, identifier.getIdentifier().getStaticElement());
+    listener.assertNoErrors();
+  }
+
+  public void test_visitPrefixedIdentifier_staticClassMember_method() throws Exception {
+    ClassElementImpl classA = classElement("A");
+    // set accessors
+    String propName = "m";
+    PropertyAccessorElement setter = setterElement(propName, false, typeProvider.getIntType());
+    classA.setAccessors(new PropertyAccessorElement[] {setter});
+    // set methods
+    MethodElement method = methodElement("m", typeProvider.getIntType());
+    classA.setMethods(new MethodElement[] {method});
+    // prepare "A.m"
+    SimpleIdentifier target = identifier("A");
+    target.setStaticElement(classA);
+    target.setStaticType(classA.getType());
+    PrefixedIdentifier identifier = identifier(target, identifier(propName));
+    assignmentExpression(identifier, TokenType.EQ, nullLiteral());
+    // resolve
+    resolveNode(identifier);
+    assertSame(method, identifier.getStaticElement());
+    assertSame(method, identifier.getIdentifier().getStaticElement());
+    listener.assertNoErrors();
+  }
+
+  public void test_visitPrefixedIdentifier_staticClassMember_setter() throws Exception {
+    ClassElementImpl classA = classElement("A");
+    // set accessors
+    String propName = "b";
+    PropertyAccessorElement getter = getterElement(propName, false, typeProvider.getIntType());
+    PropertyAccessorElement setter = setterElement(propName, false, typeProvider.getIntType());
+    classA.setAccessors(new PropertyAccessorElement[] {getter, setter});
+    // prepare "A.b = null"
+    SimpleIdentifier target = identifier("A");
+    target.setStaticElement(classA);
+    target.setStaticType(classA.getType());
+    PrefixedIdentifier identifier = identifier(target, identifier(propName));
+    assignmentExpression(identifier, TokenType.EQ, nullLiteral());
+    // resolve
+    resolveNode(identifier);
+    assertSame(setter, identifier.getStaticElement());
+    assertSame(setter, identifier.getIdentifier().getStaticElement());
+    listener.assertNoErrors();
+  }
+
   public void test_visitPrefixExpression() throws Exception {
     InterfaceType numType = typeProvider.getNumType();
     SimpleIdentifier operand = identifier("i");
@@ -640,13 +707,10 @@ public class ElementResolverTest extends EngineTestCase {
    */
   private ElementResolver createResolver() {
     AnalysisContextImpl context = new AnalysisContextImpl();
-    ContentCache contentCache = new ContentCache();
-    SourceFactory sourceFactory = new SourceFactory(contentCache, new DartUriResolver(
+    SourceFactory sourceFactory = new SourceFactory(new DartUriResolver(
         DirectoryBasedDartSdk.getDefaultSdk()));
     context.setSourceFactory(sourceFactory);
-    FileBasedSource source = new FileBasedSource(
-        contentCache,
-        FileUtilities2.createFile("/test.dart"));
+    FileBasedSource source = new FileBasedSource(FileUtilities2.createFile("/test.dart"));
     CompilationUnitElementImpl definingCompilationUnit = new CompilationUnitElementImpl("test.dart");
     definingCompilationUnit.setSource(source);
     definingLibrary = library(context, "test");
@@ -725,7 +789,7 @@ public class ElementResolverTest extends EngineTestCase {
    * @param enclosingClass the element representing the class enclosing the identifier
    * @return the element to which the expression was resolved
    */
-  private void resolveInClass(ASTNode node, ClassElement enclosingClass) {
+  private void resolveInClass(AstNode node, ClassElement enclosingClass) {
     try {
       Field enclosingClassField = visitor.getClass().getDeclaredField("enclosingClass");
       enclosingClassField.setAccessible(true);
@@ -760,7 +824,7 @@ public class ElementResolverTest extends EngineTestCase {
    *          being resolved
    * @return the element to which the expression was resolved
    */
-  private void resolveNode(ASTNode node, Element... definedElements) {
+  private void resolveNode(AstNode node, Element... definedElements) {
     try {
       Field scopeField = visitor.getClass().getSuperclass().getDeclaredField("nameScope");
       scopeField.setAccessible(true);

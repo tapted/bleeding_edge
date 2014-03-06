@@ -5,14 +5,15 @@
 import 'dart:io';
 import 'dart:convert';
 
-// TODO(ahe): Should be dart:mirrors.
-import '../../implementation/mirrors/mirrors.dart';
+import 'dart:mirrors';
 
 import '../../../libraries.dart'
     show LIBRARIES, LibraryInfo;
 
-import '../../implementation/mirrors/dart2js_mirror.dart'
-    show analyze, BackDoor;
+import '../../implementation/mirrors/analyze.dart'
+    show analyze;
+import '../../implementation/mirrors/dart2js_mirrors.dart'
+    show BackDoor;
 
 import '../../implementation/filenames.dart';
 import '../../implementation/source_file.dart';
@@ -31,6 +32,8 @@ var handler;
 RandomAccessFile output;
 Uri outputUri;
 Uri sdkRoot;
+const bool outputJson =
+    const bool.fromEnvironment('outputJson', defaultValue: false);
 
 main(List<String> arguments) {
   handler = new FormattingDiagnosticHandler()
@@ -77,7 +80,10 @@ jsonify(MirrorSystem mirrors) {
     }
   });
 
-  output.writeStringSync('''
+  if (outputJson) {
+    output.writeStringSync(JSON.encode(map));
+  } else {
+    output.writeStringSync('''
 // Copyright (c) 2013, the Dart project authors.  Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
@@ -88,7 +94,8 @@ jsonify(MirrorSystem mirrors) {
 library dart.sdk_sources;
 
 const Map<String, String> SDK_SOURCES = const <String, String>''');
-  output.writeStringSync(JSON.encode(map).replaceAll(r'$', r'\$'));
-  output.writeStringSync(';\n');
+    output.writeStringSync(JSON.encode(map).replaceAll(r'$', r'\$'));
+    output.writeStringSync(';\n');
+  }
   output.closeSync();
 }

@@ -18,6 +18,13 @@ import com.google.dart.engine.services.internal.correction.AbstractDartTest;
 import com.google.dart.engine.services.refactoring.NamingConventions;
 import com.google.dart.engine.services.status.RefactoringStatusSeverity;
 
+import static com.google.dart.engine.services.refactoring.NamingConventions.validateAngularAttributeName;
+import static com.google.dart.engine.services.refactoring.NamingConventions.validateAngularComponentName;
+import static com.google.dart.engine.services.refactoring.NamingConventions.validateAngularControllerName;
+import static com.google.dart.engine.services.refactoring.NamingConventions.validateAngularFilterName;
+import static com.google.dart.engine.services.refactoring.NamingConventions.validateAngularPropertyName;
+import static com.google.dart.engine.services.refactoring.NamingConventions.validateAngularScopePropertyName;
+import static com.google.dart.engine.services.refactoring.NamingConventions.validateAngularTagSelectorName;
 import static com.google.dart.engine.services.refactoring.NamingConventions.validateClassName;
 import static com.google.dart.engine.services.refactoring.NamingConventions.validateConstantName;
 import static com.google.dart.engine.services.refactoring.NamingConventions.validateConstructorName;
@@ -34,6 +41,319 @@ import static com.google.dart.engine.services.refactoring.NamingConventions.vali
  * Test for {@link NamingConventions}.
  */
 public class NamingConventionsTest extends AbstractDartTest {
+  public void test_validateAngularAttribute_blank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularAttributeName(" "),
+        RefactoringStatusSeverity.ERROR,
+        "Attribute name must not be blank.");
+    assertRefactoringStatus(
+        validateAngularAttributeName(" "),
+        RefactoringStatusSeverity.ERROR,
+        "Attribute name must not be blank.");
+  }
+
+  public void test_validateAngularAttribute_hasBlank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularAttributeName("my- bad-name"),
+        RefactoringStatusSeverity.ERROR,
+        "Attribute name must not contain ' '.");
+  }
+
+  public void test_validateAngularAttribute_hasDot() throws Exception {
+    assertRefactoringStatus(
+        validateAngularAttributeName("my.bad.name"),
+        RefactoringStatusSeverity.ERROR,
+        "Attribute name must not contain '.'.");
+  }
+
+  public void test_validateAngularAttribute_notIdentifierStart() throws Exception {
+    assertRefactoringStatus(
+        validateAngularAttributeName("2my-bad-name"),
+        RefactoringStatusSeverity.ERROR,
+        "Attribute name must not start with '2'.");
+  }
+
+  public void test_validateAngularAttribute_null() throws Exception {
+    assertRefactoringStatus(
+        validateAngularAttributeName(null),
+        RefactoringStatusSeverity.ERROR,
+        "Attribute name must not be null.");
+  }
+
+  public void test_validateAngularAttribute_OK_oneIdentifier() throws Exception {
+    assertRefactoringStatusOK(validateAngularAttributeName("name"));
+  }
+
+  public void test_validateAngularAttribute_OK_severalIdentifiers() throws Exception {
+    assertRefactoringStatusOK(validateAngularAttributeName("my-property-name"));
+  }
+
+  public void test_validateAngularComponentName_blank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularComponentName(" name"),
+        RefactoringStatusSeverity.ERROR,
+        "Component name must not start or end with a blank.");
+    assertRefactoringStatus(
+        validateAngularComponentName("name "),
+        RefactoringStatusSeverity.ERROR,
+        "Component name must not start or end with a blank.");
+  }
+
+  public void test_validateAngularComponentName_hasBlank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularComponentName("my name"),
+        RefactoringStatusSeverity.ERROR,
+        "Component name must not contain ' '.");
+  }
+
+  public void test_validateAngularComponentName_hasDot() throws Exception {
+    assertRefactoringStatus(
+        validateAngularComponentName("my.bad.name"),
+        RefactoringStatusSeverity.ERROR,
+        "Component name must not contain '.'.");
+  }
+
+  public void test_validateAngularComponentName_notIdentifierStart() throws Exception {
+    assertRefactoringStatus(
+        validateAngularComponentName("2my-bad-name"),
+        RefactoringStatusSeverity.ERROR,
+        "Component name must not start with '2'.");
+  }
+
+  public void test_validateAngularComponentName_null() throws Exception {
+    assertRefactoringStatus(
+        validateAngularComponentName(null),
+        RefactoringStatusSeverity.ERROR,
+        "Component name must not be null.");
+  }
+
+  public void test_validateAngularComponentName_OK() throws Exception {
+    assertRefactoringStatusOK(validateAngularComponentName("name"));
+  }
+
+  public void test_validateAngularControllerName_blank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularControllerName(" name"),
+        RefactoringStatusSeverity.ERROR,
+        "Controller name must not start or end with a blank.");
+    assertRefactoringStatus(
+        validateAngularControllerName("name "),
+        RefactoringStatusSeverity.ERROR,
+        "Controller name must not start or end with a blank.");
+  }
+
+  public void test_validateAngularControllerName_hasBlank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularControllerName("my name"),
+        RefactoringStatusSeverity.ERROR,
+        "Controller name must not contain ' '.");
+  }
+
+  public void test_validateAngularControllerName_hasDot() throws Exception {
+    assertRefactoringStatus(
+        validateAngularControllerName("my.bad.name"),
+        RefactoringStatusSeverity.ERROR,
+        "Controller name must not contain '.'.");
+  }
+
+  public void test_validateAngularControllerName_notIdentifierStart() throws Exception {
+    assertRefactoringStatus(
+        validateAngularControllerName("2my-bad-name"),
+        RefactoringStatusSeverity.ERROR,
+        "Controller name must not start with '2'.");
+  }
+
+  public void test_validateAngularControllerName_null() throws Exception {
+    assertRefactoringStatus(
+        validateAngularControllerName(null),
+        RefactoringStatusSeverity.ERROR,
+        "Controller name must not be null.");
+  }
+
+  public void test_validateAngularControllerName_OK() throws Exception {
+    assertRefactoringStatusOK(validateAngularControllerName("name"));
+  }
+
+  public void test_validateAngularFilterName_blank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularFilterName(" name"),
+        RefactoringStatusSeverity.ERROR,
+        "Filter name must not start or end with a blank.");
+    assertRefactoringStatus(
+        validateAngularFilterName("name "),
+        RefactoringStatusSeverity.ERROR,
+        "Filter name must not start or end with a blank.");
+  }
+
+  public void test_validateAngularFilterName_hasBlank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularFilterName("my name"),
+        RefactoringStatusSeverity.ERROR,
+        "Filter name must not contain ' '.");
+  }
+
+  public void test_validateAngularFilterName_hasDot() throws Exception {
+    assertRefactoringStatus(
+        validateAngularFilterName("my.bad.name"),
+        RefactoringStatusSeverity.ERROR,
+        "Filter name must not contain '.'.");
+  }
+
+  public void test_validateAngularFilterName_notIdentifierStart() throws Exception {
+    assertRefactoringStatus(
+        validateAngularFilterName("2my-bad-name"),
+        RefactoringStatusSeverity.ERROR,
+        "Filter name must not start with '2'.");
+  }
+
+  public void test_validateAngularFilterName_null() throws Exception {
+    assertRefactoringStatus(
+        validateAngularFilterName(null),
+        RefactoringStatusSeverity.ERROR,
+        "Filter name must not be null.");
+  }
+
+  public void test_validateAngularFilterName_OK() throws Exception {
+    assertRefactoringStatusOK(validateAngularFilterName("name"));
+  }
+
+  public void test_validateAngularPropertyName_blank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularPropertyName(" "),
+        RefactoringStatusSeverity.ERROR,
+        "Property name must not be blank.");
+    assertRefactoringStatus(
+        validateAngularPropertyName(" "),
+        RefactoringStatusSeverity.ERROR,
+        "Property name must not be blank.");
+  }
+
+  public void test_validateAngularPropertyName_hasBlank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularPropertyName("my- bad-name"),
+        RefactoringStatusSeverity.ERROR,
+        "Property name must not contain ' '.");
+  }
+
+  public void test_validateAngularPropertyName_hasDot() throws Exception {
+    assertRefactoringStatus(
+        validateAngularPropertyName("my.bad.name"),
+        RefactoringStatusSeverity.ERROR,
+        "Property name must not contain '.'.");
+  }
+
+  public void test_validateAngularPropertyName_notIdentifierStart() throws Exception {
+    assertRefactoringStatus(
+        validateAngularPropertyName("2my-bad-name"),
+        RefactoringStatusSeverity.ERROR,
+        "Property name must not start with '2'.");
+  }
+
+  public void test_validateAngularPropertyName_null() throws Exception {
+    assertRefactoringStatus(
+        validateAngularPropertyName(null),
+        RefactoringStatusSeverity.ERROR,
+        "Property name must not be null.");
+  }
+
+  public void test_validateAngularPropertyName_OK_oneIdentifier() throws Exception {
+    assertRefactoringStatusOK(validateAngularPropertyName("name"));
+  }
+
+  public void test_validateAngularPropertyName_OK_severalIdentifiers() throws Exception {
+    assertRefactoringStatusOK(validateAngularPropertyName("my-property-name"));
+  }
+
+  public void test_validateAngularScopePropertyName_blank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularScopePropertyName(" name"),
+        RefactoringStatusSeverity.ERROR,
+        "Scope property name must not start or end with a blank.");
+    assertRefactoringStatus(
+        validateAngularScopePropertyName("name "),
+        RefactoringStatusSeverity.ERROR,
+        "Scope property name must not start or end with a blank.");
+  }
+
+  public void test_validateAngularScopePropertyName_hasBlank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularScopePropertyName("my name"),
+        RefactoringStatusSeverity.ERROR,
+        "Scope property name must not contain ' '.");
+  }
+
+  public void test_validateAngularScopePropertyName_hasDot() throws Exception {
+    assertRefactoringStatus(
+        validateAngularScopePropertyName("my.bad.name"),
+        RefactoringStatusSeverity.ERROR,
+        "Scope property name must not contain '.'.");
+  }
+
+  public void test_validateAngularScopePropertyName_notIdentifierStart() throws Exception {
+    assertRefactoringStatus(
+        validateAngularScopePropertyName("2my-bad-name"),
+        RefactoringStatusSeverity.ERROR,
+        "Scope property name must not start with '2'.");
+  }
+
+  public void test_validateAngularScopePropertyName_null() throws Exception {
+    assertRefactoringStatus(
+        validateAngularScopePropertyName(null),
+        RefactoringStatusSeverity.ERROR,
+        "Scope property name must not be null.");
+  }
+
+  public void test_validateAngularScopePropertyName_OK() throws Exception {
+    assertRefactoringStatusOK(validateAngularScopePropertyName("name"));
+  }
+
+  public void test_validateAngularTagSelector_blank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularTagSelectorName(" "),
+        RefactoringStatusSeverity.ERROR,
+        "Tag selector name must not be blank.");
+    assertRefactoringStatus(
+        validateAngularTagSelectorName(" "),
+        RefactoringStatusSeverity.ERROR,
+        "Tag selector name must not be blank.");
+  }
+
+  public void test_validateAngularTagSelector_hasBlank() throws Exception {
+    assertRefactoringStatus(
+        validateAngularTagSelectorName("my- bad-name"),
+        RefactoringStatusSeverity.ERROR,
+        "Tag selector name must not contain ' '.");
+  }
+
+  public void test_validateAngularTagSelector_hasDot() throws Exception {
+    assertRefactoringStatus(
+        validateAngularTagSelectorName("my.bad.name"),
+        RefactoringStatusSeverity.ERROR,
+        "Tag selector name must not contain '.'.");
+  }
+
+  public void test_validateAngularTagSelector_notIdentifierStart() throws Exception {
+    assertRefactoringStatus(
+        validateAngularTagSelectorName("2my-bad-name"),
+        RefactoringStatusSeverity.ERROR,
+        "Tag selector name must not start with '2'.");
+  }
+
+  public void test_validateAngularTagSelector_null() throws Exception {
+    assertRefactoringStatus(
+        validateAngularTagSelectorName(null),
+        RefactoringStatusSeverity.ERROR,
+        "Tag selector name must not be null.");
+  }
+
+  public void test_validateAngularTagSelector_OK_oneIdentifier() throws Exception {
+    assertRefactoringStatusOK(validateAngularTagSelectorName("name"));
+  }
+
+  public void test_validateAngularTagSelector_OK_severalIdentifiers() throws Exception {
+    assertRefactoringStatusOK(validateAngularTagSelectorName("my-property-name"));
+  }
+
   public void test_validateClassName_doesNotStartWithLowerCase() throws Exception {
     assertRefactoringStatus(
         validateClassName("newName"),

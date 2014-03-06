@@ -46,10 +46,10 @@ static bootstrap_lib_props bootstrap_libraries[] = {
                collection,
                Bootstrap::collection_source_paths_,
                Bootstrap::collection_patch_paths_),
-  INIT_LIBRARY(ObjectStore::kCollectionDev,
-               _collection-dev,
-               Bootstrap::collection_dev_source_paths_,
-               Bootstrap::collection_dev_patch_paths_),
+  INIT_LIBRARY(ObjectStore::kInternal,
+               _internal,
+               Bootstrap::internal_source_paths_,
+               Bootstrap::internal_patch_paths_),
   INIT_LIBRARY(ObjectStore::kIsolate,
                isolate,
                Bootstrap::isolate_source_paths_,
@@ -256,9 +256,7 @@ RawError* Bootstrap::LoadandCompileScripts() {
   // library tag handler so that we can load all the bootstrap libraries.
   isolate->set_library_tag_handler(BootstrapLibraryTagHandler);
 
-  // Enter the Dart Scope as we will be calling back into the library
-  // tag handler when compiling the bootstrap libraries.
-  Dart_EnterScope();
+  HANDLESCOPE(isolate);
 
   // Create library objects for all the bootstrap libraries.
   for (intptr_t i = 0;
@@ -308,9 +306,6 @@ RawError* Bootstrap::LoadandCompileScripts() {
   if (error.IsNull()) {
     SetupNativeResolver();
   }
-
-  // Exit the Dart scope.
-  Dart_ExitScope();
 
   // Restore the library tag handler for the isolate.
   isolate->set_library_tag_handler(saved_tag_handler);

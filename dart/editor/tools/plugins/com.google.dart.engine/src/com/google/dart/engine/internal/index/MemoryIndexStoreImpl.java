@@ -23,6 +23,7 @@ import com.google.dart.engine.AnalysisEngine;
 import com.google.dart.engine.context.AnalysisContext;
 import com.google.dart.engine.element.CompilationUnitElement;
 import com.google.dart.engine.element.Element;
+import com.google.dart.engine.element.HtmlElement;
 import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.index.IndexStore;
 import com.google.dart.engine.index.Location;
@@ -137,7 +138,13 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
    */
   private static Source getLibrarySourceOrNull(Element element) {
     LibraryElement library = element.getLibrary();
-    return library != null ? library.getSource() : null;
+    if (library == null) {
+      return null;
+    }
+    if (library.isAngularHtml()) {
+      return null;
+    }
+    return library.getSource();
   }
 
   /**
@@ -185,15 +192,26 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
   private int locationCount;
 
   @Override
-  public boolean aboutToIndex(AnalysisContext context, CompilationUnitElement unitElement) {
+  public boolean aboutToIndexDart(AnalysisContext context, CompilationUnitElement unitElement) {
     context = unwrapContext(context);
     // may be already removed in other thread
-    if (removedContexts.containsKey(context)) {
+    if (isRemovedContext(context)) {
+      return false;
+    }
+    // validate unit
+    if (unitElement == null) {
+      return false;
+    }
+    LibraryElement libraryElement = unitElement.getLibrary();
+    if (libraryElement == null) {
+      return false;
+    }
+    CompilationUnitElement definingUnitElement = libraryElement.getDefiningCompilationUnit();
+    if (definingUnitElement == null) {
       return false;
     }
     // prepare sources
-    LibraryElement libraryElement = unitElement.getLibrary();
-    Source library = libraryElement.getDefiningCompilationUnit().getSource();
+    Source library = definingUnitElement.getSource();
     Source unit = unitElement.getSource();
     // special handling for the defining library unit
     if (unit.equals(library)) {
@@ -220,19 +238,47 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
       libraryToUnits.put(library, newParts);
     }
     // remember libraries in which unit is used
-    Map<Source, Set<Source>> unitToLibraries = contextToUnitToLibraries.get(context);
-    if (unitToLibraries == null) {
-      unitToLibraries = Maps.newHashMap();
-      contextToUnitToLibraries.put(context, unitToLibraries);
-    }
-    Set<Source> libraries = unitToLibraries.get(unit);
-    if (libraries == null) {
-      libraries = Sets.newHashSet();
-      unitToLibraries.put(unit, libraries);
-    }
-    libraries.add(library);
+    recordUnitInLibrary(context, library, unit);
     // remove locations
     removeLocations(context, library, unit);
+    // remove keys
+    {
+      Map<Source2, Set<ElementRelationKey>> sourceToKeys = contextToSourceToKeys.get(context);
+      if (sourceToKeys != null) {
+        Source2 source2 = new Source2(library, unit);
+        boolean hadSource = sourceToKeys.remove(source2) != null;
+        if (hadSource) {
+          sourceCount--;
+        }
+      }
+    }
+    // OK, we can index
+    return true;
+  }
+
+  @Override
+  public boolean aboutToIndexHtml(AnalysisContext context, HtmlElement htmlElement) {
+    context = unwrapContext(context);
+    // may be already removed in other thread
+    if (isRemovedContext(context)) {
+      return false;
+    }
+    // remove locations
+    Source source = htmlElement.getSource();
+    removeLocations(context, null, source);
+    // remove keys
+    {
+      Map<Source2, Set<ElementRelationKey>> sourceToKeys = contextToSourceToKeys.get(context);
+      if (sourceToKeys != null) {
+        Source2 source2 = new Source2(null, source);
+        boolean hadSource = sourceToKeys.remove(source2) != null;
+        if (hadSource) {
+          sourceCount--;
+        }
+      }
+    }
+    // remember libraries in which unit is used
+    recordUnitInLibrary(context, null, source);
     // OK, we can index
     return true;
   }
@@ -267,7 +313,7 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
   }
 
   @VisibleForTesting
-  public int internalGetLocationCount(AnalysisContext context) {
+  public int internalGetLocationCountForContext(AnalysisContext context) {
     context = unwrapContext(context);
     int count = 0;
     for (Set<Location> locations : keyToLocations.values()) {
@@ -275,6 +321,18 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
         if (location.getElement().getContext() == context) {
           count++;
         }
+      }
+    }
+    return count;
+  }
+
+  @VisibleForTesting
+  public int internalGetSourceKeyCount(AnalysisContext context) {
+    int count = 0;
+    Map<Source2, Set<ElementRelationKey>> sourceToKeys = contextToSourceToKeys.get(context);
+    if (sourceToKeys != null) {
+      for (Set<ElementRelationKey> keys : sourceToKeys.values()) {
+        count += keys.size();
       }
     }
     return count;
@@ -296,6 +354,7 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
     if (element instanceof Member) {
       element = ((Member) element).getBaseElement();
     }
+//    System.out.println(element + " " + relationship + " " + location);
     // prepare information
     AnalysisContext elementContext = element.getContext();
     AnalysisContext locationContext = location.getElement().getContext();
@@ -319,10 +378,10 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
       return;
     }
     // may be already removed in other thread
-    if (removedContexts.containsKey(elementContext)) {
+    if (isRemovedContext(elementContext)) {
       return;
     }
-    if (removedContexts.containsKey(locationContext)) {
+    if (isRemovedContext(locationContext)) {
       return;
     }
     // record: key -> location(s)
@@ -330,7 +389,7 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
     {
       Set<Location> locations = keyToLocations.remove(key);
       if (locations == null) {
-        locations = Sets.newSetFromMap(new IdentityHashMap<Location, Boolean>(4));
+        locations = createLocationIdentitySet();
       } else {
         keyCount--;
       }
@@ -383,7 +442,7 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
       return;
     }
     // mark as removed
-    removedContexts.put(context, WEAK_SET_VALUE);
+    markRemovedContext(context);
     removeSources(context, null);
     // remove context
     contextToSourceToKeys.remove(context);
@@ -465,6 +524,13 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
   }
 
   /**
+   * Creates new {@link Set} that uses object identity instead of equals.
+   */
+  private Set<Location> createLocationIdentitySet() {
+    return Sets.newSetFromMap(new IdentityHashMap<Location, Boolean>(4));
+  }
+
+  /**
    * @return the canonical {@link ElementRelationKey} for given {@link Element} and
    *         {@link Relationship}, i.e. unique instance for this combination.
    */
@@ -479,13 +545,38 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
   }
 
   /**
+   * Checks if given {@link AnalysisContext} is marked as removed.
+   */
+  private boolean isRemovedContext(AnalysisContext context) {
+    return removedContexts.containsKey(context);
+  }
+
+  /**
+   * Marks given {@link AnalysisContext} as removed.
+   */
+  private void markRemovedContext(AnalysisContext context) {
+    removedContexts.put(context, WEAK_SET_VALUE);
+  }
+
+  private void recordUnitInLibrary(AnalysisContext context, Source library, Source unit) {
+    Map<Source, Set<Source>> unitToLibraries = contextToUnitToLibraries.get(context);
+    if (unitToLibraries == null) {
+      unitToLibraries = Maps.newHashMap();
+      contextToUnitToLibraries.put(context, unitToLibraries);
+    }
+    Set<Source> libraries = unitToLibraries.get(unit);
+    if (libraries == null) {
+      libraries = Sets.newHashSet();
+      unitToLibraries.put(unit, libraries);
+    }
+    libraries.add(library);
+  }
+
+  /**
    * Removes locations recorded in the given library/unit pair.
    */
   private void removeLocations(AnalysisContext context, Source library, Source unit) {
     Source2 source2 = new Source2(library, unit);
-    Map<Source2, Set<ElementRelationKey>> sourceToKeys = contextToSourceToKeys.get(context);
-    Set<ElementRelationKey> keys = sourceToKeys != null ? sourceToKeys.get(source2) : null;
-    // remove locations within given Source
     Map<Source2, List<Location>> sourceToLocations = contextToSourceToLocations.get(context);
     if (sourceToLocations != null) {
       List<Location> sourceLocations = sourceToLocations.remove(source2);
@@ -501,19 +592,10 @@ public class MemoryIndexStoreImpl implements MemoryIndexStore {
               canonicalKeys.remove(key);
               keyToLocations.remove(key);
               keyCount--;
-              // remove key
-              if (keys != null) {
-                keys.remove(key);
-              }
             }
           }
         }
       }
-    }
-    // if no keys, remove from sourceToKeys
-    if (keys != null && keys.isEmpty()) {
-      sourceToKeys.remove(unit);
-      sourceCount--;
     }
   }
 }

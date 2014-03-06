@@ -41,7 +41,7 @@ patch class _EventHandler {
 }
 
 patch class FileStat {
-  patch static List<int> _statSync(String path) {
+  patch static _statSync(String path) {
     throw new UnsupportedError("FileStat.stat");
   }
 }
@@ -185,6 +185,9 @@ patch class _ProcessUtils {
   patch static int _pid(Process process) {
     throw new UnsupportedError("ProcessUtils._pid");
   }
+  patch static Stream<ProcessSignal> _watchSignal(ProcessSignal signal) {
+    throw new UnsupportedError("ProcessUtils._watchSignal");
+  }
 }
 
 patch class Process {
@@ -313,11 +316,14 @@ patch class _StdIOUtils {
   patch static Stdin _getStdioInputStream() {
     throw new UnsupportedError("StdIOUtils._getStdioInputStream");
   }
-  patch static IOSink _getStdioOutputStream(int fd) {
+  patch static _getStdioOutputStream(int fd) {
     throw new UnsupportedError("StdIOUtils._getStdioOutputStream");
   }
   patch static int _socketType(nativeSocket) {
     throw new UnsupportedError("StdIOUtils._socketType");
+  }
+  patch static _getStdioHandleType(int fd) {
+    throw new UnsupportedError("StdIOUtils._getStdioHandleType");
   }
 }
 
@@ -334,10 +340,14 @@ patch class _WindowsCodePageEncoder {
 }
 
 patch class _Filter {
-  patch static _Filter newZLibDeflateFilter(bool gzip, int level) {
+  patch static _Filter newZLibDeflateFilter(bool gzip, int level,
+                                            int windowBits, int memLevel,
+                                            int strategy,
+                                            List<int> dictionary, bool raw) {
     throw new UnsupportedError("newZLibDeflateFilter");
   }
-  patch static _Filter newZLibInflateFilter() {
+  patch static _Filter newZLibInflateFilter(int windowBits,
+                                            List<int> dictionary, bool raw) {
     throw new UnsupportedError("newZLibInflateFilter");
   }
 }
@@ -357,6 +367,18 @@ patch class Stdin {
   }
   patch void set lineMode(bool enabled) {
     throw new UnsupportedError("Stdin.lineMode");
+  }
+}
+
+patch class Stdout {
+  patch bool get hasTerminal {
+    throw new UnsupportedError("Stdout.hasTerminal");
+  }
+  patch int get terminalColumns {
+    throw new UnsupportedError("Stdout.terminalColumns");
+  }
+  patch int get terminalLines {
+    throw new UnsupportedError("Stdout.terminalLines");
   }
 }
 

@@ -13,7 +13,10 @@
  */
 package com.google.dart.engine.internal.element;
 
+import com.google.dart.engine.ast.AstNode;
+import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.ast.Identifier;
+import com.google.dart.engine.ast.visitor.NodeLocator;
 import com.google.dart.engine.context.AnalysisContext;
 import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.element.Element;
@@ -171,11 +174,21 @@ public abstract class ElementImpl implements Element {
   }
 
   @Override
+  public AstNode getNode() throws AnalysisException {
+    return getNode(AstNode.class);
+  }
+
+  @Override
   public Source getSource() {
     if (enclosingElement == null) {
       return null;
     }
     return enclosingElement.getSource();
+  }
+
+  @Override
+  public CompilationUnit getUnit() throws AnalysisException {
+    return getContext().resolveCompilationUnit(getSource(), getLibrary());
   }
 
   @Override
@@ -204,6 +217,30 @@ public abstract class ElementImpl implements Element {
       }
     }
     return false;
+  }
+
+  @Override
+  public boolean isOverride() {
+    for (ElementAnnotation annotation : metadata) {
+      if (annotation.isOverride()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  @Override
+  public boolean isPrivate() {
+    String name = getDisplayName();
+    if (name == null) {
+      return true;
+    }
+    return Identifier.isPrivateName(name);
+  }
+
+  @Override
+  public boolean isPublic() {
+    return !isPrivate();
   }
 
   @Override
@@ -268,6 +305,15 @@ public abstract class ElementImpl implements Element {
   }
 
   /**
+   * Set this {@link Element} as an enclosing for given.
+   * 
+   * @param element the element to enclose, must be {@link ElementImpl}
+   */
+  protected void encloseElement(ElementImpl element) {
+    element.setEnclosingElement(this);
+  }
+
+  /**
    * Return an identifier that uniquely identifies this element among the children of this element's
    * parent.
    * 
@@ -278,13 +324,29 @@ public abstract class ElementImpl implements Element {
   }
 
   /**
+   * Return the resolved {@link AstNode} of the given type enclosing {@link #getNameOffset()}.
+   */
+  protected <T extends AstNode> T getNode(Class<T> clazz) throws AnalysisException {
+    CompilationUnit unit = getUnit();
+    if (unit == null) {
+      return null;
+    }
+    int offset = getNameOffset();
+    AstNode node = new NodeLocator(offset).searchWithin(unit);
+    if (node == null) {
+      return null;
+    }
+    return node.getAncestor(clazz);
+  }
+
+  /**
    * Return {@code true} if this element has the given modifier associated with it.
    * 
    * @param modifier the modifier being tested for
    * @return {@code true} if this element has the given modifier associated with it
    */
   protected boolean hasModifier(Modifier modifier) {
-    return BooleanArray.get(modifiers, modifier);
+    return BooleanArray.getEnum(modifiers, modifier);
   }
 
   /**
@@ -330,6 +392,6 @@ public abstract class ElementImpl implements Element {
    * @param value {@code true} if the modifier is to be associated with this element
    */
   protected void setModifier(Modifier modifier, boolean value) {
-    modifiers = BooleanArray.set(modifiers, modifier, value);
+    modifiers = BooleanArray.setEnum(modifiers, modifier, value);
   }
 }

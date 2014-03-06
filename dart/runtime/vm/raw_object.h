@@ -16,9 +16,7 @@ namespace dart {
 #define CLASS_LIST_NO_OBJECT_NOR_STRING_NOR_ARRAY(V)                           \
   V(Class)                                                                     \
   V(UnresolvedClass)                                                           \
-  V(AbstractTypeArguments)                                                     \
-    V(TypeArguments)                                                           \
-    V(InstantiatedTypeArguments)                                               \
+  V(TypeArguments)                                                             \
   V(PatchClass)                                                                \
   V(Function)                                                                  \
   V(ClosureData)                                                               \
@@ -70,6 +68,7 @@ namespace dart {
     V(MirrorReference)                                                         \
     V(Float32x4)                                                               \
     V(Int32x4)                                                                 \
+    V(Float64x2)                                                               \
 
 #define CLASS_LIST_ARRAYS(V)                                                   \
   V(Array)                                                                     \
@@ -96,6 +95,7 @@ namespace dart {
   V(Float64Array)                                                              \
   V(Float32x4Array)                                                            \
   V(Int32x4Array)                                                              \
+  V(Float64x2Array)                                                            \
 
 #define CLASS_LIST_FOR_HANDLES(V)                                              \
   CLASS_LIST_NO_OBJECT_NOR_STRING_NOR_ARRAY(V)                                 \
@@ -403,6 +403,7 @@ class RawObject {
   static bool IsTypedDataViewClassId(intptr_t index);
   static bool IsExternalTypedDataClassId(intptr_t index);
   static bool IsInternalVMdefinedClassId(intptr_t index);
+  static bool IsVariableSizeClassId(intptr_t index);
 
   static intptr_t NumberOfTypedDataClasses();
 
@@ -438,20 +439,20 @@ class RawObject {
 
   friend class Api;
   friend class Array;
+  friend class Code;
   friend class FreeListElement;
   friend class GCMarker;
   friend class ExternalTypedData;
   friend class Heap;
-  friend class HeapProfiler;
-  friend class HeapProfilerRootVisitor;
+  friend class ClassStatsVisitor;
   friend class MarkingVisitor;
   friend class Object;
-  friend class ObjectHistogram;
   friend class RawExternalTypedData;
   friend class RawInstructions;
   friend class RawInstance;
   friend class RawTypedData;
   friend class Scavenger;
+  friend class ScavengerVisitor;
   friend class SnapshotReader;
   friend class SnapshotWriter;
   friend class String;
@@ -476,6 +477,7 @@ class RawClass : public RawObject {
 
   RawObject** from() { return reinterpret_cast<RawObject**>(&ptr()->name_); }
   RawString* name_;
+  RawString* user_name_;
   RawArray* functions_;
   RawArray* fields_;
   RawArray* offset_in_words_to_field_;
@@ -490,8 +492,10 @@ class RawClass : public RawObject {
   RawClass* patch_class_;
   RawFunction* signature_function_;  // Associated function for signature class.
   RawArray* constants_;  // Canonicalized values of this class.
-  RawArray* canonical_types_;  // Canonicalized types of this class.
-  RawArray* invocation_dispatcher_cache_;   // Cache for dispatcher functions.
+  RawObject* canonical_types_;  // An array of canonicalized types of this class
+                                // or the canonical type.
+  RawArray* invocation_dispatcher_cache_;  // Cache for dispatcher functions.
+  RawArray* cha_codes_;  // CHA optimized codes.
   RawCode* allocation_stub_;  // Stub code for allocation of instances.
   RawObject** to() {
     return reinterpret_cast<RawObject**>(&ptr()->allocation_stub_);
@@ -512,8 +516,6 @@ class RawClass : public RawObject {
   friend class Object;
   friend class RawInstance;
   friend class RawInstructions;
-  friend class RawType;  // TODO(regis): To temporarily print unfinalized types.
-  friend class RawTypeParameter;  // To temporarily print unfinalized types.
   friend class SnapshotReader;
 };
 
@@ -530,24 +532,21 @@ class RawUnresolvedClass : public RawObject {
     return reinterpret_cast<RawObject**>(&ptr()->ident_);
   }
   intptr_t token_pos_;
-
-  friend class RawType;  // TODO(regis): To temporarily print unfinalized types.
 };
 
 
-class RawAbstractTypeArguments : public RawObject {
- private:
-  RAW_HEAP_OBJECT_IMPLEMENTATION(AbstractTypeArguments);
-};
-
-
-class RawTypeArguments : public RawAbstractTypeArguments {
+class RawTypeArguments : public RawObject {
  private:
   RAW_HEAP_OBJECT_IMPLEMENTATION(TypeArguments);
 
   RawObject** from() {
-    return reinterpret_cast<RawObject**>(&ptr()->length_);
+    return reinterpret_cast<RawObject**>(&ptr()->instantiations_);
   }
+  // The instantiations_ array remains empty for instantiated type arguments.
+  RawArray* instantiations_;  // Array of paired canonical vectors:
+                              // Even index: instantiator.
+                              // Odd index: instantiated (without bound error).
+  // Instantiations leading to bound errors do not get cached.
   RawSmi* length_;
 
   // Variable length data follows here.
@@ -557,22 +556,6 @@ class RawTypeArguments : public RawAbstractTypeArguments {
   }
 
   friend class SnapshotReader;
-};
-
-
-class RawInstantiatedTypeArguments : public RawAbstractTypeArguments {
- private:
-  RAW_HEAP_OBJECT_IMPLEMENTATION(InstantiatedTypeArguments);
-
-  RawObject** from() {
-    return reinterpret_cast<RawObject**>(
-        &ptr()->uninstantiated_type_arguments_);
-  }
-  RawAbstractTypeArguments* uninstantiated_type_arguments_;
-  RawAbstractTypeArguments* instantiator_type_arguments_;
-  RawObject** to() {
-    return reinterpret_cast<RawObject**>(&ptr()->instantiator_type_arguments_);
-  }
 };
 
 
@@ -656,12 +639,9 @@ class RawClosureData : public RawObject {
   RawContextScope* context_scope_;
   RawFunction* parent_function_;  // Enclosing function of this local function.
   RawClass* signature_class_;
-  union {
-    RawInstance* closure_;  // Closure object for static implicit closures.
-    RawCode* closure_allocation_stub_;  // Stub code for allocation of closures.
-  };
+  RawInstance* closure_;  // Closure object for static implicit closures.
   RawObject** to() {
-    return reinterpret_cast<RawObject**>(&ptr()->closure_allocation_stub_);
+    return reinterpret_cast<RawObject**>(&ptr()->closure_);
   }
 };
 
@@ -779,6 +759,7 @@ class RawLibrary : public RawObject {
   RawScript* script_;
   RawString* private_key_;
   RawArray* dictionary_;         // Top-level names in this library.
+  RawArray* resolved_names_;     // Cache of resolved names in library scope.
   RawGrowableObjectArray* metadata_;  // Metadata on classes, methods etc.
   RawArray* anonymous_classes_;  // Classes containing top-level elements.
   RawArray* imports_;            // List of Namespaces imported without prefix.
@@ -835,7 +816,10 @@ class RawCode : public RawObject {
     return reinterpret_cast<RawObject**>(&ptr()->instructions_);
   }
   RawInstructions* instructions_;
-  RawFunction* function_;
+  // If owner_ is Function::null() the owner is a regular stub.
+  // If owner_ is a Class the owner is the allocation stub for that class.
+  // Else, owner_ is a regular Dart Function.
+  RawObject* owner_;  // Function, Null, or a Class.
   RawExceptionHandlers* exception_handlers_;
   RawPcDescriptors* pc_descriptors_;
   RawArray* deopt_info_array_;
@@ -895,6 +879,8 @@ class RawPcDescriptors : public RawObject {
 
   // Variable length data follows here.
   intptr_t data_[0];
+
+  friend class Object;
 };
 
 
@@ -1149,6 +1135,7 @@ class RawAbstractType : public RawInstance {
  protected:
   enum TypeState {
     kAllocated,  // Initial state.
+    kResolved,  // Type class and type arguments resolved.
     kBeingFinalized,  // In the process of being finalized.
     kFinalizedInstantiated,  // Instantiated type ready for use.
     kFinalizedUninstantiated,  // Uninstantiated type ready for use.
@@ -1169,7 +1156,7 @@ class RawType : public RawAbstractType {
     return reinterpret_cast<RawObject**>(&ptr()->type_class_);
   }
   RawObject* type_class_;  // Either resolved class or unresolved class.
-  RawAbstractTypeArguments* arguments_;
+  RawTypeArguments* arguments_;
   RawLanguageError* error_;  // Error object if type is malformed or malbounded.
   RawObject** to() {
     return reinterpret_cast<RawObject**>(&ptr()->error_);
@@ -1190,7 +1177,6 @@ class RawTypeRef : public RawAbstractType {
   RawObject** to() {
     return reinterpret_cast<RawObject**>(&ptr()->type_);
   }
-  bool is_being_checked_;  // Transient field, not snapshotted.
 };
 
 
@@ -1224,7 +1210,6 @@ class RawBoundedType : public RawAbstractType {
   RawObject** to() {
     return reinterpret_cast<RawObject**>(&ptr()->type_parameter_);
   }
-  bool is_being_checked_;  // Transient field, not snapshotted.
 };
 
 
@@ -1382,7 +1367,7 @@ class RawArray : public RawInstance {
   RawObject** from() {
     return reinterpret_cast<RawObject**>(&ptr()->type_arguments_);
   }
-  RawAbstractTypeArguments* type_arguments_;
+  RawTypeArguments* type_arguments_;
   RawSmi* length_;
   // Variable length data follows here.
   RawObject** data() {
@@ -1414,7 +1399,7 @@ class RawGrowableObjectArray : public RawInstance {
   RawObject** from() {
     return reinterpret_cast<RawObject**>(&ptr()->type_arguments_);
   }
-  RawAbstractTypeArguments* type_arguments_;
+  RawTypeArguments* type_arguments_;
   RawSmi* length_;
   RawArray* data_;
   RawObject** to() {
@@ -1453,6 +1438,18 @@ class RawInt32x4 : public RawInstance {
 };
 
 
+class RawFloat64x2 : public RawInstance {
+  RAW_HEAP_OBJECT_IMPLEMENTATION(Float64x2);
+
+  double value_[2];
+
+  friend class SnapshotReader;
+ public:
+  double x() const { return value_[0]; }
+  double y() const { return value_[1]; }
+};
+
+
 // Define an aliases for intptr_t.
 #if defined(ARCH_IS_32_BIT)
 #define kIntPtrCid kTypedDataInt32ArrayCid
@@ -1476,6 +1473,7 @@ class RawTypedData : public RawInstance {
   // Variable length data follows here.
   uint8_t data_[0];
 
+  friend class Api;
   friend class Object;
   friend class Instance;
 };
@@ -1490,7 +1488,6 @@ class RawExternalTypedData : public RawInstance {
   RawObject** to() { return reinterpret_cast<RawObject**>(&ptr()->length_); }
 
   uint8_t* data_;
-  void* peer_;
 
   friend class TokenStream;
   friend class RawTokenStream;
@@ -1678,9 +1675,10 @@ inline bool RawObject::IsTypedDataClassId(intptr_t index) {
          kTypedDataFloat64ArrayCid == kTypedDataInt8ArrayCid + 10 &&
          kTypedDataFloat32x4ArrayCid == kTypedDataInt8ArrayCid + 11 &&
          kTypedDataInt32x4ArrayCid == kTypedDataInt8ArrayCid + 12 &&
-         kTypedDataInt8ArrayViewCid == kTypedDataInt8ArrayCid + 13);
+         kTypedDataFloat64x2ArrayCid == kTypedDataInt8ArrayCid + 13 &&
+         kTypedDataInt8ArrayViewCid == kTypedDataInt8ArrayCid + 14);
   return (index >= kTypedDataInt8ArrayCid &&
-          index <= kTypedDataInt32x4ArrayCid);
+          index <= kTypedDataFloat64x2ArrayCid);
 }
 
 
@@ -1698,8 +1696,9 @@ inline bool RawObject::IsTypedDataViewClassId(intptr_t index) {
          kTypedDataFloat64ArrayViewCid == kTypedDataInt8ArrayViewCid + 10 &&
          kTypedDataFloat32x4ArrayViewCid == kTypedDataInt8ArrayViewCid + 11 &&
          kTypedDataInt32x4ArrayViewCid == kTypedDataInt8ArrayViewCid + 12 &&
-         kByteDataViewCid == kTypedDataInt8ArrayViewCid + 13 &&
-         kExternalTypedDataInt8ArrayCid == kTypedDataInt8ArrayViewCid + 14);
+         kTypedDataFloat64x2ArrayViewCid == kTypedDataInt8ArrayViewCid + 13 &&
+         kByteDataViewCid == kTypedDataInt8ArrayViewCid + 14 &&
+         kExternalTypedDataInt8ArrayCid == kTypedDataInt8ArrayViewCid + 15);
   return (index >= kTypedDataInt8ArrayViewCid &&
           index <= kByteDataViewCid);
 }
@@ -1731,9 +1730,11 @@ inline bool RawObject::IsExternalTypedDataClassId(intptr_t index) {
           kExternalTypedDataInt8ArrayCid + 11) &&
          (kExternalTypedDataInt32x4ArrayCid ==
           kExternalTypedDataInt8ArrayCid + 12) &&
-         (kNullCid == kExternalTypedDataInt8ArrayCid + 13));
+         (kExternalTypedDataFloat64x2ArrayCid ==
+          kExternalTypedDataInt8ArrayCid + 13) &&
+         (kNullCid == kExternalTypedDataInt8ArrayCid + 14));
   return (index >= kExternalTypedDataInt8ArrayCid &&
-          index <= kExternalTypedDataInt32x4ArrayCid);
+          index <= kExternalTypedDataFloat64x2ArrayCid);
 }
 
 
@@ -1743,11 +1744,34 @@ inline bool RawObject::IsInternalVMdefinedClassId(intptr_t index) {
 }
 
 
+
+inline bool RawObject::IsVariableSizeClassId(intptr_t index) {
+  return (index == kArrayCid) ||
+         (index == kImmutableArrayCid) ||
+         RawObject::IsOneByteStringClassId(index) ||
+         RawObject::IsTwoByteStringClassId(index) ||
+         RawObject::IsTypedDataClassId(index) ||
+         (index == kContextCid) ||
+         (index == kTypeArgumentsCid) ||
+         (index == kInstructionsCid) ||
+         (index == kPcDescriptorsCid) ||
+         (index == kStackmapCid) ||
+         (index == kLocalVarDescriptorsCid) ||
+         (index == kExceptionHandlersCid) ||
+         (index == kDeoptInfoCid) ||
+         (index == kCodeCid) ||
+         (index == kContextScopeCid) ||
+         (index == kInstanceCid) ||
+         (index == kBigintCid) ||
+         (index == kJSRegExpCid);
+}
+
+
 inline intptr_t RawObject::NumberOfTypedDataClasses() {
   // Make sure this is updated when new TypedData types are added.
-  ASSERT(kTypedDataInt8ArrayViewCid == kTypedDataInt8ArrayCid + 13);
-  ASSERT(kExternalTypedDataInt8ArrayCid == kTypedDataInt8ArrayViewCid + 14);
-  ASSERT(kNullCid == kExternalTypedDataInt8ArrayCid + 13);
+  ASSERT(kTypedDataInt8ArrayViewCid == kTypedDataInt8ArrayCid + 14);
+  ASSERT(kExternalTypedDataInt8ArrayCid == kTypedDataInt8ArrayViewCid + 15);
+  ASSERT(kNullCid == kExternalTypedDataInt8ArrayCid + 14);
   return (kNullCid - kTypedDataInt8ArrayCid);
 }
 

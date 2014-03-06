@@ -71,6 +71,7 @@ void Intrinsifier::List_Allocate(Assembler* assembler) {
   // next object start and initialize the object.
   __ str(R1, Address(R6, 0));
   __ add(R0, R0, ShifterOperand(kHeapObjectTag));
+  __ UpdateAllocationStatsWithSize(kArrayCid, R2, R4);
 
   // Initialize the tags.
   // R0: new object start as a tagged pointer.
@@ -202,9 +203,6 @@ void Intrinsifier::Array_setIndexed(Assembler* assembler) {
     __ b(&checked_ok, EQ);
 
     // Check if it's dynamic.
-    // For now handle only TypeArguments and bail out if InstantiatedTypeArgs.
-    __ CompareClassId(R1, kTypeArgumentsCid, R0);
-    __ b(&fall_through, NE);
     // Get type at index 0.
     __ ldr(R0, FieldAddress(R1, TypeArguments::type_at_offset(0)));
     __ CompareObject(R0, Type::ZoneHandle(Type::DynamicType()));
@@ -306,6 +304,7 @@ void Intrinsifier::GrowableList_Allocate(Assembler* assembler) {
   // Set the length field in the growable array object to 0.
   __ LoadImmediate(R1, 0);
   __ str(R1, FieldAddress(R0, GrowableObjectArray::length_offset()));
+  __ UpdateAllocationStats(kGrowableObjectArrayCid, R1);
   __ Ret();  // Returns the newly allocated object in R0.
 
   __ Bind(&fall_through);
@@ -491,7 +490,7 @@ void Intrinsifier::GrowableList_add(Assembler* assembler) {
   __ LoadImmediate(R3, heap->TopAddress());                                    \
   __ str(R1, Address(R3, 0));                                                  \
   __ AddImmediate(R0, kHeapObjectTag);                                         \
-                                                                               \
+  __ UpdateAllocationStatsWithSize(cid, R2, R4);                               \
   /* Initialize the tags. */                                                   \
   /* R0: new object start as a tagged pointer. */                              \
   /* R1: new object end address. */                                            \
@@ -846,7 +845,7 @@ void Intrinsifier::Integer_shl(Assembler* assembler) {
 
   const Class& mint_class = Class::Handle(
       Isolate::Current()->object_store()->mint_class());
-  __ TryAllocate(mint_class, &fall_through, R0);
+  __ TryAllocate(mint_class, &fall_through, R0, R2);
 
 
   __ str(R1, FieldAddress(R0, Mint::value_offset()));
@@ -1148,7 +1147,7 @@ static void DoubleArithmeticOperations(Assembler* assembler, Token::Kind kind) {
   }
   const Class& double_class = Class::Handle(
       Isolate::Current()->object_store()->double_class());
-  __ TryAllocate(double_class, &fall_through, R0);  // Result register.
+  __ TryAllocate(double_class, &fall_through, R0, R1);  // Result register.
   __ StoreDToOffset(D0, R0, Double::value_offset() - kHeapObjectTag);
   __ Ret();
   __ Bind(&fall_through);
@@ -1191,7 +1190,7 @@ void Intrinsifier::Double_mulFromInteger(Assembler* assembler) {
   __ vmuld(D0, D0, D1);
   const Class& double_class = Class::Handle(
       Isolate::Current()->object_store()->double_class());
-  __ TryAllocate(double_class, &fall_through, R0);  // Result register.
+  __ TryAllocate(double_class, &fall_through, R0, R1);  // Result register.
   __ StoreDToOffset(D0, R0, Double::value_offset() - kHeapObjectTag);
   __ Ret();
   __ Bind(&fall_through);
@@ -1210,7 +1209,7 @@ void Intrinsifier::Double_fromInteger(Assembler* assembler) {
   __ vcvtdi(D0, S0);
   const Class& double_class = Class::Handle(
       Isolate::Current()->object_store()->double_class());
-  __ TryAllocate(double_class, &fall_through, R0);  // Result register.
+  __ TryAllocate(double_class, &fall_through, R0, R1);  // Result register.
   __ StoreDToOffset(D0, R0, Double::value_offset() - kHeapObjectTag);
   __ Ret();
   __ Bind(&fall_through);
@@ -1291,7 +1290,7 @@ void Intrinsifier::Math_sqrt(Assembler* assembler) {
   __ vsqrtd(D0, D1);
   const Class& double_class = Class::Handle(
       Isolate::Current()->object_store()->double_class());
-  __ TryAllocate(double_class, &fall_through, R0);  // Result register.
+  __ TryAllocate(double_class, &fall_through, R0, R1);  // Result register.
   __ StoreDToOffset(D0, R0, Double::value_offset() - kHeapObjectTag);
   __ Ret();
   __ Bind(&is_smi);
@@ -1514,6 +1513,7 @@ static void TryAllocateOnebyteString(Assembler* assembler,
   // next object start and initialize the object.
   __ str(R1, Address(R3, 0));
   __ AddImmediate(R0, kHeapObjectTag);
+  __ UpdateAllocationStatsWithSize(kOneByteStringCid, R2, R3);
 
   // Initialize the tags.
   // R0: new object start as a tagged pointer.

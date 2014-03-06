@@ -19,6 +19,7 @@ import com.google.dart.engine.error.AnalysisError;
 import com.google.dart.engine.html.ast.HtmlUnit;
 import com.google.dart.engine.internal.builder.HtmlUnitBuilder;
 import com.google.dart.engine.internal.context.InternalAnalysisContext;
+import com.google.dart.engine.internal.context.RecordingErrorListener;
 import com.google.dart.engine.internal.context.ResolvableHtmlUnit;
 import com.google.dart.engine.source.Source;
 
@@ -35,6 +36,11 @@ public class ResolveHtmlTask extends AnalysisTask {
    * The time at which the contents of the source were last modified.
    */
   private long modificationTime = -1L;
+
+  /**
+   * The {@link HtmlUnit} that was resolved by this task.
+   */
+  private HtmlUnit resolvedUnit;
 
   /**
    * The element produced by resolving the source.
@@ -81,6 +87,15 @@ public class ResolveHtmlTask extends AnalysisTask {
   }
 
   /**
+   * Return the {@link HtmlUnit} that was resolved by this task.
+   * 
+   * @return the {@link HtmlUnit} that was resolved by this task
+   */
+  public HtmlUnit getResolvedUnit() {
+    return resolvedUnit;
+  }
+
+  /**
    * Return the source that was or is to be resolved.
    * 
    * @return the source was or is to be resolved
@@ -106,8 +121,13 @@ public class ResolveHtmlTask extends AnalysisTask {
           "Internal error: computeResolvableHtmlUnit returned a value without a parsed HTML unit");
     }
     modificationTime = resolvableHtmlUnit.getModificationTime();
+    // build standard HTML element
     HtmlUnitBuilder builder = new HtmlUnitBuilder(getContext());
     element = builder.buildHtmlElement(source, modificationTime, unit);
-    resolutionErrors = builder.getErrorListener().getErrors(source);
+    RecordingErrorListener errorListener = builder.getErrorListener();
+    // record all resolution errors
+    resolutionErrors = errorListener.getErrors(source);
+    // remember resolved unit
+    resolvedUnit = unit;
   }
 }

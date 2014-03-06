@@ -13,17 +13,16 @@
  */
 package com.google.dart.tools.core.pub;
 
+import com.google.common.collect.Lists;
 import com.google.dart.tools.core.DartCore;
 import com.google.dart.tools.core.pub.DependencyObject.Type;
 import com.google.dart.tools.core.utilities.yaml.PubYamlUtils;
 
 import org.eclipse.core.resources.IFile;
-import org.eclipse.core.resources.IMarker;
-import org.eclipse.core.resources.IResource;
-import org.eclipse.core.runtime.CoreException;
 import org.yaml.snakeyaml.error.Mark;
-import org.yaml.snakeyaml.scanner.ScannerException;
+import org.yaml.snakeyaml.error.MarkedYAMLException;
 
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -52,14 +51,14 @@ public class PubspecModel {
 
     List<String> fieldNames = Arrays.asList(
         "name",
+        "version",
         "author",
         "authors",
-        "version",
-        "homepage",
-        "sdk",
         "description",
-        "documentation",
+        "homepage",
         "environment",
+        "sdk",
+        "documentation",
         "dependencies",
         "dev_dependencies",
         "dependency_overrides",
@@ -101,6 +100,8 @@ public class PubspecModel {
 
   private Map<String, Object> yamlMap;
 
+  private final List<PubspecException> exceptions = Lists.newArrayList();
+
   public PubspecModel(IFile file, String contents) {
     this.file = file;
     initModel(contents);
@@ -113,8 +114,10 @@ public class PubspecModel {
   public void add(DependencyObject[] objs, String eventType) {
     if (objs.length > 0) {
       for (int i = 0; i < objs.length; i++) {
-        dependencies.add(objs[i]);
-        objs[i].setModel(this);
+        if (objs[i] != null) {
+          dependencies.add(objs[i]);
+          objs[i].setModel(this);
+        }
       }
       fireModelChanged(objs, eventType);
     }
@@ -159,6 +162,10 @@ public class PubspecModel {
     return documentation;
   }
 
+  public List<PubspecException> getExceptions() {
+    return exceptions;
+  }
+
   public String getHomepage() {
     return homepage;
   }
@@ -201,6 +208,18 @@ public class PubspecModel {
     modelListeners.remove(listener);
   }
 
+  /**
+   * Saves the content of this model to its original {@link IFile}.
+   */
+  public void save() throws Exception {
+    if (file == null) {
+      new IllegalStateException("This model doesn't have a file.");
+    }
+    String contents = getContents();
+    byte[] contentBytes = contents.getBytes("UTF-8");
+    file.setContents(new ByteArrayInputStream(contentBytes), true, true, null);
+  }
+
   public void setAuthor(String author) {
     this.author = author;
   }
@@ -237,13 +256,18 @@ public class PubspecModel {
       comments = getComments(yamlString);
       if (!yamlString.isEmpty()) {
         try {
-          clearMarkers();
+          exceptions.clear();
           errorOnParse = false;
           yamlMap = PubYamlUtils.parsePubspecYamlToMap(yamlString);
           setValuesFromMap(yamlMap);
-        } catch (ScannerException exception) {
+        } catch (MarkedYAMLException exception) {
           errorOnParse = true;
-          createMarker(exception);
+          Mark mark = exception.getProblemMark();
+          exceptions.add(new PubspecException(
+              "Invalid syntax: " + exception.getProblem(),
+              mark.getLine(),
+              mark.getIndex(),
+              mark.getIndex() + 2));
         }
       }
     }
@@ -253,36 +277,10 @@ public class PubspecModel {
     this.version = version;
   }
 
-  private void clearMarkers() {
-    if (file != null) {
-      try {
-        file.deleteMarkers(PUBSPEC_MARKER, true, IResource.DEPTH_ZERO);
-      } catch (CoreException e) {
-        DartCore.logError(e);
-      }
-    }
-  }
-
   private void clearModelFields() {
     isDirty = false;
     name = version = description = homepage = author = sdkVersion = comments = documentation = EMPTY_STRING;
     dependencies.clear();
-  }
-
-  private void createMarker(ScannerException exception) {
-    if (file != null) {
-      try {
-        Mark mark = exception.getProblemMark();
-        IMarker marker = file.createMarker(PUBSPEC_MARKER);
-        marker.setAttribute(IMarker.SEVERITY, IMarker.SEVERITY_ERROR);
-        marker.setAttribute(IMarker.MESSAGE, "Invalid syntax: " + exception.getProblem());
-        marker.setAttribute(IMarker.LINE_NUMBER, mark.getLine());
-        marker.setAttribute(IMarker.CHAR_START, mark.getIndex());
-        marker.setAttribute(IMarker.CHAR_END, mark.getIndex() + 2);
-      } catch (CoreException e) {
-        DartCore.logError(e);
-      }
-    }
   }
 
   // search for comments and store them so that we don't lose it altogether
@@ -339,6 +337,17 @@ public class PubspecModel {
                   }
                   if (mapKey.equals(PubspecConstants.REF)) {
                     d.setGitRef((String) map.get(mapKey));
+                  }
+                }
+              }
+            }
+            if (key.endsWith(PubspecConstants.HOSTED)) {
+              Object fields = values.get(key);
+              if (fields instanceof Map) {
+                Map<String, Object> map = (Map<String, Object>) fields;
+                for (String mapKey : map.keySet()) {
+                  if (mapKey.equals(PubspecConstants.URL)) {
+                    d.setPath((String) map.get(mapKey));
                   }
                 }
               }
@@ -449,17 +458,33 @@ public class PubspecModel {
       Map<String, Object> devDependenciesMap = new HashMap<String, Object>();
       for (DependencyObject dep : dependencies) {
         if (dep.getType().equals(Type.HOSTED)) {
-          if (dep.getVersion().isEmpty()) {
+          if (dep.getPath() != null && !dep.getPath().isEmpty()) {
+            Map<String, Object> map = new HashMap<String, Object>();
+            map.put(PubspecConstants.NAME, dep.getName());
+            map.put(PubspecConstants.URL, dep.getPath());
+            Map<String, Object> dMap = new HashMap<String, Object>();
+            dMap.put(PubspecConstants.HOSTED, map);
+            if (!dep.getVersion().isEmpty()) {
+              dMap.put(PubspecConstants.VERSION, dep.getVersion());
+            }
             if (dep.isForDevelopment()) {
-              devDependenciesMap.put(dep.getName(), PubspecConstants.ANY);
+              devDependenciesMap.put(dep.getName(), dMap);
             } else {
-              dependenciesMap.put(dep.getName(), PubspecConstants.ANY);
+              dependenciesMap.put(dep.getName(), dMap);
             }
           } else {
-            if (dep.isForDevelopment()) {
-              devDependenciesMap.put(dep.getName(), dep.getVersion());
+            if (dep.getVersion().isEmpty()) {
+              if (dep.isForDevelopment()) {
+                devDependenciesMap.put(dep.getName(), PubspecConstants.ANY);
+              } else {
+                dependenciesMap.put(dep.getName(), PubspecConstants.ANY);
+              }
             } else {
-              dependenciesMap.put(dep.getName(), dep.getVersion());
+              if (dep.isForDevelopment()) {
+                devDependenciesMap.put(dep.getName(), dep.getVersion());
+              } else {
+                dependenciesMap.put(dep.getName(), dep.getVersion());
+              }
             }
           }
         } else if (dep.getType().equals(Type.GIT)) {
@@ -490,7 +515,7 @@ public class PubspecModel {
           }
         }
       }
-
+      yamlMap.remove(PubspecConstants.DEPENDENCIES);
       if (!dependenciesMap.isEmpty()) {
         yamlMap.put(PubspecConstants.DEPENDENCIES, new TreeMap<String, Object>(dependenciesMap));
       }

@@ -16,6 +16,7 @@
 
 #include "vm/assembler.h"
 #include "vm/constants_arm.h"
+#include "vm/cpu.h"
 #include "vm/disassembler.h"
 #include "vm/native_arguments.h"
 #include "vm/stack_frame.h"
@@ -2303,7 +2304,7 @@ void Simulator::DecodeType2(Instr* instr) {
 
 
 void Simulator::DoDivision(Instr* instr) {
-  ASSERT(CPUFeatures::integer_division_supported());
+  ASSERT(TargetCPUFeatures::integer_division_supported());
   Register rd = instr->DivRdField();
   Register rn = instr->DivRnField();
   Register rm = instr->DivRmField();
@@ -2943,7 +2944,7 @@ void Simulator::DecodeType7(Instr* instr) {
 
 static float arm_reciprocal_sqrt_estimate(float a) {
   // From the ARM Architecture Reference Manual A2-87.
-  if (isinf(a) || (abs(a) >= exp2f(126))) return 0.0;
+  if (isinf(a) || (fabs(a) >= exp2f(126))) return 0.0;
   else if (a == 0.0) return INFINITY;
   else if (isnan(a)) return a;
 
@@ -2994,7 +2995,7 @@ static float arm_reciprocal_sqrt_estimate(float a) {
 
 static float arm_recip_estimate(float a) {
   // From the ARM Architecture Reference Manual A2-85.
-  if (isinf(a) || (abs(a) >= exp2f(126))) return 0.0;
+  if (isinf(a) || (fabs(a) >= exp2f(126))) return 0.0;
   else if (a == 0.0) return INFINITY;
   else if (isnan(a)) return a;
 

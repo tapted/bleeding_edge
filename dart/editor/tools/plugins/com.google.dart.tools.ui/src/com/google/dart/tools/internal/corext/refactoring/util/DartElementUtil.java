@@ -1,8 +1,12 @@
 package com.google.dart.tools.internal.corext.refactoring.util;
 
+import com.google.dart.engine.ast.ClassTypeAlias;
 import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.context.AnalysisContext;
+import com.google.dart.engine.context.AnalysisException;
+import com.google.dart.engine.element.ClassElement;
 import com.google.dart.engine.element.CompilationUnitElement;
+import com.google.dart.engine.element.ConstructorElement;
 import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.FieldElement;
 import com.google.dart.engine.element.FieldFormalParameterElement;
@@ -197,6 +201,32 @@ public class DartElementUtil {
 //  }
 
   /**
+   * Each synthetic {@link PropertyInducingElement} has either getter or setter
+   * {@link PropertyAccessorElement}. When we want to open such {@link PropertyInducingElement}, we
+   * actually should open one of the {@link PropertyAccessorElement}.
+   * 
+   * @return the given {@link Element} or its {@link PropertyAccessorElement}.
+   */
+  public static Element getAccessorIfSyntheticVariable(Element element) {
+    if (element instanceof PropertyInducingElement) {
+      PropertyInducingElement variable = (PropertyInducingElement) element;
+      if (variable.isSynthetic()) {
+        // first try setter, because it is usually used in Angular
+        PropertyAccessorElement setter = variable.getSetter();
+        if (setter != null) {
+          return setter;
+        }
+        // try getter
+        PropertyAccessorElement getter = variable.getSetter();
+        if (getter != null) {
+          return getter;
+        }
+      }
+    }
+    return element;
+  }
+
+  /**
    * @return the given {@link Element} or, its "base" {@link Element} if {@link Member}.
    */
   public static Element getBaseIfMember(Element element) {
@@ -207,32 +237,25 @@ public class DartElementUtil {
   }
 
   /**
-   * @return the {@link CompilationUnitElement} of the given {@link IFile}, may be {@code null}.
+   * There is nothing to open for synthetic default constructor. We can show {@link ClassElement}
+   * instead.
+   * 
+   * @return the given {@link Element} or {@link ClassElement}.
    */
-  public static CompilationUnitElement getCompilationUnitElement(IFile file) {
-    CompilationUnit resolvedUnit = getResolvedCompilationUnit(file);
-    if (resolvedUnit == null) {
-      return null;
-    }
-    return resolvedUnit.getElement();
-  }
-
-  /**
-   * @return the given {@link Element} or, its {@link FieldElement} if
-   *         {@link FieldFormalParameterElement}.
-   */
-  public static Element getFieldIfFieldFormalParameter(Element element) {
-    if (element instanceof FieldFormalParameterElement) {
-      FieldFormalParameterElement fieldParameterElement = (FieldFormalParameterElement) element;
-      element = fieldParameterElement.getField();
+  public static Element getClassIfSyntheticDefaultConstructor(Element element) {
+    if (element instanceof ConstructorElement) {
+      ConstructorElement constructor = (ConstructorElement) element;
+      if (constructor.isSynthetic()) {
+        return constructor.getEnclosingElement();
+      }
     }
     return element;
   }
 
   /**
-   * @return the resolved {@link CompilationUnit} of the given {@link IFile}, may be {@code null}.
+   * @return the {@link CompilationUnitElement} of the given {@link IFile}, may be {@code null}.
    */
-  public static CompilationUnit getResolvedCompilationUnit(IFile file) {
+  public static CompilationUnitElement getCompilationUnitElement(IFile file) {
     // prepare context
     ProjectManager projectManager = DartCore.getProjectManager();
     Source source = projectManager.getSource(file);
@@ -246,7 +269,38 @@ public class DartElementUtil {
       return null;
     }
     // get unit element
-    return context.getResolvedCompilationUnit(source, librarySources[0]);
+    return context.getCompilationUnitElement(source, librarySources[0]);
+  }
+
+  /**
+   * Synthetic implicit constructors of {@link ClassTypeAlias} use implementations of constructors
+   * from superclass.
+   * 
+   * @return the given {@link Element} or implementation {@link ConstructorElement}.
+   */
+  public static Element getExplicitIfSyntheticImplicitConstructor(Element element) {
+    if (element instanceof ConstructorElement) {
+      ConstructorElement constructor = (ConstructorElement) element;
+      if (constructor.isSynthetic()) {
+        ConstructorElement redirectedConstructor = constructor.getRedirectedConstructor();
+        if (redirectedConstructor != null) {
+          return redirectedConstructor;
+        }
+      }
+    }
+    return element;
+  }
+
+  /**
+   * @return the given {@link Element} or, its {@link FieldElement} if
+   *         {@link FieldFormalParameterElement}.
+   */
+  public static Element getFieldIfFieldFormalParameter(Element element) {
+    if (element instanceof FieldFormalParameterElement) {
+      FieldFormalParameterElement fieldParameterElement = (FieldFormalParameterElement) element;
+      element = fieldParameterElement.getField();
+    }
+    return element;
   }
 
   /**
@@ -277,6 +331,14 @@ public class DartElementUtil {
       }
     }
     return element;
+  }
+
+  public static boolean isSourceAvailable(SourceReference sourceReference) {
+    try {
+      return SourceRangeUtils.isAvailable(sourceReference.getSourceRange());
+    } catch (DartModelException e) {
+      return false;
+    }
   }
 
 //  public static IMember[] merge(IMember[] a1, IMember[] a2) {
@@ -323,11 +385,23 @@ public class DartElementUtil {
 //  private JavaElementUtil() {
 //  }
 
-  public static boolean isSourceAvailable(SourceReference sourceReference) {
-    try {
-      return SourceRangeUtils.isAvailable(sourceReference.getSourceRange());
-    } catch (DartModelException e) {
-      return false;
+  /**
+   * @return the resolved {@link CompilationUnit} of the given {@link IFile}, may be {@code null}.
+   */
+  public static CompilationUnit resolveCompilationUnit(IFile file) throws AnalysisException {
+    // prepare context
+    ProjectManager projectManager = DartCore.getProjectManager();
+    Source source = projectManager.getSource(file);
+    AnalysisContext context = projectManager.getContext(file);
+    if (source == null || context == null) {
+      return null;
     }
+    // prepare library
+    Source[] librarySources = context.getLibrariesContaining(source);
+    if (librarySources.length != 1) {
+      return null;
+    }
+    // get unit element
+    return context.resolveCompilationUnit(source, librarySources[0]);
   }
 }

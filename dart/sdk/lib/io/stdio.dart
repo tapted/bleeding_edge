@@ -14,7 +14,7 @@ const int _STDIO_HANDLE_TYPE_OTHER = 4;
 class _StdStream extends Stream<List<int>> {
   final Stream<List<int>> _stream;
 
-  _StdStream(Stream<List<int>> this._stream);
+  _StdStream(this._stream);
 
   StreamSubscription<List<int>> listen(void onData(List<int> event),
                                        {Function onError,
@@ -159,10 +159,53 @@ class Stdin extends _StdStream implements Stream<List<int>> {
 }
 
 
+/**
+ * [Stdout] exposes methods to query the terminal for properties.
+ *
+ * Use [hasTerminal] to test if there is a terminal associated to stdout.
+ */
+class Stdout extends _StdSink implements IOSink {
+  Stdout._(IOSink sink) : super(sink);
+
+  /**
+   * Returns true if there is a terminal attached to stdout.
+   */
+  external bool get hasTerminal;
+
+  /**
+   * Get the number of columns of the terminal.
+   *
+   * If no terminal is attached to stdout, a [StdoutException] is thrown. See
+   * [hasTerminal] for more info.
+   */
+  external int get terminalColumns;
+
+  /**
+   * Get the number of lines of the terminal.
+   *
+   * If no terminal is attached to stdout, a [StdoutException] is thrown. See
+   * [hasTerminal] for more info.
+   */
+  external int get terminalLines;
+}
+
+
+class StdoutException implements IOException {
+  final String message;
+  final OSError osError;
+
+  const StdoutException(this.message, [this.osError]);
+
+  String toString() {
+    return "StdoutException: $message${osError == null ? "" : ", $osError"}";
+  }
+}
+
+
 class _StdSink implements IOSink {
   final IOSink _sink;
 
-  _StdSink(IOSink this._sink);
+  _StdSink(this._sink);
 
   Encoding get encoding => _sink.encoding;
   void set encoding(Encoding encoding) {
@@ -188,13 +231,13 @@ class StdioType {
   static const StdioType FILE = const StdioType._("file");
   static const StdioType OTHER = const StdioType._("other");
   final String name;
-  const StdioType._(String this.name);
+  const StdioType._(this.name);
   String toString() => "StdioType: $name";
 }
 
 
 Stdin _stdin;
-IOSink _stdout;
+Stdout _stdout;
 IOSink _stderr;
 
 
@@ -208,7 +251,7 @@ Stdin get stdin {
 
 
 /// The standard output stream of data written by this program.
-IOSink get stdout {
+Stdout get stdout {
   if (_stdout == null) {
     _stdout = _StdIOUtils._getStdioOutputStream(1);
   }
@@ -230,8 +273,12 @@ IOSink get stderr {
 StdioType stdioType(object) {
   if (object is _StdStream) {
     object = object._stream;
-  } else if (object is _StdSink) {
-    object = object._sink;
+  } else if (object == stdout || object == stderr) {
+    switch (_StdIOUtils._getStdioHandleType(object == stdout ? 1 : 2)) {
+      case _STDIO_HANDLE_TYPE_TERMINAL: return StdioType.TERMINAL;
+      case _STDIO_HANDLE_TYPE_PIPE: return StdioType.PIPE;
+      case _STDIO_HANDLE_TYPE_FILE:  return StdioType.FILE;
+    }
   }
   if (object is _FileStream) {
     return StdioType.FILE;
@@ -257,7 +304,8 @@ StdioType stdioType(object) {
 
 
 class _StdIOUtils {
-  external static IOSink _getStdioOutputStream(int fd);
+  external static _getStdioOutputStream(int fd);
   external static Stdin _getStdioInputStream();
   external static int _socketType(nativeSocket);
+  external static _getStdioHandleType(int fd);
 }

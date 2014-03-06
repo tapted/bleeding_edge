@@ -21,10 +21,10 @@ main(List<String> args) {
   }
 
   var dir = new Directory(args[0]);
-  dir.list(recursive: true).listen(
+  dir.list(recursive: true, followLinks: false).listen(
       (entity) {
         if (entity is File) {
-          var file = entity.name;
+          var file = entity.path;
           if (path.extension(file) != '.dart') return;
           fixFile(file);
         }
@@ -33,18 +33,21 @@ main(List<String> args) {
 
 void fixFile(String path) {
   var file = new File(path);
-  file.readAsLines().transform(fixContents).chain((fixed) {
+  file.readAsLines().then((lines) => fixContents(lines, path)).then((fixed) {
     return new File(path).writeAsString(fixed);
   }).then((file) {
-    print(file.name);
+    print(file.path);
   });
 }
 
-String fixContents(List<String> lines) {
+String fixContents(List<String> lines, String path) {
   var buffer = new StringBuffer();
+  var linesOut = 0;
   var inBlock = false;
   var indent;
+
   for (var line in lines) {
+    var oldLine = line;
     if (inBlock) {
       // See if it's the end of the comment.
       if (endBlock.hasMatch(line)) {
@@ -54,14 +57,26 @@ String fixContents(List<String> lines) {
         line = null;
       } else {
         var match = blockLine.firstMatch(line);
-        line = '$indent/// ${match[1]}';
+        if (match != null) {
+          var comment = match[1];
+          if (comment != '') {
+            line = '$indent/// $comment';
+          } else {
+            line = '$indent///';
+          }
+        }
       }
     } else {
       // See if it's a one-line block comment like: /** Blah. */
       var match = oneLineBlock.firstMatch(line);
       if (match != null) {
-        if (match[2] != '') {
-          line = '${match[1]}/// ${match[2]}';
+        var comment = match[2];
+        if (comment != '') {
+          // Remove the extra space before the `*/`
+          if (comment.endsWith(' ')) {
+            comment = comment.substring(0, comment.length - 1);
+          }
+          line = '${match[1]}/// $comment';
         } else {
           line = '${match[1]}///';
         }
@@ -82,7 +97,21 @@ String fixContents(List<String> lines) {
       }
     }
 
-    if (line != null) buffer.write('$line\n');
+    if (line != null) {
+      linesOut++;
+
+      // Warn about lines that crossed 80 columns as a result of the change.
+      if (line.length > 80 && oldLine.length <= 80) {
+        const _PURPLE = '\u001b[35m';
+        const _RED = '\u001b[31m';
+        const _NO_COLOR = '\u001b[0m';
+
+        print('$_PURPLE$path$_NO_COLOR:$_RED$linesOut$_NO_COLOR: '
+            'line exceeds 80 cols:\n    $line');
+      }
+
+      buffer.write('$line\n');
+    }
   }
 
   return buffer.toString();

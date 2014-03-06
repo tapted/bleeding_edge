@@ -29,13 +29,13 @@ class Unpickler {
 
   ConstantSystem get constantSystem => compiler.backend.constantSystem;
 
-  IrFunction unpickle(List<int> data) {
+  ir.Function unpickle(List<int> data) {
     this.data = data;
     offset = 0;
     int numEntries = readInt();
     unpickled = new List<Object>(numEntries);
     index = 0;
-    return readEntry();
+    return readNode();
   }
 
   int readByte() {
@@ -68,6 +68,7 @@ class Unpickler {
       return UTF8.decode(bytes);
     } else {
       compiler.internalError("Unexpected string tag: $tag");
+      return null;
     }
   }
 
@@ -77,28 +78,46 @@ class Unpickler {
   }
 
   Selector readSelector() {
-    int elementIndex = readInt();
-    return constantPool.get(elementIndex);
+    int tag = readByte();
+    if (tag == Pickles.BACKREFERENCE) {
+      return readBackReference();
+    }
+    assert(tag == Pickles.SELECTOR_UNTYPED);
+    int entryIndex = index++;
+    SelectorKind kind = Pickles.selectorKindFromId[readInt()];
+    String name = readString();
+    Element library = readElement();
+    int argumentsCount = readInt();
+    int namedArgumentsCount = readInt();
+    List<String> namedArguments = new List<String>(namedArgumentsCount);
+    for (int i = 0; i < namedArgumentsCount; i++) {
+      namedArguments[i] = readString();
+    }
+    Selector result = new Selector(
+        kind, name, library, argumentsCount, namedArguments);
+    unpickled[entryIndex] = result;
+    return result;
   }
 
   /**
-   * Read an entry that might be a back reference, or that might be used
-   * in a back reference.
+   * Reads a [ir.Node]. Expression nodes are added to the [unpickled] map to
+   * enable unpickling back references.
    */
-  IrNode readEntry() {
+  ir.Node readNode() {
     int tag = readByte();
     if (Pickles.isExpressionTag(tag)) {
-      return readExpressionEntry(tag);
+      return readExpressionNode(tag);
     } else if (tag == Pickles.NODE_RETURN) {
       return readReturnNode();
     } else {
       compiler.internalError("Unexpected entry tag: $tag");
+      return null;
     }
   }
 
-  IrExpression readExpressionEntry(int tag) {
+  ir.Expression readExpressionNode(int tag) {
     int entryIndex = index++;
-    IrExpression result;
+    ir.Expression result;
     if (tag == Pickles.NODE_CONST) {
       result = readConstantNode();
     } else if (tag == Pickles.NODE_FUNCTION) {
@@ -111,57 +130,57 @@ class Unpickler {
     return unpickled[entryIndex] = result;
   }
 
-  IrExpression readBackReference() {
+  Object readBackReference() {
     int indexDelta = readInt();
     int entryIndex = index - indexDelta;
     assert(unpickled[entryIndex] != null);
     return unpickled[entryIndex];
   }
 
-  List<IrExpression> readBackReferenceList() {
+  List<ir.Expression> readExpressionBackReferenceList() {
     int length = readInt();
-    List<IrExpression> result = new List<IrExpression>(length);
+    List<ir.Expression> result = new List<ir.Expression>(length);
     for (int i = 0; i < length; i++) {
       result[i] = readBackReference();
     }
     return result;
   }
 
-  List<IrNode> readNodeList() {
+  List<ir.Node> readNodeList() {
     int length = readInt();
-    List nodes = new List<IrNode>(length);
+    List<ir.Node> nodes = new List<ir.Node>(length);
     for (int i = 0; i < length; i++) {
-      nodes[i] = readEntry();
+      nodes[i] = readNode();
     }
     return nodes;
   }
 
-  IrFunction readFunctionNode() {
+  ir.Function readFunctionNode() {
     var position = readPosition();
     int endOffset = readInt();
     int namePosition = readInt();
-    List<IrNode> statements = readNodeList();
-    return new IrFunction(position, endOffset, namePosition, statements);
+    List<ir.Node> statements = readNodeList();
+    return new ir.Function(position, endOffset, namePosition, statements);
   }
 
-  IrConstant readConstantNode() {
+  ir.Constant readConstantNode() {
     var position = readPosition();
     Constant constant = readConstant();
-    return new IrConstant(position, constant);
+    return new ir.Constant(position, constant);
   }
 
-  IrReturn readReturnNode() {
+  ir.Return readReturnNode() {
     var position = readPosition();
-    IrExpression value = readBackReference();
-    return new IrReturn(position, value);
+    ir.Expression value = readBackReference();
+    return new ir.Return(position, value);
   }
 
-  IrInvokeStatic readInvokeStaticNode() {
+  ir.InvokeStatic readInvokeStaticNode() {
     var position = readPosition();
     FunctionElement functionElement = readElement();
     Selector selector = readSelector();
-    List<IrExpression> arguments = readBackReferenceList();
-    return new IrInvokeStatic(position, functionElement, selector, arguments);
+    List<ir.Expression> arguments = readExpressionBackReferenceList();
+    return new ir.InvokeStatic(position, functionElement, selector, arguments);
   }
 
   /* int | PositionWithIdentifierName */ readPosition() {
@@ -170,7 +189,7 @@ class Unpickler {
     } else {
       String sourceName = readString();
       int offset = readInt();
-      return new PositionWithIdentifierName(offset, sourceName);
+      return new ir.PositionWithIdentifierName(offset, sourceName);
     }
   }
 
@@ -196,22 +215,24 @@ class Unpickler {
         return constantSystem.createNull();
       default:
         compiler.internalError("Unexpected constant tag: $tag");
+        return null;
     }
   }
 
-  DartString readDartString(int tag) {
+  ast.DartString readDartString(int tag) {
     switch(tag) {
       case Pickles.CONST_STRING_LITERAL:
-        return new LiteralDartString(readString());
+        return new ast.LiteralDartString(readString());
       case Pickles.CONST_STRING_RAW:
-        return new RawSourceDartString(readString(), readInt());
+        return new ast.RawSourceDartString(readString(), readInt());
       case Pickles.CONST_STRING_ESCAPED:
-        return new EscapedSourceDartString(readString(), readInt());
+        return new ast.EscapedSourceDartString(readString(), readInt());
       case Pickles.CONST_STRING_CONS:
-        return new ConsDartString(
+        return new ast.ConsDartString(
             readDartString(readByte()), readDartString(readByte()));
       default:
         compiler.internalError("Unexpected dart string tag: $tag");
+        return null;
     }
   }
 }

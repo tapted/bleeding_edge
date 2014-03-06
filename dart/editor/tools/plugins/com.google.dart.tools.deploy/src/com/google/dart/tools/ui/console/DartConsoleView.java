@@ -48,6 +48,7 @@ import org.eclipse.ui.console.IOConsole;
 import org.eclipse.ui.console.MessageConsole;
 import org.eclipse.ui.console.TextConsole;
 import org.eclipse.ui.dialogs.PreferencesUtil;
+import org.eclipse.ui.internal.console.IOConsolePage;
 import org.eclipse.ui.part.IPageBookViewPage;
 import org.eclipse.ui.part.PageSite;
 import org.eclipse.ui.part.ViewPart;
@@ -87,7 +88,6 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
       };
 
       new Thread(r).start();
-
     }
   }
 
@@ -115,6 +115,23 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
           null);
 
       dialog.open();
+    }
+  }
+
+  private class ScrollLockAction extends Action {
+    public ScrollLockAction() {
+      super("Pin Console");
+
+      setImageDescriptor(Activator.getImageDescriptor("icons/full/eview16/pin.gif"));
+      setChecked(getScrollLock());
+    }
+
+    /**
+     * @see org.eclipse.jface.action.IAction#run()
+     */
+    @Override
+    public void run() {
+      setScrollLock(isChecked());
     }
   }
 
@@ -176,7 +193,6 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
       } else {
         setEnabled(false);
       }
-
     }
   }
 
@@ -184,6 +200,7 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
 
   private Composite parent;
   private IConsole console;
+  private Object consoleLock = new Object();
 
   private IPageBookViewPage page;
 
@@ -191,6 +208,7 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
 
   private TerminateAction terminateAction;
   private ClearAction clearAction;
+  private ScrollLockAction pinAction;
   private IAction propertiesAction;
 
   private Display display;
@@ -203,6 +221,8 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
       doPropertyChange(event);
     }
   };
+
+  private boolean scrollLock;
 
   public DartConsoleView() {
     DartConsoleManager.getManager().consoleViewOpened(this);
@@ -219,6 +239,7 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
     getPreferences().addPropertyChangeListener(propertyChangeListener);//background
 
     clearAction = new ClearAction();
+    pinAction = new ScrollLockAction();
     propertiesAction = new PropertiesAction();
     terminateAction = new TerminateAction();
 
@@ -245,7 +266,9 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
     // We recycle the console; remove any contributions from the previous ProcessConsole.
     clearToolBar();
 
-    this.console = inConsole;
+    synchronized (consoleLock) {
+      this.console = inConsole;
+    }
 
     // Add back our tolbar contributions.
     updateToolBar();
@@ -287,10 +310,12 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
 
     DartConsoleManager.getManager().consoleViewClosed(this);
 
-    if (console != null && isDead()) {
-      IProcess process = ((ProcessConsole) console).getProcess();
+    synchronized (consoleLock) {
+      if (console != null && isDead()) {
+        IProcess process = ((ProcessConsole) console).getProcess();
 
-      DebugPlugin.getDefault().getLaunchManager().removeLaunch(process.getLaunch());
+        DebugPlugin.getDefault().getLaunchManager().removeLaunch(process.getLaunch());
+      }
     }
 
     terminateAction.dispose();
@@ -316,7 +341,7 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
 
   @Override
   public boolean getScrollLock() {
-    return false;
+    return scrollLock;
   }
 
   public boolean isDead() {
@@ -324,14 +349,16 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
       return true;
     }
 
-    if (console instanceof ProcessConsole) {
-      ProcessConsole processConsole = (ProcessConsole) console;
+    synchronized (consoleLock) {
+      if (console instanceof ProcessConsole) {
+        ProcessConsole processConsole = (ProcessConsole) console;
 
-      if (processConsole.getProcess() == null) {
-        return true;
+        if (processConsole.getProcess() == null) {
+          return true;
+        }
+
+        return processConsole.getProcess().isTerminated();
       }
-
-      return processConsole.getProcess().isTerminated();
     }
 
     return false;
@@ -374,7 +401,11 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
 
   @Override
   public void setScrollLock(boolean scrollLock) {
+    this.scrollLock = scrollLock;
 
+    if (page instanceof IOConsolePage) {
+      ((IOConsolePage) page).setAutoScroll(!scrollLock);
+    }
   }
 
   @Override
@@ -429,10 +460,12 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
   }
 
   private IProcess getProcess() {
-    if (console instanceof ProcessConsole) {
-      return ((ProcessConsole) console).getProcess();
-    } else {
-      return null;
+    synchronized (consoleLock) {
+      if (console instanceof ProcessConsole) {
+        return ((ProcessConsole) console).getProcess();
+      } else {
+        return null;
+      }
     }
   }
 
@@ -463,7 +496,7 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
 
       setPartName(process.getLaunch().getLaunchConfiguration().getName());
     } else {
-      setPartName("Output");
+      setPartName("Tools Output");
     }
   }
 
@@ -495,6 +528,7 @@ public class DartConsoleView extends ViewPart implements IConsoleView, IProperty
 
     toolbar.add(clearAction);
     toolbar.add(propertiesAction);
+    toolbar.add(pinAction);
     toolbar.add(new Separator());
     toolbar.add(terminateAction);
     toolbar.add(new Separator("outputGroup"));

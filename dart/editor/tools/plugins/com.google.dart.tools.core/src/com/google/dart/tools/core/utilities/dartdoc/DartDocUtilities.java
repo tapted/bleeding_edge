@@ -34,7 +34,6 @@ import com.google.dart.engine.element.TypeParameterElement;
 import com.google.dart.engine.element.VariableElement;
 import com.google.dart.engine.element.visitor.SimpleElementVisitor;
 import com.google.dart.engine.source.Source;
-import com.google.dart.engine.source.Source.ContentReceiver;
 import com.google.dart.engine.type.Type;
 import com.google.dart.engine.utilities.dart.ParameterKind;
 import com.google.dart.engine.utilities.source.SourceRange;
@@ -43,7 +42,6 @@ import com.google.dart.tools.core.DartCore;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
-import java.nio.CharBuffer;
 
 /**
  * A utility class for dealing with Dart doc text.
@@ -253,33 +251,17 @@ public final class DartDocUtilities {
           Source source = cu.getSource();
           if (source != null) {
 
-            final String[] result = new String[1];
             try {
-
-              source.getContents(new ContentReceiver() {
-
-                @Override
-                public void accept(CharBuffer contents, long modificationTime) {
-                  result[0] = contents.toString();
-                }
-
-                @Override
-                public void accept(String contents, long modificationTime) {
-                  result[0] = contents;
-                }
-              });
-
+              String result = cu.getContext().getContents(source).getData().toString();
+              if (result != null) {
+                buf.append(": ");
+                buf.append(result.substring(
+                    defaultValueRange.getOffset(),
+                    defaultValueRange.getEnd()));
+              }
             } catch (Exception e) {
               DartCore.logError(e);
             }
-
-            if (result[0] != null) {
-              buf.append(": ");
-              buf.append(result[0].substring(
-                  defaultValueRange.getOffset(),
-                  defaultValueRange.getEnd()));
-            }
-
           }
         }
       }

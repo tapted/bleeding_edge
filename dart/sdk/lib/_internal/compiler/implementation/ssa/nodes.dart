@@ -191,7 +191,7 @@ class HGraph {
         compiler.backend.constantSystem.createDouble(d), compiler);
   }
 
-  HConstant addConstantString(DartString str,
+  HConstant addConstantString(ast.DartString str,
                               Compiler compiler) {
     return addConstant(
         compiler.backend.constantSystem.createString(str),
@@ -968,6 +968,11 @@ abstract class HInstruction implements Spannable {
   }
 
   bool isString(Compiler compiler) {
+    return instructionType.containsOnlyString(compiler)
+        && !instructionType.isNullable;
+  }
+
+  bool isStringOrNull(Compiler compiler) {
     return instructionType.containsOnlyString(compiler);
   }
 
@@ -1414,9 +1419,9 @@ class HInvokeStatic extends HInvoke {
   bool canThrow() => targetCanThrow;
 
   /// If this instruction is a call to a constructor, [instantiatedTypes]
-  /// contains the type(s) used in the (Dart) `New` expression(s).
-  /// The [instructionType] of this node is not enough, because we also need
-  /// the type arguments.  See also [SsaBuilder.currentInlinedInstantiations].
+  /// contains the type(s) used in the (Dart) `New` expression(s). The
+  /// [instructionType] of this node is not enough, because we also need the
+  /// type arguments. See also [SsaFromAstMixin.currentInlinedInstantiations].
   List<DartType> instantiatedTypes;
 
   /** The first input must be the target. */
@@ -1424,7 +1429,7 @@ class HInvokeStatic extends HInvoke {
                 {this.targetCanThrow: true})
     : super(inputs, type);
 
-  toString() => 'invoke static: ${element.name}';
+  toString() => 'invoke static: $element';
   accept(HVisitor visitor) => visitor.visitInvokeStatic(this);
   int typeCode() => HInstruction.INVOKE_STATIC_TYPECODE;
 }
@@ -1605,9 +1610,9 @@ class HForeignNew extends HForeign {
   ClassElement element;
 
   /// If this field is not `null`, this call is from an inlined constructor and
-  /// we have to register the instantiated type in the code generator.
-  /// The [instructionType] of this node is not enough, because we also need
-  /// the type arguments.  See also [SsaBuilder.currentInlinedInstantiations].
+  /// we have to register the instantiated type in the code generator. The
+  /// [instructionType] of this node is not enough, because we also need the
+  /// type arguments. See also [SsaFromAstMixin.currentInlinedInstantiations].
   List<DartType> instantiatedTypes;
 
   HForeignNew(this.element, TypeMask type, List<HInstruction> inputs,
@@ -1837,7 +1842,7 @@ class HBreak extends HJump {
   /**
    * Signals that this is a special break instruction for the synthetic loop
    * generatedfor a switch statement with continue statements. See
-   * [SsaBuilder.buildComplexSwitchStatement] for detail.
+   * [SsaFromAstMixin.buildComplexSwitchStatement] for detail.
    */
   final bool breakSwitchContinueLoop;
   HBreak(TargetElement target, {bool this.breakSwitchContinueLoop: false})
@@ -1931,6 +1936,14 @@ class HConstant extends HInstruction {
 
   // Maybe avoid this if the literal is big?
   bool isCodeMotionInvariant() => true;
+
+  set instructionType(type) {
+    // Only lists can be specialized. The SSA builder uses the
+    // inferrer for finding the type of a constant list. We should
+    // have the constant know its type instead.
+    if (!isConstantList()) return;
+    super.instructionType = type;
+  }
 }
 
 class HNot extends HInstruction {
@@ -2450,7 +2463,7 @@ class HRangeConversion extends HCheck {
 }
 
 class HStringConcat extends HInstruction {
-  final Node node;
+  final ast.Node node;
   HStringConcat(HInstruction left, HInstruction right, this.node, TypeMask type)
       : super(<HInstruction>[left, right], type) {
     // TODO(sra): Until Issue 9293 is fixed, this false dependency keeps the
@@ -2471,7 +2484,7 @@ class HStringConcat extends HInstruction {
  * into a String value.
  */
 class HStringify extends HInstruction {
-  final Node node;
+  final ast.Node node;
   HStringify(HInstruction input, this.node, TypeMask type)
       : super(<HInstruction>[input], type) {
     sideEffects.setAllSideEffects();
@@ -2655,14 +2668,14 @@ class HLabeledBlockInformation implements HStatementInformation {
     visitor.visitLabeledBlockInfo(this);
 }
 
-class LoopTypeVisitor extends Visitor {
+class LoopTypeVisitor extends ast.Visitor {
   const LoopTypeVisitor();
-  int visitNode(Node node) => HLoopBlockInformation.NOT_A_LOOP;
-  int visitWhile(While node) => HLoopBlockInformation.WHILE_LOOP;
-  int visitFor(For node) => HLoopBlockInformation.FOR_LOOP;
-  int visitDoWhile(DoWhile node) => HLoopBlockInformation.DO_WHILE_LOOP;
-  int visitForIn(ForIn node) => HLoopBlockInformation.FOR_IN_LOOP;
-  int visitSwitchStatement(SwitchStatement node) =>
+  int visitNode(ast.Node node) => HLoopBlockInformation.NOT_A_LOOP;
+  int visitWhile(ast.While node) => HLoopBlockInformation.WHILE_LOOP;
+  int visitFor(ast.For node) => HLoopBlockInformation.FOR_LOOP;
+  int visitDoWhile(ast.DoWhile node) => HLoopBlockInformation.DO_WHILE_LOOP;
+  int visitForIn(ast.ForIn node) => HLoopBlockInformation.FOR_IN_LOOP;
+  int visitSwitchStatement(ast.SwitchStatement node) =>
       HLoopBlockInformation.SWITCH_CONTINUE_LOOP;
 }
 
@@ -2717,7 +2730,7 @@ class HLoopBlockInformation implements HStatementInformation {
     return body.end;
   }
 
-  static int loopType(Node node) {
+  static int loopType(ast.Node node) {
     return node.accept(const LoopTypeVisitor());
   }
 

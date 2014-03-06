@@ -235,7 +235,7 @@ class PrettyPrinter implements Visitor {
     printLiteral(node, "LiteralInt");
   }
 
-  /** Returns token string value or [null] if token is [null]. */
+  /** Returns token string value or [:null:] if token is [:null:]. */
   tokenToStringOrNull(Token token) => token == null ? null : token.stringValue;
 
   visitLiteralList(LiteralList node) {
@@ -408,6 +408,14 @@ class PrettyPrinter implements Visitor {
 
   visitWhile(While node) {
     visitNodeWithChildren(node, "While");
+  }
+
+  visitMetadata(Metadata node) {
+    openNode(node, "Metadata", {
+      "token": node.token
+    });
+    visitChildNode(node.expression, "expression");
+    closeNode();
   }
 
   visitNode(Node node) {

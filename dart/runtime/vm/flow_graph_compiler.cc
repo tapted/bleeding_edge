@@ -17,6 +17,7 @@
 #include "vm/longjump.h"
 #include "vm/object_store.h"
 #include "vm/parser.h"
+#include "vm/stack_frame.h"
 #include "vm/stub_code.h"
 #include "vm/symbols.h"
 
@@ -30,7 +31,8 @@ DECLARE_FLAG(bool, report_usage_count);
 DECLARE_FLAG(int, optimization_counter_threshold);
 DECLARE_FLAG(bool, use_cha);
 DECLARE_FLAG(bool, use_osr);
-
+DEFINE_FLAG(bool, enable_simd_inline, true,
+    "Enable inlining of SIMD related method calls.");
 
 // Assign locations to incoming arguments, i.e., values pushed above spill slots
 // with PushArgument.  Recursively allocates from outermost to innermost
@@ -84,6 +86,8 @@ FlowGraphCompiler::FlowGraphCompiler(Assembler* assembler,
           Isolate::Current()->object_store()->double_class())),
       float32x4_class_(Class::ZoneHandle(
           Isolate::Current()->object_store()->float32x4_class())),
+      float64x2_class_(Class::ZoneHandle(
+          Isolate::Current()->object_store()->float64x2_class())),
       int32x4_class_(Class::ZoneHandle(
           Isolate::Current()->object_store()->int32x4_class())),
       list_class_(Class::ZoneHandle(
@@ -93,11 +97,6 @@ FlowGraphCompiler::FlowGraphCompiler(Assembler* assembler,
       pending_deoptimization_env_(NULL) {
   ASSERT(assembler != NULL);
   ASSERT(!list_class_.IsNull());
-}
-
-
-bool FlowGraphCompiler::HasFinally() const {
-  return parsed_function().function().has_finally();
 }
 
 
@@ -237,7 +236,7 @@ void FlowGraphCompiler::EmitInstructionPrologue(Instruction* instr) {
       // control the placement.
       AddCurrentDescriptor(PcDescriptors::kDeopt,
                            instr->deopt_id(),
-                           Scanner::kDummyTokenIndex);
+                           Scanner::kNoSourcePos);
     }
     AllocateRegistersLocally(instr);
   } else if (instr->MayThrow()  &&
@@ -294,6 +293,51 @@ void FlowGraphCompiler::Bailout(const char* reason) {
                                   String::Handle(function.name()).ToCString(),
                                   reason));
   Isolate::Current()->long_jump_base()->Jump(1, error);
+}
+
+
+void FlowGraphCompiler::EmitTrySync(Instruction* instr, intptr_t try_index) {
+  ASSERT(is_optimizing());
+  Environment* env = instr->env();
+  CatchBlockEntryInstr* catch_block =
+      flow_graph().graph_entry()->GetCatchEntry(try_index);
+  const GrowableArray<Definition*>* idefs = catch_block->initial_definitions();
+
+  // Construct a ParallelMove instruction for parameters and locals. Skip the
+  // special locals exception_var and stacktrace_var since they will be filled
+  // when an exception is thrown. Constant locations are known to be the same
+  // at all instructions that may throw, and do not need to be materialized.
+
+  // Parameters first.
+  intptr_t i = 0;
+  const intptr_t num_non_copied_params = flow_graph().num_non_copied_params();
+  ParallelMoveInstr* move_instr = new ParallelMoveInstr();
+  for (; i < num_non_copied_params; ++i) {
+    if ((*idefs)[i]->IsConstant()) continue;  // Common constants
+    Location src = env->LocationAt(i);
+    intptr_t dest_index = i - num_non_copied_params;
+    Location dest = Location::StackSlot(dest_index);
+    move_instr->AddMove(dest, src);
+  }
+
+  // Process locals. Skip exception_var and stacktrace_var.
+  intptr_t local_base = kFirstLocalSlotFromFp + num_non_copied_params;
+  intptr_t ex_idx = local_base - catch_block->exception_var().index();
+  intptr_t st_idx = local_base - catch_block->stacktrace_var().index();
+  for (; i < flow_graph().variable_count(); ++i) {
+    if (i == ex_idx || i == st_idx) continue;
+    if ((*idefs)[i]->IsConstant()) continue;
+    Location src = env->LocationAt(i);
+    ASSERT(!src.IsFpuRegister());
+    ASSERT(!src.IsDoubleStackSlot());
+    intptr_t dest_index = i - num_non_copied_params;
+    Location dest = Location::StackSlot(dest_index);
+    move_instr->AddMove(dest, src);
+    // Update safepoint bitmap to indicate that the target location
+    // now contains a pointer.
+    instr->locs()->stack_bitmap()->Set(dest_index, true);
+  }
+  parallel_move_resolver()->EmitNativeCode(move_instr);
 }
 
 
@@ -414,10 +458,25 @@ void FlowGraphCompiler::AddDeoptIndexAtCall(intptr_t deopt_id,
 // and FlowGraphCompiler::SlowPathEnvironmentFor.
 void FlowGraphCompiler::RecordSafepoint(LocationSummary* locs) {
   if (is_optimizing()) {
+    RegisterSet* registers = locs->live_registers();
+    ASSERT(registers != NULL);
+    const intptr_t kFpuRegisterSpillFactor =
+            kFpuRegisterSize / kWordSize;
+    const intptr_t live_registers_size = registers->CpuRegisterCount() +
+        (registers->FpuRegisterCount() * kFpuRegisterSpillFactor);
     BitmapBuilder* bitmap = locs->stack_bitmap();
     ASSERT(bitmap != NULL);
-    ASSERT(bitmap->Length() <= StackSize());
-    // Pad the bitmap out to describe all the spill slots.
+    // An instruction may have two safepoints in deferred code. The
+    // call to RecordSafepoint has the side-effect of appending the live
+    // registers to the bitmap. This is why the second call to RecordSafepoint
+    // with the same instruction (and same location summary) sees a bitmap that
+    // is larger that StackSize(). It will never be larger than StackSize() +
+    // live_registers_size.
+    ASSERT(bitmap->Length() <= (StackSize() + live_registers_size));
+    // The first safepoint will grow the bitmap to be the size of StackSize()
+    // but the second safepoint will truncate the bitmap and append the
+    // live registers to it again. The bitmap produced by both calls will
+    // be the same.
     bitmap->SetLength(StackSize());
 
     // Mark the bits in the stack map in the same order we push registers in
@@ -434,8 +493,6 @@ void FlowGraphCompiler::RecordSafepoint(LocationSummary* locs) {
         //
         // FPU registers have the highest register number at the highest
         // address (i.e., first in the stackmap).
-        const intptr_t kFpuRegisterSpillFactor =
-            kFpuRegisterSize / kWordSize;
         for (intptr_t i = kNumberOfFpuRegisters - 1; i >= 0; --i) {
           FpuRegister reg = static_cast<FpuRegister>(i);
           if (regs->ContainsFpuRegister(reg)) {
@@ -1177,35 +1234,6 @@ intptr_t FlowGraphCompiler::DataOffsetFor(intptr_t cid) {
       UNIMPLEMENTED();
       return Array::data_offset();
   }
-}
-
-
-// Returns true if checking against this type is a direct class id comparison.
-bool FlowGraphCompiler::TypeCheckAsClassEquality(const AbstractType& type) {
-  ASSERT(type.IsFinalized() && !type.IsMalformedOrMalbounded());
-  // Requires CHA, which can be applied in optimized code only,
-  if (!FLAG_use_cha || !is_optimizing()) return false;
-  if (!type.IsInstantiated()) return false;
-  const Class& type_class = Class::Handle(type.type_class());
-  // Signature classes have different type checking rules.
-  if (type_class.IsSignatureClass()) return false;
-  // Could be an interface check?
-  if (type_class.is_implemented()) return false;
-  const intptr_t type_cid = type_class.id();
-  if (CHA::HasSubclasses(type_cid)) return false;
-  const intptr_t num_type_args = type_class.NumTypeArguments();
-  if (num_type_args > 0) {
-    // Only raw types can be directly compared, thus disregarding type
-    // arguments.
-    const intptr_t num_type_params = type_class.NumTypeParameters();
-    const intptr_t from_index = num_type_args - num_type_params;
-    const AbstractTypeArguments& type_arguments =
-        AbstractTypeArguments::Handle(type.arguments());
-    const bool is_raw_type = type_arguments.IsNull() ||
-        type_arguments.IsRaw(from_index, num_type_params);
-    return is_raw_type;
-  }
-  return true;
 }
 
 

@@ -15,12 +15,15 @@
 # ....bin/
 # ......dart or dart.exe (executable)
 # ......dart.lib (import library for VM native extensions on Windows)
+# ......dartfmt
 # ......dart2js
 # ......dartanalyzer
 # ......pub
 # ......snapshots/
-# ........utils_wrapper.dart.snapshot
+# ........dart2js.dart.snapshot
+# ........dartfmt.dart.snapshot
 # ........pub.dart.snapshot
+# ........utils_wrapper.dart.snapshot
 # ....include/
 # ......dart_api.h
 # ......dart_debugger_api.h
@@ -30,10 +33,10 @@
 # ......_internal/
 # ......async/
 # ......collection/
-# ......_collection_dev/
 # ......convert/
 # ......core/
 # ......html/
+# ......internal/
 # ......io/
 # ......isolate/
 # ......js/
@@ -105,13 +108,13 @@ def CopyShellScript(src_file, dest_dir):
 
 
 def CopyDartScripts(home, sdk_root):
-  for executable in ['dart2js', 'dartanalyzer', 'dartdoc', 'pub']:
+  for executable in ['dart2js', 'dartanalyzer', 'dartfmt', 'docgen', 'pub']:
     CopyShellScript(os.path.join(home, 'sdk', 'bin', executable),
                     os.path.join(sdk_root, 'bin'))
 
 
 def CopySnapshots(snapshots, sdk_root):
-  for snapshot in ['dart2js', 'utils_wrapper', 'pub']:
+  for snapshot in ['dart2js', 'dartfmt', 'utils_wrapper', 'pub']:
     snapshot += '.dart.snapshot'
     copyfile(join(snapshots, snapshot),
              join(sdk_root, 'bin', 'snapshots', snapshot))
@@ -194,11 +197,9 @@ def Main(argv):
 
   for library in [join('_chrome', 'dart2js'), join('_chrome', 'dartium'),
                   join('_internal', 'compiler'),
-                  join('_internal', 'dartdoc'),
-                  join('_internal', 'pub', 'resource'),
                   join('_internal', 'lib'),
-                  'async', 'collection', '_collection_dev', 'convert',
-                  'core', 'crypto', 'io', 'isolate',
+                  'async', 'collection', 'convert', 'core',
+                  'crypto', 'internal', 'io', 'isolate',
                   join('html', 'dart2js'), join('html', 'dartium'),
                   join('html', 'html_common'),
                   join('indexed_db', 'dart2js'), join('indexed_db', 'dartium'),
@@ -231,11 +232,13 @@ def Main(argv):
 
   # Copy in 7zip for Windows.
   if HOST_OS == 'win32':
+    RESOURCE = join(SDK_tmp, 'lib', '_internal', 'pub', 'resource')
+    os.makedirs(RESOURCE)
     copytree(join(HOME, 'third_party', '7zip'),
-             join(SDK_tmp, 'lib', '_internal', 'pub', 'resource', '7zip'),
+             join(RESOURCE, '7zip'),
              ignore=ignore_patterns('.svn'))
 
-  # Copy dart2js/dartdoc/pub.
+  # Copy dart2js/pub.
   CopyDartScripts(HOME, SDK_tmp)
   CopySnapshots(SNAPSHOT, SDK_tmp)
 

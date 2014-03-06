@@ -342,7 +342,7 @@ class NativeEmitter {
 
     String superName = backend.namer.getNameOfClass(superclass);
 
-    ClassBuilder builder = new ClassBuilder();
+    ClassBuilder builder = new ClassBuilder(backend.namer);
     emitter.classEmitter.emitClassConstructor(classElement, builder, null);
     bool hasFields = emitter.classEmitter.emitFields(
         classElement, builder, superName, classIsNative: true);
@@ -457,7 +457,9 @@ class NativeEmitter {
       return false;
     }
 
-    if (backend.classesMixedIntoNativeClasses.contains(element)) return true;
+    if (backend.classesMixedIntoInterceptedClasses.contains(element)) {
+      return true;
+    }
 
     return subtypes[element] != null;
   }

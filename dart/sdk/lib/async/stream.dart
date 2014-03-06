@@ -49,6 +49,11 @@ part of dart.async;
  *
  * Broadcast streams are used for independent events/observers.
  *
+ * Stream transformations, such as [where] and [skip], always return
+ * non-broadcast streams. If several listeners want to listen to the returned
+ * stream, use [asBroadcastStream] to create a broadcast stream on top of the
+ * non-broadcast stream.
+ *
  * The default implementation of [isBroadcast] returns false.
  * A broadcast stream inheriting from [Stream] must override [isBroadcast]
  * to return [:true:].
@@ -256,6 +261,8 @@ abstract class Stream<T> {
    *
    * The new stream sends the same error and done events as this stream,
    * but it only sends the data events that satisfy the [test].
+   *
+   * The returned stream is not a broadcast stream, even if this stream is.
    */
   Stream<T> where(bool test(T event)) {
     return new _WhereStream<T>(this, test);
@@ -264,9 +271,98 @@ abstract class Stream<T> {
   /**
    * Creates a new stream that converts each element of this stream
    * to a new value using the [convert] function.
+   *
+   * The returned stream is not a broadcast stream, even if this stream is.
    */
   Stream map(convert(T event)) {
     return new _MapStream<T, dynamic>(this, convert);
+  }
+
+  /**
+   * Creates a new stream with each data event of this stream asynchronously
+   * mapped to a new event.
+   *
+   * This acts like [map], except that [convert] may return a [Future],
+   * and in that case, the stream waits for that future to complete before
+   * continuing with its result.
+   */
+  Stream asyncMap(convert(T event)) {
+    StreamController controller;
+    StreamSubscription subscription;
+    controller = new StreamController(
+      onListen: () {
+        var add = controller.add;
+        var addError = controller.addError;
+        subscription = this.listen(
+            (T event) {
+              var newValue;
+              try {
+                newValue = convert(event);
+              } catch (e, s) {
+                controller.addError(e, s);
+                return;
+              }
+              if (newValue is Future) {
+                subscription.pause();
+                newValue.then(add, onError: addError)
+                        .whenComplete(subscription.resume);
+              } else {
+                controller.add(newValue);
+              }
+            },
+            onError: addError,
+            onDone: controller.close
+        );
+      },
+      onPause: () { subscription.pause(); },
+      onResume: () { subscription.resume(); },
+      onCancel: () { subscription.cancel(); },
+      sync: true
+    );
+    return controller.stream;
+  }
+
+  /**
+   * Creates a new stream with the events of a stream per original event.
+   *
+   * This acts like [expand], except that [convert] returns a [Stream]
+   * instead of an [Iterable].
+   * The events of the returned stream becomes the events of the returned
+   * stream, in the order they are produced.
+   *
+   * If [convert] returns `null`, no value is put on the output stream,
+   * just as if it returned an empty stream.
+   */
+  Stream asyncExpand(Stream convert(T event)) {
+    StreamController controller;
+    StreamSubscription subscription;
+    controller = new StreamController(
+      onListen: () {
+        subscription = this.listen(
+            (T event) {
+              Stream newStream;
+              try {
+                newStream = convert(event);
+              } catch (e, s) {
+                controller.addError(e, s);
+                return;
+              }
+              if (newStream != null) {
+                subscription.pause();
+                controller.addStream(newStream)
+                          .whenComplete(subscription.resume);
+              }
+            },
+            onError: controller.addError,
+            onDone: controller.close
+        );
+      },
+      onPause: () { subscription.pause(); },
+      onResume: () { subscription.resume(); },
+      onCancel: () { subscription.cancel(); },
+      sync: true
+    );
+    return controller.stream;
   }
 
   /**
@@ -281,8 +377,8 @@ abstract class Stream<T> {
    * trace. The stack trace argument might be `null` if the stream itself
    * received an error without stack trace.
    *
-   * An [AsyncError] [:e:] is matched by a test function if [:test(e):] returns
-   * true. If [test] is omitted, every error is considered matching.
+   * An asynchronous error [:e:] is matched by a test function if [:test(e):]
+   * returns true. If [test] is omitted, every error is considered matching.
    *
    * If the error is intercepted, the [handle] function can decide what to do
    * with it. It can throw if it wants to raise a new (or the same) error,
@@ -291,6 +387,8 @@ abstract class Stream<T> {
    * If you need to transform an error into a data event, use the more generic
    * [Stream.transform] to handle the event by writing a data event to
    * the output sink
+   *
+   * The returned stream is not a broadcast stream, even if this stream is.
    */
   Stream<T> handleError(Function onError, { bool test(error) }) {
     return new _HandleErrorStream<T>(this, onError, test);
@@ -303,6 +401,8 @@ abstract class Stream<T> {
    * Each incoming event is converted to an [Iterable] of new events,
    * and each of these new events are then sent by the returned stream
    * in order.
+   *
+   * The returned stream is not a broadcast stream, even if this stream is.
    */
   Stream expand(Iterable convert(T value)) {
     return new _ExpandStream<T, dynamic>(this, convert);
@@ -637,6 +737,8 @@ abstract class Stream<T> {
    * Internally the method cancels its subscription after these elements. This
    * means that single-subscription (non-broadcast) streams are closed and
    * cannot be reused after a call to this method.
+   *
+   * The returned stream is not a broadcast stream, even if this stream is.
    */
   Stream<T> take(int count) {
     return new _TakeStream(this, count);
@@ -655,6 +757,8 @@ abstract class Stream<T> {
    * Internally the method cancels its subscription after these elements. This
    * means that single-subscription (non-broadcast) streams are closed and
    * cannot be reused after a call to this method.
+   *
+   * The returned stream is not a broadcast stream, even if this stream is.
    */
   Stream<T> takeWhile(bool test(T element)) {
     return new _TakeWhileStream(this, test);
@@ -662,6 +766,8 @@ abstract class Stream<T> {
 
   /**
    * Skips the first [count] data events from this stream.
+   *
+   * The returned stream is not a broadcast stream, even if this stream is.
    */
   Stream<T> skip(int count) {
     return new _SkipStream(this, count);
@@ -674,6 +780,8 @@ abstract class Stream<T> {
    *
    * Starting with the first data event where [test] returns false for the
    * event data, the returned stream will have the same events as this stream.
+   *
+   * The returned stream is not a broadcast stream, even if this stream is.
    */
   Stream<T> skipWhile(bool test(T element)) {
     return new _SkipWhileStream(this, test);
@@ -687,6 +795,8 @@ abstract class Stream<T> {
    *
    * Equality is determined by the provided [equals] method. If that is
    * omitted, the '==' operator on the last provided data element is used.
+   *
+   * The returned stream is not a broadcast stream, even if this stream is.
    */
   Stream<T> distinct([bool equals(T previous, T next)]) {
     return new _DistinctStream(this, equals);
@@ -977,6 +1087,8 @@ abstract class Stream<T> {
    *
    * If `onTimeout` is omitted, a timeout will just put a [TimeoutException]
    * into the error channel of the returned stream.
+   *
+   * The returned stream is not a broadcast stream, even if this stream is.
    */
   Stream timeout(Duration timeLimit, {void onTimeout(EventSink sink)}) {
     StreamSubscription<T> subscription;
@@ -1316,8 +1428,6 @@ abstract class StreamTransformer<S, T> {
  * This wraps a [Stream] and a subscription on the stream. It listens
  * on the stream, and completes the future returned by [moveNext] when the
  * next value becomes available.
- *
- * NOTICE: This is a tentative design. This class may change.
  */
 abstract class StreamIterator<T> {
 

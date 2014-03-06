@@ -74,10 +74,16 @@
       <super type="org.eclipse.core.resources.textmarker"/>
       <persistent value="true"/>
    </extension>
-      <extension id="pubspecIssue" name="Pubspec issue marker" point="org.eclipse.core.resources.markers">
+   <extension id="pubspecIssue" name="Pubspec issue marker" point="org.eclipse.core.resources.markers">
       <super type="org.eclipse.core.resources.textmarker"/>
       <persistent value="false"/>
    </extension>
+
+  <extension id="angular_warning" name="%angular.marker.warning.name" point="org.eclipse.core.resources.markers">
+    <super type="org.eclipse.core.resources.problemmarker"/>
+    <super type="org.eclipse.core.resources.textmarker"/>
+    <persistent value="true"/>
+  </extension>
    
    <extension
        point="org.eclipse.core.expressions.propertyTesters">

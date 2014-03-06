@@ -109,6 +109,7 @@ class ClosureFieldElement extends ElementX implements VariableElement {
 class ClosureClassElement extends ClassElementX {
   DartType rawType;
   DartType thisType;
+  FunctionType callType;
   /// Node that corresponds to this closure, used for source position.
   final FunctionExpression node;
 
@@ -133,6 +134,7 @@ class ClosureClassElement extends ClassElementX {
     thisType = rawType = new InterfaceType(this);
     allSupertypesAndSelf =
         superclass.allSupertypesAndSelf.extendClass(thisType);
+    callType = methodElement.computeType(compiler);
   }
 
   bool isClosure() => true;
@@ -145,6 +147,13 @@ class ClosureClassElement extends ClassElementX {
    * The most outer method this closure is declared into.
    */
   final Element methodElement;
+
+  // A [ClosureClassElement] is nested inside a function or initializer in terms
+  // of [enclosingElement], but still has to be treated as a top-level
+  // element.
+  bool isTopLevel() => true;
+
+  get enclosingElement => methodElement;
 
   accept(ElementVisitor visitor) => visitor.visitClosureClassElement(this);
 }

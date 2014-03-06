@@ -36,10 +36,11 @@ import com.google.dart.tools.debug.core.webkit.WebkitResult;
 import com.google.dart.tools.debug.core.webkit.WebkitScript;
 
 import org.eclipse.core.resources.IMarkerDelta;
-import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.DebugPlugin;
+import org.eclipse.debug.core.IBreakpointManager;
+import org.eclipse.debug.core.IBreakpointManagerListener;
 import org.eclipse.debug.core.ILaunch;
 import org.eclipse.debug.core.ILaunchConfiguration;
 import org.eclipse.debug.core.model.IBreakpoint;
@@ -54,7 +55,8 @@ import java.util.List;
 /**
  * The IDebugTarget implementation for the Dartium debug elements.
  */
-public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTarget {
+public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTarget,
+    IBreakpointManagerListener {
   private static DartiumDebugTarget activeTarget;
 
   public static DartiumDebugTarget getActiveTarget() {
@@ -68,12 +70,11 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
   private String debugTargetName;
   private WebkitConnection connection;
   private ILaunch launch;
-  private IProject currentProject;
   private DartiumProcess process;
   private IResourceResolver resourceResolver;
   private boolean enableBreakpoints;
   private DartiumDebugThread debugThread;
-  private BreakpointManager breakpointManager;
+  private DartBreakpointManager breakpointManager;
   private CssScriptManager cssScriptManager;
   private HtmlScriptManager htmlScriptManager;
   private DartCodeManager dartCodeManager;
@@ -121,7 +122,11 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
       process = new DartiumProcess(this, debugTargetName, javaProcess);
     }
 
-    breakpointManager = new BreakpointManager(this);
+    if (enableBreakpoints) {
+      breakpointManager = new BreakpointManager(this);
+    } else {
+      breakpointManager = new NullBreakpointManager();
+    }
 
     cssScriptManager = new CssScriptManager(this);
 
@@ -134,8 +139,6 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
     }
 
     DartLaunchConfigWrapper wrapper = new DartLaunchConfigWrapper(launch.getLaunchConfiguration());
-
-    currentProject = wrapper.getProject();
 
     if (wrapper.getProject() != null) {
       sourceMapManager = new SourceMapManager(wrapper.getProject());
@@ -152,6 +155,15 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
   @Override
   public void breakpointChanged(IBreakpoint breakpoint, IMarkerDelta delta) {
     throw new NotYetImplementedException();
+  }
+
+  @Override
+  public void breakpointManagerEnablementChanged(boolean enabled) {
+    try {
+      getConnection().getDebugger().setBreakpointsActive(enableBreakpoints && enabled);
+    } catch (IOException e) {
+      DartDebugCorePlugin.logError(e);
+    }
   }
 
   @Override
@@ -223,6 +235,10 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
     return this;
   }
 
+  public boolean getEnableBreakpoints() {
+    return enableBreakpoints;
+  }
+
   @Override
   public ILaunch getLaunch() {
     return launch;
@@ -282,13 +298,10 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
       boolean enableBreakpoints, IResourceResolver resolver) throws IOException {
     this.resourceResolver = resolver;
 
-    if (enableBreakpoints) {
-      connection.getDebugger().setBreakpointsActive(true);
-      connection.getDebugger().setPauseOnExceptions(getPauseType(), null);
-    } else {
-      connection.getDebugger().setBreakpointsActive(false);
-      connection.getDebugger().setPauseOnExceptions(PauseOnExceptionsType.none);
-    }
+    IBreakpointManager eclipseBpManager = DebugPlugin.getDefault().getBreakpointManager();
+
+    connection.getDebugger().setBreakpointsActive(enableBreakpoints && eclipseBpManager.isEnabled());
+    connection.getDebugger().setPauseOnExceptions(getPauseType());
 
     getConnection().getPage().navigate(url);
   }
@@ -381,6 +394,12 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
     });
     connection.getDebugger().enable();
 
+    IBreakpointManager eclipseBpManager = DebugPlugin.getDefault().getBreakpointManager();
+    eclipseBpManager.addBreakpointManagerListener(this);
+
+    getConnection().getDebugger().setBreakpointsActive(
+        enableBreakpoints && eclipseBpManager.isEnabled());
+
     connection.getDebugger().canSetScriptSource(new WebkitCallback<Boolean>() {
       @Override
       public void handleResult(WebkitResult<Boolean> result) {
@@ -395,8 +414,6 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
 
     // Set our existing breakpoints and start listening for new breakpoints.
     breakpointManager.connect();
-
-    connection.getDebugger().setBreakpointsActive(enableBreakpoints);
 
     // TODO(devoncarew): listen for changes to DartDebugCorePlugin.PREFS_BREAK_ON_EXCEPTIONS
 
@@ -448,11 +465,7 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
       return false;
     }
 
-    if (currentProject == null) {
-      return true;
-    } else {
-      return currentProject.equals(((DartBreakpoint) breakpoint).getFile().getProject());
-    }
+    return true;
   }
 
   public boolean supportsSetScriptSource() {
@@ -499,7 +512,7 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
     };
   }
 
-  protected BreakpointManager getBreakpointManager() {
+  protected DartBreakpointManager getBreakpointManager() {
     return breakpointManager;
   }
 
@@ -523,15 +536,15 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
     if (replacedWithDevTools.equalsIgnoreCase(reason)) {
       // When the user opens the Webkit inspector our debug connection is closed.
       // We warn the user when this happens, since it otherwise isn't apparent to them
-      // when the debugger connection is closing.
-//      DebugUIHelper.getHelper().showError(
-//          "Debugger Connection Closed",
-//          "The debugger connection has been closed by the remote host.");
-      DebugUIHelper.getHelper().showDevtoolsDisconnectError("Debugger Connection Closed", this);
+      // when the debugger connection is closing.      
+      if (enableBreakpoints) {
+        // Only show this message if the user launched Dartium with debugging enabled.
+        DebugUIHelper.getHelper().showDevtoolsDisconnectError("Debugger Connection Closed", this);
+      }
     }
   }
 
-  protected void printExceptionToStdout(WebkitRemoteObject exception) {
+  protected void printExceptionToStdout(final WebkitRemoteObject exception) {
     try {
       getConnection().getRuntime().callToString(
           exception.getObjectId(),
@@ -540,6 +553,10 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
             public void handleResult(WebkitResult<String> result) {
               if (!result.isError()) {
                 String text = result.getResult();
+
+                if (exception.isPrimitive()) {
+                  text = exception.getValue();
+                }
 
                 int index = text.indexOf('\n');
 
@@ -584,6 +601,10 @@ public class DartiumDebugTarget extends DartiumDebugElement implements IDebugTar
   }
 
   private PauseOnExceptionsType getPauseType() {
+    if (!enableBreakpoints) {
+      return PauseOnExceptionsType.none;
+    }
+
     final BreakOnExceptions boe = DartDebugCorePlugin.getPlugin().getBreakOnExceptions();
     PauseOnExceptionsType pauseType = PauseOnExceptionsType.none;
 

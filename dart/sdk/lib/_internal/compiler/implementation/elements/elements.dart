@@ -20,7 +20,8 @@ import '../dart2jslib.dart' show InterfaceType,
                                  FunctionType,
                                  Selector,
                                  Constant,
-                                 Compiler;
+                                 Compiler,
+                                 isPrivateName;
 
 import '../dart_types.dart';
 
@@ -31,6 +32,8 @@ import '../scanner/scannerlib.dart' show Token,
 import '../ordered_typeset.dart' show OrderedTypeSet;
 
 import 'visitor.dart' show ElementVisitor;
+
+part 'names.dart';
 
 const int STATE_NOT_STARTED = 0;
 const int STATE_STARTED = 1;
@@ -180,7 +183,17 @@ abstract class Element implements Spannable {
   Link<MetadataAnnotation> get metadata;
 
   Node parseNode(DiagnosticListener listener);
-  DartType computeType(Compiler compiler);
+
+  /// Do not use [computeType] outside of the resolver; instead retrieve the
+  /// type from the corresponding field:
+  /// - `variables.type` for fields and variables.
+  /// - `type` for function elements.
+  /// - `thisType` or `rawType` for [TypeDeclarationElement]s (classes and
+  ///    typedefs), depending on the use case.
+  /// Trying to access a type that has not been computed in resolution is an
+  /// error and calling [computeType] covers that error.
+  /// This method will go away!
+  @deprecated DartType computeType(Compiler compiler);
 
   bool isFunction();
   bool isConstructor();
@@ -210,6 +223,12 @@ abstract class Element implements Spannable {
   bool isAmbiguous();
   bool isWarnOnUse();
 
+  /// Returns true if this [Element] is a top level element.
+  /// That is, if it is not defined within the scope of a class.
+  ///
+  /// This means whether the enclosing element is a compilation unit.
+  /// With the exception of [ClosureClassElement] that is considered top level
+  /// as all other classes.
   bool isTopLevel();
   bool isAssignable();
   bool isNative();
@@ -560,12 +579,16 @@ class Elements {
 
   static bool isConstructorOfTypedArraySubclass(Element element,
                                                 Compiler compiler) {
-    if (compiler.typedDataClass == null) return false;
-    ClassElement cls = element.getEnclosingClass();
-    if (cls == null || !element.isConstructor()) return false;
-    return compiler.world.isSubclass(compiler.typedDataClass, cls)
-        && cls.getLibrary() == compiler.typedDataLibrary
-        && element.name == '';
+    if (compiler.typedDataLibrary == null) return false;
+    if (!element.isConstructor()) return false;
+    FunctionElement constructor = element;
+    constructor = constructor.redirectionTarget;
+    ClassElement cls = constructor.getEnclosingClass();
+    return cls.getLibrary() == compiler.typedDataLibrary
+        && cls.isNative()
+        && compiler.world.isSubtype(compiler.typedDataClass, cls)
+        && compiler.world.isSubtype(compiler.listClass, cls)
+        && constructor.name == '';
   }
 
   static bool switchStatementHasContinue(SwitchStatement node,
@@ -613,7 +636,7 @@ abstract class WarnOnUseElement extends Element {
 }
 
 abstract class AmbiguousElement extends Element {
-  DualKind get messageKind;
+  MessageKind get messageKind;
   Map get messageArguments;
   Element get existingElement;
   Element get newElement;
@@ -707,6 +730,9 @@ abstract class LibraryElement extends Element implements ScopeContainerElement {
   Element findExported(String elementName);
   void forEachExport(f(Element element));
 
+  /// Returns the imports that import element into this library.
+  Link<Import> getImportsFor(Element element);
+
   bool hasLibraryName();
   String getLibraryName();
   String getLibraryOrScriptName();
@@ -750,6 +776,7 @@ abstract class FieldParameterElement extends VariableElement {
   VariableElement get fieldElement;
 }
 
+// TODO(johnniwinther): Remove this interface.
 abstract class VariableListElement extends Element {
   DartType get type;
   FunctionSignature get functionSignature;
@@ -891,11 +918,19 @@ abstract class ClassElement extends TypeDeclarationElement
 
   bool isObject(Compiler compiler);
   bool isSubclassOf(ClassElement cls);
+  /// Returns true if `this` explicitly/nominally implements [intrface].
+  ///
+  /// Note that, if [intrface] is the `Function` class, this method returns
+  /// falso for a class that has a `call` method but does not explicitly
+  /// implement `Function`.
   bool implementsInterface(ClassElement intrface);
   bool hasFieldShadowedBy(Element fieldMember);
 
   /// Returns `true` if this class has a @proxy annotation.
   bool get isProxy;
+
+  /// Returns `true` if the class hierarchy for this class contains errors.
+  bool get hasIncompleteHierarchy;
 
   ClassElement ensureResolved(Compiler compiler);
 
@@ -938,6 +973,22 @@ abstract class ClassElement extends TypeDeclarationElement
   void forEachBackendMember(void f(Element member));
 
   Link<DartType> computeTypeParameters(Compiler compiler);
+
+  /// Looks up the member [name] in this class.
+  Member lookupClassMember(Name name);
+
+  /// Calls [f] with each member of this class.
+  void forEachClassMember(f(Member member));
+
+  /// Looks up the member [name] in the interface of this class.
+  MemberSignature lookupInterfaceMember(Name name);
+
+  /// Calls [f] with each member of the interface of this class.
+  void forEachInterfaceMember(f(MemberSignature member));
+
+  /// Returns the type of the 'call' method in the interface of this class, or
+  /// `null` if the interface has no 'call' method.
+  FunctionType get callType;
 }
 
 abstract class MixinApplicationElement extends ClassElement {
@@ -1001,3 +1052,77 @@ abstract class MetadataAnnotation implements Spannable {
 }
 
 abstract class VoidElement extends Element {}
+
+/// A [MemberSignature] is a member of an interface.
+///
+/// A signature is either a method or a getter or setter, possibly implicitly
+/// defined by a field declarations. Fields themselves are not members of an
+/// interface.
+///
+/// A [MemberSignature] may be defined by a member declaration or may be
+/// synthetized from a set of declarations.
+abstract class MemberSignature {
+  /// The name of this member.
+  Name get name;
+
+  /// The type of the member when accessed. For getters and setters this is the
+  /// return type and argument type, respectively. For methods the type is the
+  /// [functionType] defined by the return type and parameters.
+  DartType get type;
+
+  /// The function type of the member. For a getter `Foo get foo` this is
+  /// `() -> Foo`, for a setter `void set foo(Foo _)` this is `(Foo) -> void`.
+  /// For methods the function type is defined by the return type and
+  /// parameters.
+  FunctionType get functionType;
+
+  /// Returns `true` if this member is a getter, possibly implictly defined by a
+  /// field declaration.
+  bool get isGetter;
+
+  /// Returns `true` if this member is a setter, possibly implictly defined by a
+  /// field declaration.
+  bool get isSetter;
+
+  /// Returns `true` if this member is a method, that is neither a getter nor
+  /// setter.
+  bool get isMethod;
+
+  /// Returns an iterable of the declarations that define this member.
+  Iterable<Member> get declarations;
+}
+
+/// A [Member] is a member of a class, that is either a method or a getter or
+/// setter, possibly implicitly defined by a field declarations. Fields
+/// themselves are not members of a class.
+///
+/// A [Member] of a class also defines a signature which is a member of the
+/// corresponding interface type.
+///
+/// A [Member] is implicitly concrete. An abstract declaration only declares
+/// a signature in the interface of its class.
+///
+/// A [Member] is always declared by an [Element] which is accessibly through
+/// the [element] getter.
+abstract class Member extends MemberSignature {
+  /// The [Element] that declared this member, possibly implicitly in case of
+  /// a getter or setter defined by a field.
+  Element get element;
+
+  /// The instance of the class that declared this member.
+  ///
+  /// For instance:
+  ///   class A<T> { T m() {} }
+  ///   class B<S> extends A<S> {}
+  /// The declarer of `m` in `A` is `A<T>` whereas the declarer of `m` in `B` is
+  /// `A<S>`.
+  InterfaceType get declarer;
+
+  /// Returns `true` if this member is static.
+  bool get isStatic;
+
+  /// Returns `true` if this member is a getter or setter implicitly declared
+  /// by a field.
+  bool get isDeclaredByField;
+}
+

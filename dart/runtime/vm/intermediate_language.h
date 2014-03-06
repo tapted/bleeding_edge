@@ -168,6 +168,9 @@ class Range;
   V(_Float32x4Array, []=, Float32x4ArraySetIndexed, 1583018506)                \
   V(_Int32x4Array, [], Int32x4ArrayGetIndexed, 1911863146)                     \
   V(_Int32x4Array, []=, Int32x4ArraySetIndexed, 973572811)                     \
+  V(_Float64x2Array, [], Float64x2ArrayGetIndexed, 325873961)                  \
+  V(_Float64x2Array, []=, Float64x2ArraySetIndexed, 2105580462)                \
+
 
 
 // A list of core function that should always be inlined.
@@ -177,12 +180,32 @@ class Range;
   V(_TypedList, get:length, TypedDataLength, 26646119)                         \
   V(_GrowableList, get:length, GrowableArrayLength, 1654255033)                \
   V(_StringBase, get:length, StringBaseLength, 1483549854)                     \
-  V(ListIterator, moveNext, ListIteratorMoveNext, 881367324)                   \
+  V(ListIterator, moveNext, ListIteratorMoveNext, 2062984847)                  \
   V(_GrowableList, get:iterator, GrowableArrayIterator, 1155241039)            \
   V(_GrowableList, forEach, GrowableArrayForEach, 195359970)                   \
+  V(_Uint8ArrayView, [], Uint8ArrayViewGetIndexed, 250795553)                  \
+  V(_Uint8ArrayView, []=, Uint8ArrayViewSetIndexed, 533993880)                 \
+  V(_Int8ArrayView, [], Int8ArrayViewGetIndexed, 530738523)                    \
+  V(_Int8ArrayView, []=, Int8ArrayViewSetIndexed, 1513635170)                  \
+  V(::, asin, MathASin, 1528431637)                                            \
+  V(::, acos, MathACos, 1558635398)                                            \
+  V(::, atan, MathATan, 209476605)                                             \
+  V(::, atan2, MathATan2, 2059468649)                                          \
+  V(::, cos, MathCos, 1282146521)                                              \
+  V(::, exp, MathExp, 1951779581)                                              \
+  V(::, log, MathLog, 255699484)                                               \
+  V(::, max, MathMax, 612058870)                                               \
+  V(::, min, MathMin, 1022567780)                                              \
+  V(::, pow, MathPow, 1880071137)                                              \
+  V(::, sin, MathSin, 730107143)                                               \
+  V(::, sqrt, MathSqrt, 465520247)                                             \
+  V(::, tan, MathTan, 2077846426)                                              \
+
 
 // A list of core functions that internally dispatch based on received id.
 #define POLYMORPHIC_TARGET_LIST(V)                                             \
+  V(_StringBase, [], StringBaseCharAt, 585372763)                              \
+  V(_StringBase, codeUnitAt, StringBaseCodeUnitAt, 1958436584)                 \
   V(_TypedList, _getInt8, ByteArrayBaseGetInt8, 272598802)                     \
   V(_TypedList, _getUint8, ByteArrayBaseGetUint8, 831354841)                   \
   V(_TypedList, _getInt16, ByteArrayBaseGetInt16, 1832126257)                  \
@@ -193,6 +216,16 @@ class Range;
   V(_TypedList, _getFloat64, ByteArrayBaseGetFloat64, 1356392173)              \
   V(_TypedList, _getFloat32x4, ByteArrayBaseGetFloat32x4, 1239681356)          \
   V(_TypedList, _getInt32x4, ByteArrayBaseGetInt32x4, 163795162)               \
+  V(_TypedList, _setInt8, ByteArrayBaseSetInt8, 1793798234)                    \
+  V(_TypedList, _setUint8, ByteArrayBaseSetInt8, 67253374)                     \
+  V(_TypedList, _setInt16, ByteArrayBaseSetInt16, 10467750)                    \
+  V(_TypedList, _setUint16, ByteArrayBaseSetInt16, 1596986894)                 \
+  V(_TypedList, _setInt32, ByteArrayBaseSetInt32, 868037529)                   \
+  V(_TypedList, _setUint32, ByteArrayBaseSetUint32, 1776345006)                \
+  V(_TypedList, _setFloat32, ByteArrayBaseSetFloat32, 1807927533)              \
+  V(_TypedList, _setFloat64, ByteArrayBaseSetFloat64, 399659907)               \
+  V(_TypedList, _setFloat32x4, ByteArrayBaseSetFloat32x4, 1612092224)          \
+  V(_TypedList, _setInt32x4, ByteArrayBaseSetInt32x4, 74799321)                \
 
 // Class that recognizes the name and owner of a function and returns the
 // corresponding enum. See RECOGNIZED_LIST above for list of recognizable
@@ -302,7 +335,7 @@ class CompileType : public ValueObject {
   // Create None CompileType. It is the bottom of the lattice and is used to
   // represent type of the phi that was not yet inferred.
   static CompileType None() {
-    return CompileType(true, kIllegalCid, NULL);
+    return CompileType(kNullable, kIllegalCid, NULL);
   }
 
   // Create Dynamic CompileType. It is the top of the lattice and is used to
@@ -482,6 +515,7 @@ class Value : public ZoneAllocated {
 
   // Change the definition after use lists have been computed.
   inline void BindTo(Definition* definition);
+  inline void BindToEnvironment(Definition* definition);
 
   Value* Copy() { return new Value(definition_); }
 
@@ -620,6 +654,7 @@ class EmbeddedArray<T, 0> {
   M(EqualityCompare)                                                           \
   M(RelationalOp)                                                              \
   M(NativeCall)                                                                \
+  M(DebugStepCheck)                                                            \
   M(LoadIndexed)                                                               \
   M(StoreIndexed)                                                              \
   M(StoreInstanceField)                                                        \
@@ -628,17 +663,12 @@ class EmbeddedArray<T, 0> {
   M(BooleanNegate)                                                             \
   M(InstanceOf)                                                                \
   M(CreateArray)                                                               \
-  M(CreateClosure)                                                             \
   M(AllocateObject)                                                            \
-  M(AllocateObjectWithBoundsCheck)                                             \
   M(LoadField)                                                                 \
-  M(StoreVMField)                                                              \
   M(LoadUntagged)                                                              \
   M(LoadClassId)                                                               \
   M(InstantiateType)                                                           \
   M(InstantiateTypeArguments)                                                  \
-  M(ExtractConstructorTypeArguments)                                           \
-  M(ExtractConstructorInstantiator)                                            \
   M(AllocateContext)                                                           \
   M(CloneContext)                                                              \
   M(BinarySmiOp)                                                               \
@@ -649,6 +679,8 @@ class EmbeddedArray<T, 0> {
   M(DoubleToInteger)                                                           \
   M(DoubleToSmi)                                                               \
   M(DoubleToDouble)                                                            \
+  M(DoubleToFloat)                                                             \
+  M(FloatToDouble)                                                             \
   M(CheckClass)                                                                \
   M(CheckSmi)                                                                  \
   M(Constant)                                                                  \
@@ -669,6 +701,7 @@ class EmbeddedArray<T, 0> {
   M(UnaryMintOp)                                                               \
   M(CheckArrayBound)                                                           \
   M(Constraint)                                                                \
+  M(StringToCharCode)                                                          \
   M(StringFromCharCode)                                                        \
   M(StringInterpolate)                                                         \
   M(InvokeMathCFunction)                                                       \
@@ -698,6 +731,8 @@ class EmbeddedArray<T, 0> {
   M(Int32x4ToFloat32x4)                                                        \
   M(BinaryInt32x4Op)                                                           \
   M(TestSmi)                                                                   \
+  M(BoxFloat64x2)                                                              \
+  M(UnboxFloat64x2)                                                            \
 
 
 #define FORWARD_DECLARATION(type) class type##Instr;
@@ -964,6 +999,7 @@ FOR_EACH_INSTRUCTION(INSTRUCTION_TYPE_CHECK)
   friend class UnboxIntegerInstr;
   friend class UnboxDoubleInstr;
   friend class UnboxFloat32x4Instr;
+  friend class UnboxFloat64x2Instr;
   friend class UnboxInt32x4Instr;
   friend class BinaryDoubleOpInstr;
   friend class BinaryFloat32x4OpInstr;
@@ -1003,6 +1039,8 @@ FOR_EACH_INSTRUCTION(INSTRUCTION_TYPE_CHECK)
   friend class LICM;
   friend class DoubleToSmiInstr;
   friend class DoubleToDoubleInstr;
+  friend class DoubleToFloatInstr;
+  friend class FloatToDoubleInstr;
   friend class InvokeMathCFunctionInstr;
   friend class MergedMathInstr;
   friend class FlowGraphOptimizer;
@@ -1789,6 +1827,13 @@ inline void Value::BindTo(Definition* def) {
   RemoveFromUseList();
   set_definition(def);
   def->AddInputUse(this);
+}
+
+
+inline void Value::BindToEnvironment(Definition* def) {
+  RemoveFromUseList();
+  set_definition(def);
+  def->AddEnvUse(this);
 }
 
 
@@ -2629,6 +2674,7 @@ class AssertAssignableInstr : public TemplateDefinition<3> {
 
   DECLARE_INSTRUCTION(AssertAssignable)
   virtual CompileType* ComputeInitialType() const;
+  virtual bool RecomputeType();
 
   Value* value() const { return inputs_[0]; }
   Value* instantiator() const { return inputs_[1]; }
@@ -3177,7 +3223,8 @@ class StaticCallInstr : public TemplateDefinition<0> {
         argument_names_(argument_names),
         arguments_(arguments),
         result_cid_(kDynamicCid),
-        is_known_list_constructor_(false) {
+        is_known_list_constructor_(false),
+        is_native_list_factory_(false) {
     ASSERT(function.IsZoneHandle());
     ASSERT(argument_names.IsZoneHandle() ||  argument_names.InVMHeap());
   }
@@ -3216,6 +3263,11 @@ class StaticCallInstr : public TemplateDefinition<0> {
     is_known_list_constructor_ = value;
   }
 
+  bool is_native_list_factory() const { return is_native_list_factory_; }
+  void set_is_native_list_factory(bool value) {
+    is_native_list_factory_ = value;
+  }
+
   virtual bool MayThrow() const { return true; }
 
  private:
@@ -3228,6 +3280,7 @@ class StaticCallInstr : public TemplateDefinition<0> {
 
   // 'True' for recognized list constructors.
   bool is_known_list_constructor_;
+  bool is_native_list_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(StaticCallInstr);
 };
@@ -3311,6 +3364,8 @@ class DropTempsInstr : public TemplateDefinition<1> {
   intptr_t num_temps() const { return num_temps_; }
 
   virtual CompileType* ComputeInitialType() const;
+
+  virtual void PrintOperandsTo(BufferFormatter* f) const;
 
   virtual bool CanDeoptimize() const { return false; }
 
@@ -3414,6 +3469,31 @@ class NativeCallInstr : public TemplateDefinition<0> {
 };
 
 
+class DebugStepCheckInstr : public TemplateInstruction<0> {
+ public:
+  DebugStepCheckInstr(intptr_t token_pos,
+                      PcDescriptors::Kind stub_kind)
+      : token_pos_(token_pos),
+        stub_kind_(stub_kind) {
+  }
+
+  DECLARE_INSTRUCTION(DebugStepCheck)
+
+  intptr_t token_pos() const { return token_pos_; }
+  virtual bool MayThrow() const { return false; }
+  virtual bool CanDeoptimize() const { return false; }
+  virtual EffectSet Effects() const { return EffectSet::All(); }
+  virtual intptr_t ArgumentCount() const { return 0; }
+  virtual Instruction* Canonicalize(FlowGraph* flow_graph);
+
+ private:
+  const intptr_t token_pos_;
+  const PcDescriptors::Kind stub_kind_;
+
+  DISALLOW_COPY_AND_ASSIGN(DebugStepCheckInstr);
+};
+
+
 enum StoreBarrierType {
   kNoStoreBarrier,
   kEmitStoreBarrier
@@ -3428,6 +3508,20 @@ class StoreInstanceFieldInstr : public TemplateDefinition<2> {
                           StoreBarrierType emit_store_barrier,
                           bool is_initialization = false)
       : field_(field),
+        offset_in_bytes_(field.Offset()),
+        emit_store_barrier_(emit_store_barrier),
+        is_initialization_(is_initialization) {
+    SetInputAt(kInstancePos, instance);
+    SetInputAt(kValuePos, value);
+  }
+
+  StoreInstanceFieldInstr(intptr_t offset_in_bytes,
+                          Value* instance,
+                          Value* value,
+                          StoreBarrierType emit_store_barrier,
+                          bool is_initialization = false)
+      : field_(Field::Handle()),
+        offset_in_bytes_(offset_in_bytes),
         emit_store_barrier_(emit_store_barrier),
         is_initialization_(is_initialization) {
     SetInputAt(kInstancePos, instance);
@@ -3447,6 +3541,7 @@ class StoreInstanceFieldInstr : public TemplateDefinition<2> {
   virtual CompileType* ComputeInitialType() const;
 
   const Field& field() const { return field_; }
+  intptr_t offset_in_bytes() const { return offset_in_bytes_; }
 
   bool ShouldEmitStoreBarrier() const {
     return value()->NeedsStoreBuffer()
@@ -3473,11 +3568,7 @@ class StoreInstanceFieldInstr : public TemplateDefinition<2> {
 
   bool IsPotentialUnboxedStore() const;
 
-  virtual Representation RequiredInputRepresentation(intptr_t index) const {
-    ASSERT((index == 0) || (index == 1));
-    if ((index == 1) && IsUnboxedStore()) return kUnboxedDouble;
-    return kTagged;
-  }
+  virtual Representation RequiredInputRepresentation(intptr_t index) const;
 
  private:
   friend class FlowGraphOptimizer;  // For ASSERT(initialization_).
@@ -3490,6 +3581,7 @@ class StoreInstanceFieldInstr : public TemplateDefinition<2> {
   }
 
   const Field& field_;
+  intptr_t offset_in_bytes_;
   const StoreBarrierType emit_store_barrier_;
   const bool is_initialization_;  // Marks stores in the constructor.
 
@@ -3667,9 +3759,9 @@ class StringFromCharCodeInstr : public TemplateDefinition<1> {
  public:
   StringFromCharCodeInstr(Value* char_code, intptr_t cid) : cid_(cid) {
     ASSERT(char_code != NULL);
-    ASSERT(char_code->definition()->IsLoadIndexed() &&
-           (char_code->definition()->AsLoadIndexed()->class_id() ==
-            kOneByteStringCid));
+    ASSERT(char_code->definition()->IsLoadIndexed());
+    ASSERT(char_code->definition()->AsLoadIndexed()->class_id() ==
+           kOneByteStringCid);
     SetInputAt(0, char_code);
   }
 
@@ -3693,6 +3785,36 @@ class StringFromCharCodeInstr : public TemplateDefinition<1> {
   const intptr_t cid_;
 
   DISALLOW_COPY_AND_ASSIGN(StringFromCharCodeInstr);
+};
+
+
+class StringToCharCodeInstr : public TemplateDefinition<1> {
+ public:
+  StringToCharCodeInstr(Value* str, intptr_t cid) : cid_(cid) {
+    ASSERT(str != NULL);
+    SetInputAt(0, str);
+  }
+
+  DECLARE_INSTRUCTION(StringToCharCode)
+  virtual CompileType ComputeType() const;
+
+  Value* str() const { return inputs_[0]; }
+
+  virtual bool CanDeoptimize() const { return false; }
+
+  virtual bool AllowsCSE() const { return true; }
+  virtual EffectSet Effects() const { return EffectSet::None(); }
+  virtual EffectSet Dependencies() const { return EffectSet::None(); }
+  virtual bool AttributesEqual(Instruction* other) const {
+    return other->AsStringToCharCode()->cid_ == cid_;
+  }
+
+  virtual bool MayThrow() const { return false; }
+
+ private:
+  const intptr_t cid_;
+
+  DISALLOW_COPY_AND_ASSIGN(StringToCharCodeInstr);
 };
 
 
@@ -3878,7 +4000,7 @@ class AllocateObjectInstr : public TemplateDefinition<0> {
         closure_function_(Function::ZoneHandle()),
         context_field_(Field::ZoneHandle()) {
     // Either no arguments or one type-argument and one instantiator.
-    ASSERT(arguments->is_empty() || (arguments->length() == 2));
+    ASSERT(arguments->is_empty() || (arguments->length() == 1));
   }
 
   DECLARE_INSTRUCTION(AllocateObject)
@@ -3951,8 +4073,8 @@ class MaterializeObjectInstr : public Definition {
   }
 
   const Class& cls() const { return cls_; }
-  const Field& FieldAt(intptr_t i) const {
-    return *fields_[i];
+  intptr_t FieldOffsetAt(intptr_t i) const {
+    return fields_[i]->Offset();
   }
   const Location& LocationAt(intptr_t i) {
     return locations_[i];
@@ -3967,6 +4089,16 @@ class MaterializeObjectInstr : public Definition {
 
   virtual Value* InputAt(intptr_t i) const {
     return (*values_)[i];
+  }
+
+  // SelectRepresentations pass is run once more while MaterializeObject
+  // instructions are still in the graph. To avoid any redundant boxing
+  // operations inserted by that pass we should indicate that this
+  // instruction can cope with any representation as it is essentially
+  // an environment use.
+  virtual Representation RequiredInputRepresentation(intptr_t idx) const {
+    ASSERT(0 <= idx && idx < InputCount());
+    return kNoRepresentation;
   }
 
   virtual bool CanDeoptimize() const { return false; }
@@ -3991,57 +4123,28 @@ class MaterializeObjectInstr : public Definition {
 };
 
 
-class AllocateObjectWithBoundsCheckInstr : public TemplateDefinition<0> {
- public:
-  explicit AllocateObjectWithBoundsCheckInstr(ConstructorCallNode* node)
-      : ast_node_(*node) {
-  }
-
-  DECLARE_INSTRUCTION(AllocateObjectWithBoundsCheck)
-
-  virtual intptr_t ArgumentCount() const { return 4; }
-
-  const Function& constructor() const { return ast_node_.constructor(); }
-  intptr_t token_pos() const { return ast_node_.token_pos(); }
-
-  virtual void PrintOperandsTo(BufferFormatter* f) const;
-
-  virtual bool CanDeoptimize() const { return true; }
-
-  virtual EffectSet Effects() const { return EffectSet::None(); }
-
-  virtual bool MayThrow() const { return false; }
-
- private:
-  const ConstructorCallNode& ast_node_;
-
-  DISALLOW_COPY_AND_ASSIGN(AllocateObjectWithBoundsCheckInstr);
-};
-
-
-class CreateArrayInstr : public TemplateDefinition<1> {
+class CreateArrayInstr : public TemplateDefinition<2> {
  public:
   CreateArrayInstr(intptr_t token_pos,
-                   intptr_t num_elements,
-                   const AbstractType& type,
-                   Value* element_type)
-      : token_pos_(token_pos),
-        num_elements_(num_elements),
-        type_(type) {
-    ASSERT(type_.IsZoneHandle());
-    ASSERT(!type_.IsNull());
-    ASSERT(type_.IsFinalized());
-    SetInputAt(0, element_type);
+                   Value* element_type,
+                   Value* num_elements)
+      : token_pos_(token_pos) {
+    SetInputAt(kElementTypePos, element_type);
+    SetInputAt(kLengthPos, num_elements);
   }
+
+  enum {
+    kElementTypePos = 0,
+    kLengthPos = 1
+  };
 
   DECLARE_INSTRUCTION(CreateArray)
   virtual CompileType ComputeType() const;
 
-  intptr_t num_elements() const { return num_elements_; }
 
   intptr_t token_pos() const { return token_pos_; }
-  const AbstractType& type() const { return type_; }
-  Value* element_type() const { return inputs_[0]; }
+  Value* element_type() const { return inputs_[kElementTypePos]; }
+  Value* num_elements() const { return inputs_[kLengthPos]; }
 
   virtual void PrintOperandsTo(BufferFormatter* f) const;
 
@@ -4053,47 +4156,8 @@ class CreateArrayInstr : public TemplateDefinition<1> {
 
  private:
   const intptr_t token_pos_;
-  const intptr_t num_elements_;
-  const AbstractType& type_;
 
   DISALLOW_COPY_AND_ASSIGN(CreateArrayInstr);
-};
-
-
-class CreateClosureInstr : public TemplateDefinition<0> {
- public:
-  CreateClosureInstr(const Function& function,
-                     ZoneGrowableArray<PushArgumentInstr*>* arguments,
-                     intptr_t token_pos)
-      : function_(function),
-        arguments_(arguments),
-        token_pos_(token_pos) { }
-
-  DECLARE_INSTRUCTION(CreateClosure)
-  virtual CompileType ComputeType() const;
-
-  intptr_t token_pos() const { return token_pos_; }
-  const Function& function() const { return function_; }
-
-  virtual intptr_t ArgumentCount() const { return arguments_->length(); }
-  virtual PushArgumentInstr* PushArgumentAt(intptr_t index) const {
-    return (*arguments_)[index];
-  }
-
-  virtual void PrintOperandsTo(BufferFormatter* f) const;
-
-  virtual bool CanDeoptimize() const { return false; }
-
-  virtual EffectSet Effects() const { return EffectSet::None(); }
-
-  virtual bool MayThrow() const { return false; }
-
- private:
-  const Function& function_;
-  ZoneGrowableArray<PushArgumentInstr*>* arguments_;
-  intptr_t token_pos_;
-
-  DISALLOW_COPY_AND_ASSIGN(CreateClosureInstr);
 };
 
 
@@ -4178,6 +4242,21 @@ class LoadFieldInstr : public TemplateDefinition<1> {
     SetInputAt(0, instance);
   }
 
+  LoadFieldInstr(Value* instance,
+                 const Field* field,
+                 const AbstractType& type,
+                 bool immutable = false)
+      : offset_in_bytes_(field->Offset()),
+        type_(type),
+        result_cid_(kDynamicCid),
+        immutable_(immutable),
+        recognized_kind_(MethodRecognizer::kUnknown),
+        field_(field) {
+    ASSERT(field->IsZoneHandle());
+    ASSERT(type.IsZoneHandle());  // May be null if field is not an instance.
+    SetInputAt(0, instance);
+  }
+
   Value* instance() const { return inputs_[0]; }
   intptr_t offset_in_bytes() const { return offset_in_bytes_; }
   const AbstractType& type() const { return type_; }
@@ -4185,11 +4264,8 @@ class LoadFieldInstr : public TemplateDefinition<1> {
   intptr_t result_cid() const { return result_cid_; }
 
   const Field* field() const { return field_; }
-  void set_field(const Field* field) { field_ = field; }
 
-  virtual Representation representation() const {
-    return IsUnboxedLoad() ? kUnboxedDouble : kTagged;
-  }
+  virtual Representation representation() const;
 
   bool IsUnboxedLoad() const;
 
@@ -4241,47 +4317,6 @@ class LoadFieldInstr : public TemplateDefinition<1> {
 };
 
 
-class StoreVMFieldInstr : public TemplateDefinition<2> {
- public:
-  StoreVMFieldInstr(Value* dest,
-                    intptr_t offset_in_bytes,
-                    Value* value,
-                    const AbstractType& type)
-      : offset_in_bytes_(offset_in_bytes), type_(type) {
-    ASSERT(type.IsZoneHandle());  // May be null if field is not an instance.
-    SetInputAt(kValuePos, value);
-    SetInputAt(kDestPos, dest);
-  }
-
-  enum {
-    kValuePos = 0,
-    kDestPos = 1
-  };
-
-  DECLARE_INSTRUCTION(StoreVMField)
-  virtual CompileType* ComputeInitialType() const;
-
-  Value* value() const { return inputs_[kValuePos]; }
-  Value* dest() const { return inputs_[kDestPos]; }
-  intptr_t offset_in_bytes() const { return offset_in_bytes_; }
-  const AbstractType& type() const { return type_; }
-
-  virtual void PrintOperandsTo(BufferFormatter* f) const;
-
-  virtual bool CanDeoptimize() const { return false; }
-
-  virtual EffectSet Effects() const { return EffectSet::None(); }
-
-  virtual bool MayThrow() const { return false; }
-
- private:
-  const intptr_t offset_in_bytes_;
-  const AbstractType& type_;
-
-  DISALLOW_COPY_AND_ASSIGN(StoreVMFieldInstr);
-};
-
-
 class InstantiateTypeInstr : public TemplateDefinition<1> {
  public:
   InstantiateTypeInstr(intptr_t token_pos,
@@ -4323,7 +4358,7 @@ class InstantiateTypeInstr : public TemplateDefinition<1> {
 class InstantiateTypeArgumentsInstr : public TemplateDefinition<1> {
  public:
   InstantiateTypeArgumentsInstr(intptr_t token_pos,
-                                const AbstractTypeArguments& type_arguments,
+                                const TypeArguments& type_arguments,
                                 const Class& instantiator_class,
                                 Value* instantiator)
       : token_pos_(token_pos),
@@ -4336,7 +4371,7 @@ class InstantiateTypeArgumentsInstr : public TemplateDefinition<1> {
   DECLARE_INSTRUCTION(InstantiateTypeArguments)
 
   Value* instantiator() const { return inputs_[0]; }
-  const AbstractTypeArguments& type_arguments() const {
+  const TypeArguments& type_arguments() const {
     return type_arguments_;
   }
   const Class& instantiator_class() const { return instantiator_class_; }
@@ -4350,84 +4385,14 @@ class InstantiateTypeArgumentsInstr : public TemplateDefinition<1> {
 
   virtual bool MayThrow() const { return true; }
 
+  virtual Definition* Canonicalize(FlowGraph* flow_graph);
+
  private:
   const intptr_t token_pos_;
-  const AbstractTypeArguments& type_arguments_;
+  const TypeArguments& type_arguments_;
   const Class& instantiator_class_;
 
   DISALLOW_COPY_AND_ASSIGN(InstantiateTypeArgumentsInstr);
-};
-
-
-class ExtractConstructorTypeArgumentsInstr : public TemplateDefinition<1> {
- public:
-  ExtractConstructorTypeArgumentsInstr(
-      intptr_t token_pos,
-      const AbstractTypeArguments& type_arguments,
-      const Class& instantiator_class,
-      Value* instantiator)
-      : token_pos_(token_pos),
-        type_arguments_(type_arguments),
-        instantiator_class_(instantiator_class) {
-    SetInputAt(0, instantiator);
-  }
-
-  DECLARE_INSTRUCTION(ExtractConstructorTypeArguments)
-
-  Value* instantiator() const { return inputs_[0]; }
-  const AbstractTypeArguments& type_arguments() const {
-    return type_arguments_;
-  }
-  const Class& instantiator_class() const { return instantiator_class_; }
-  intptr_t token_pos() const { return token_pos_; }
-
-  virtual void PrintOperandsTo(BufferFormatter* f) const;
-
-  virtual bool CanDeoptimize() const { return false; }
-
-  virtual EffectSet Effects() const { return EffectSet::None(); }
-
-  virtual bool MayThrow() const { return false; }
-
- private:
-  const intptr_t token_pos_;
-  const AbstractTypeArguments& type_arguments_;
-  const Class& instantiator_class_;
-
-  DISALLOW_COPY_AND_ASSIGN(ExtractConstructorTypeArgumentsInstr);
-};
-
-
-class ExtractConstructorInstantiatorInstr : public TemplateDefinition<1> {
- public:
-  ExtractConstructorInstantiatorInstr(ConstructorCallNode* ast_node,
-                                      const Class& instantiator_class,
-                                      Value* instantiator)
-      : ast_node_(*ast_node), instantiator_class_(instantiator_class) {
-    SetInputAt(0, instantiator);
-  }
-
-  DECLARE_INSTRUCTION(ExtractConstructorInstantiator)
-
-  Value* instantiator() const { return inputs_[0]; }
-  const AbstractTypeArguments& type_arguments() const {
-    return ast_node_.type_arguments();
-  }
-  const Function& constructor() const { return ast_node_.constructor(); }
-  const Class& instantiator_class() const { return instantiator_class_; }
-  intptr_t token_pos() const { return ast_node_.token_pos(); }
-
-  virtual bool CanDeoptimize() const { return false; }
-
-  virtual EffectSet Effects() const { return EffectSet::None(); }
-
-  virtual bool MayThrow() const { return false; }
-
- private:
-  const ConstructorCallNode& ast_node_;
-  const Class& instantiator_class_;
-
-  DISALLOW_COPY_AND_ASSIGN(ExtractConstructorInstantiatorInstr);
 };
 
 
@@ -4592,6 +4557,43 @@ class BoxFloat32x4Instr : public TemplateDefinition<1> {
 };
 
 
+class BoxFloat64x2Instr : public TemplateDefinition<1> {
+ public:
+  explicit BoxFloat64x2Instr(Value* value) {
+    SetInputAt(0, value);
+  }
+
+  Value* value() const { return inputs_[0]; }
+
+  virtual bool CanDeoptimize() const { return false; }
+
+  virtual intptr_t DeoptimizationTarget() const {
+    return Isolate::kNoDeoptId;
+  }
+
+  virtual Representation RequiredInputRepresentation(intptr_t idx) const {
+    ASSERT(idx == 0);
+    return kUnboxedFloat64x2;
+  }
+
+  DECLARE_INSTRUCTION(BoxFloat64x2)
+  virtual CompileType ComputeType() const;
+
+  virtual bool AllowsCSE() const { return true; }
+  virtual EffectSet Effects() const { return EffectSet::None(); }
+  virtual EffectSet Dependencies() const { return EffectSet::None(); }
+  virtual bool AttributesEqual(Instruction* other) const { return true; }
+
+  virtual bool MayThrow() const { return false; }
+
+  Definition* Canonicalize(FlowGraph* flow_graph);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BoxFloat64x2Instr);
+};
+
+
+
 class BoxInt32x4Instr : public TemplateDefinition<1> {
  public:
   explicit BoxInt32x4Instr(Value* value) {
@@ -4731,6 +4733,40 @@ class UnboxFloat32x4Instr : public TemplateDefinition<1> {
 };
 
 
+class UnboxFloat64x2Instr : public TemplateDefinition<1> {
+ public:
+  UnboxFloat64x2Instr(Value* value, intptr_t deopt_id) {
+    SetInputAt(0, value);
+    deopt_id_ = deopt_id;
+  }
+
+  Value* value() const { return inputs_[0]; }
+
+  virtual bool CanDeoptimize() const {
+    return (value()->Type()->ToCid() != kFloat64x2Cid);
+  }
+
+  virtual Representation representation() const {
+    return kUnboxedFloat64x2;
+  }
+
+  DECLARE_INSTRUCTION(UnboxFloat64x2)
+  virtual CompileType ComputeType() const;
+
+  virtual bool AllowsCSE() const { return true; }
+  virtual EffectSet Effects() const { return EffectSet::None(); }
+  virtual EffectSet Dependencies() const { return EffectSet::None(); }
+  virtual bool AttributesEqual(Instruction* other) const { return true; }
+
+  virtual bool MayThrow() const { return false; }
+
+  Definition* Canonicalize(FlowGraph* flow_graph);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(UnboxFloat64x2Instr);
+};
+
+
 class UnboxInt32x4Instr : public TemplateDefinition<1> {
  public:
   UnboxInt32x4Instr(Value* value, intptr_t deopt_id) {
@@ -4841,6 +4877,8 @@ class MathUnaryInstr : public TemplateDefinition<1> {
   }
 
   virtual bool MayThrow() const { return false; }
+
+  Definition* Canonicalize(FlowGraph* flow_graph);
 
  private:
   const MethodRecognizer::Kind kind_;
@@ -6559,6 +6597,92 @@ class DoubleToDoubleInstr : public TemplateDefinition<1> {
 };
 
 
+class DoubleToFloatInstr: public TemplateDefinition<1> {
+ public:
+  DoubleToFloatInstr(Value* value, intptr_t deopt_id) {
+    SetInputAt(0, value);
+    // Override generated deopt-id.
+    deopt_id_ = deopt_id;
+  }
+
+  Value* value() const { return inputs_[0]; }
+
+  DECLARE_INSTRUCTION(DoubleToFloat)
+
+  virtual CompileType ComputeType() const;
+
+  virtual bool CanDeoptimize() const { return false; }
+
+  virtual Representation representation() const {
+    // This works since double is the representation that the typed array
+    // store expects.
+    // TODO(fschneider): Change this to a genuine float representation once it
+    // is supported.
+    return kUnboxedDouble;
+  }
+
+  virtual Representation RequiredInputRepresentation(intptr_t idx) const {
+    ASSERT(idx == 0);
+    return kUnboxedDouble;
+  }
+
+  virtual intptr_t DeoptimizationTarget() const { return deopt_id_; }
+
+  virtual bool AllowsCSE() const { return true; }
+  virtual EffectSet Effects() const { return EffectSet::None(); }
+  virtual EffectSet Dependencies() const { return EffectSet::None(); }
+  virtual bool AttributesEqual(Instruction* other) const { return true; }
+
+  virtual bool MayThrow() const { return false; }
+
+  virtual Definition* Canonicalize(FlowGraph* flow_graph);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DoubleToFloatInstr);
+};
+
+
+class FloatToDoubleInstr: public TemplateDefinition<1> {
+ public:
+  FloatToDoubleInstr(Value* value, intptr_t deopt_id) {
+    SetInputAt(0, value);
+    // Override generated deopt-id.
+    deopt_id_ = deopt_id;
+  }
+
+  Value* value() const { return inputs_[0]; }
+
+  DECLARE_INSTRUCTION(FloatToDouble)
+
+  virtual CompileType ComputeType() const;
+
+  virtual bool CanDeoptimize() const { return false; }
+
+  virtual Representation representation() const {
+    return kUnboxedDouble;
+  }
+
+  virtual Representation RequiredInputRepresentation(intptr_t idx) const {
+    ASSERT(idx == 0);
+    return kUnboxedDouble;
+  }
+
+  virtual intptr_t DeoptimizationTarget() const { return deopt_id_; }
+
+  virtual bool AllowsCSE() const { return true; }
+  virtual EffectSet Effects() const { return EffectSet::None(); }
+  virtual EffectSet Dependencies() const { return EffectSet::None(); }
+  virtual bool AttributesEqual(Instruction* other) const { return true; }
+
+  virtual bool MayThrow() const { return false; }
+
+  virtual Definition* Canonicalize(FlowGraph* flow_graph);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(FloatToDoubleInstr);
+};
+
+
 class InvokeMathCFunctionInstr : public Definition {
  public:
   InvokeMathCFunctionInstr(ZoneGrowableArray<Value*>* inputs,
@@ -6607,6 +6731,9 @@ class InvokeMathCFunctionInstr : public Definition {
   virtual bool MayThrow() const { return false; }
 
  private:
+  static const intptr_t kSavedSpTempIndex = 0;
+  static const intptr_t kObjectTempIndex = 1;
+  static const intptr_t kDoubleTempIndex = 2;
   virtual void RawSetInputAt(intptr_t i, Value* value) {
     (*inputs_)[i] = value;
   }
@@ -6753,8 +6880,11 @@ class CheckClassInstr : public TemplateInstruction<1> {
 
   virtual bool MayThrow() const { return false; }
 
+  void set_licm_hoisted(bool value) { licm_hoisted_ = value; }
+
  private:
   const ICData& unary_checks_;
+  bool licm_hoisted_;
 
   DISALLOW_COPY_AND_ASSIGN(CheckClassInstr);
 };

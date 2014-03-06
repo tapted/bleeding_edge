@@ -13,8 +13,10 @@
  */
 package com.google.dart.engine.source;
 
+import com.google.dart.engine.context.AnalysisContext;
+import com.google.dart.engine.internal.context.TimestampedData;
+
 import java.net.URI;
-import java.nio.CharBuffer;
 
 /**
  * The interface {@code Source} defines the behavior of objects representing source code that can be
@@ -29,20 +31,12 @@ public interface Source {
    */
   public interface ContentReceiver {
     /**
-     * Accept the contents of a source represented as a character buffer.
+     * Accept the contents of a source.
      * 
      * @param contents the contents of the source
      * @param modificationTime the time at which the contents were last set
      */
-    public void accept(CharBuffer contents, long modificationTime);
-
-    /**
-     * Accept the contents of a source represented as a string.
-     * 
-     * @param contents the contents of the source
-     * @param modificationTime the time at which the contents were last set
-     */
-    public void accept(String contents, long modificationTime);
+    public void accept(CharSequence contents, long modificationTime);
   }
 
   /**
@@ -64,21 +58,39 @@ public interface Source {
 
   /**
    * Return {@code true} if this source exists.
+   * <p>
+   * Clients should consider using the the method {@link AnalysisContext#exists(Source)} because
+   * contexts can have local overrides of the content of a source that the source is not aware of
+   * and a source with local content is considered to exist even if there is no file on disk.
    * 
    * @return {@code true} if this source exists
    */
   public boolean exists();
 
   /**
-   * Get the contents of this source and pass it to the given receiver. Exactly one of the methods
-   * defined on the receiver will be invoked unless an exception is thrown. The method that will be
-   * invoked depends on which of the possible representations of the contents is the most efficient.
-   * Whichever method is invoked, it will be invoked before this method returns.
+   * Get the contents and timestamp of this source.
+   * <p>
+   * Clients should consider using the the method {@link AnalysisContext#getContents(Source)}
+   * because contexts can have local overrides of the content of a source that the source is not
+   * aware of.
+   * 
+   * @return the contents and timestamp of the source
+   * @throws Exception if the contents of this source could not be accessed
+   */
+  public TimestampedData<CharSequence> getContents() throws Exception;
+
+  /**
+   * Get the contents of this source and pass it to the given content receiver.
+   * <p>
+   * Clients should consider using the the method
+   * {@link AnalysisContext#getContentsToReceiver(Source, ContentReceiver)} because contexts can have local
+   * overrides of the content of a source that the source is not aware of.
    * 
    * @param receiver the content receiver to which the content of this source will be passed
    * @throws Exception if the contents of this source could not be accessed
    */
-  public void getContents(ContentReceiver receiver) throws Exception;
+  @Deprecated
+  public void getContentsToReceiver(ContentReceiver receiver) throws Exception;
 
   /**
    * Return an encoded representation of this source that can be used to create a source that is
@@ -104,6 +116,10 @@ public interface Source {
    * the modification stamp was accessed then the same value will be returned, but if the contents
    * of the source have been modified one or more times (even if the net change is zero) the stamps
    * will be different.
+   * <p>
+   * Clients should consider using the the method
+   * {@link AnalysisContext#getModificationStamp(Source)} because contexts can have local overrides
+   * of the content of a source that the source is not aware of.
    * 
    * @return the modification stamp for this source
    */

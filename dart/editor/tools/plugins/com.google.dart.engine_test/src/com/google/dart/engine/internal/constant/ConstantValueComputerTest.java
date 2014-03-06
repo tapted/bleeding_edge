@@ -22,6 +22,7 @@ import com.google.dart.engine.ast.VariableDeclaration;
 import com.google.dart.engine.ast.VariableDeclarationList;
 import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.internal.element.VariableElementImpl;
+import com.google.dart.engine.internal.resolver.TestTypeProvider;
 import com.google.dart.engine.resolver.ResolverTestCase;
 import com.google.dart.engine.source.Source;
 import com.google.dart.engine.utilities.logging.Logger;
@@ -45,11 +46,11 @@ public class ConstantValueComputerTest extends ResolverTestCase {
       getAnalysisContext().computeErrors(librarySource);
       assertNotNull(unit);
 
-      ConstantValueComputer computer = new ConstantValueComputer();
+      ConstantValueComputer computer = new ConstantValueComputer(new TestTypeProvider());
       computer.add(unit);
       computer.computeValues();
       NodeList<CompilationUnitMember> members = unit.getDeclarations();
-      assertSize(3, members);
+      assertSizeOfList(3, members);
       validate(false, ((TopLevelVariableDeclaration) members.get(0)).getVariables());
       validate(false, ((TopLevelVariableDeclaration) members.get(1)).getVariables());
       validate(false, ((TopLevelVariableDeclaration) members.get(2)).getVariables());
@@ -69,17 +70,17 @@ public class ConstantValueComputerTest extends ResolverTestCase {
         libraryElement);
     assertNotNull(unit);
 
-    ConstantValueComputer computer = new ConstantValueComputer();
+    ConstantValueComputer computer = new ConstantValueComputer(new TestTypeProvider());
     computer.add(unit);
     computer.computeValues();
     NodeList<CompilationUnitMember> members = unit.getDeclarations();
-    assertSize(2, members);
+    assertSizeOfList(2, members);
     validate(true, ((TopLevelVariableDeclaration) members.get(0)).getVariables());
     validate(true, ((TopLevelVariableDeclaration) members.get(1)).getVariables());
   }
 
   public void test_computeValues_empty() {
-    ConstantValueComputer computer = new ConstantValueComputer();
+    ConstantValueComputer computer = new ConstantValueComputer(new TestTypeProvider());
     computer.computeValues();
   }
 
@@ -103,18 +104,18 @@ public class ConstantValueComputerTest extends ResolverTestCase {
         libraryElement);
     assertNotNull(partUnit);
 
-    ConstantValueComputer computer = new ConstantValueComputer();
+    ConstantValueComputer computer = new ConstantValueComputer(new TestTypeProvider());
     computer.add(libraryUnit);
     computer.add(partUnit);
     computer.computeValues();
 
     NodeList<CompilationUnitMember> libraryMembers = libraryUnit.getDeclarations();
-    assertSize(2, libraryMembers);
+    assertSizeOfList(2, libraryMembers);
     validate(true, ((TopLevelVariableDeclaration) libraryMembers.get(0)).getVariables());
     validate(true, ((TopLevelVariableDeclaration) libraryMembers.get(1)).getVariables());
 
     NodeList<CompilationUnitMember> partMembers = libraryUnit.getDeclarations();
-    assertSize(2, partMembers);
+    assertSizeOfList(2, partMembers);
     validate(true, ((TopLevelVariableDeclaration) partMembers.get(0)).getVariables());
     validate(true, ((TopLevelVariableDeclaration) partMembers.get(1)).getVariables());
   }
@@ -127,11 +128,11 @@ public class ConstantValueComputerTest extends ResolverTestCase {
         libraryElement);
     assertNotNull(unit);
 
-    ConstantValueComputer computer = new ConstantValueComputer();
+    ConstantValueComputer computer = new ConstantValueComputer(new TestTypeProvider());
     computer.add(unit);
     computer.computeValues();
     NodeList<CompilationUnitMember> members = unit.getDeclarations();
-    assertSize(1, members);
+    assertSizeOfList(1, members);
     validate(true, ((TopLevelVariableDeclaration) members.get(0)).getVariables());
   }
 

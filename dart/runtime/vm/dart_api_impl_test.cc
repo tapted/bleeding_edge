@@ -370,7 +370,9 @@ void CurrentStackTraceNative(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction CurrentStackTraceNativeLookup(
-    Dart_Handle name, int argument_count) {
+    Dart_Handle name, int argument_count, bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return reinterpret_cast<Dart_NativeFunction>(&CurrentStackTraceNative);
 }
 
@@ -458,7 +460,9 @@ void PropagateErrorNative(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction PropagateError_native_lookup(
-    Dart_Handle name, int argument_count) {
+    Dart_Handle name, int argument_count, bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return reinterpret_cast<Dart_NativeFunction>(&PropagateErrorNative);
 }
 
@@ -1018,6 +1022,87 @@ TEST_CASE(ExternalStringCallback) {
 }
 
 
+TEST_CASE(ExternalStringPretenure) {
+  Isolate* isolate = Isolate::Current();
+  {
+    Dart_EnterScope();
+    static const uint8_t big_data8[16*MB] = {0, };
+    Dart_Handle big8 = Dart_NewExternalLatin1String(
+        big_data8,
+        ARRAY_SIZE(big_data8),
+        NULL,
+        NULL);
+    EXPECT_VALID(big8);
+    static const uint16_t big_data16[16*MB/2] = {0, };
+    Dart_Handle big16 = Dart_NewExternalUTF16String(
+        big_data16,
+        ARRAY_SIZE(big_data16),
+        NULL,
+        NULL);
+    static const uint8_t small_data8[] = {'f', 'o', 'o'};
+    Dart_Handle small8 = Dart_NewExternalLatin1String(
+        small_data8,
+        ARRAY_SIZE(small_data8),
+        NULL,
+        NULL);
+    EXPECT_VALID(small8);
+    static const uint16_t small_data16[] = {'b', 'a', 'r'};
+    Dart_Handle small16 = Dart_NewExternalUTF16String(
+        small_data16,
+        ARRAY_SIZE(small_data16),
+        NULL,
+        NULL);
+    EXPECT_VALID(small16);
+    {
+      DARTSCOPE(isolate);
+      String& handle = String::Handle();
+      handle ^= Api::UnwrapHandle(big8);
+      EXPECT(handle.IsOld());
+      handle ^= Api::UnwrapHandle(big16);
+      EXPECT(handle.IsOld());
+      handle ^= Api::UnwrapHandle(small8);
+      EXPECT(handle.IsNew());
+      handle ^= Api::UnwrapHandle(small16);
+      EXPECT(handle.IsNew());
+    }
+    Dart_ExitScope();
+  }
+}
+
+
+TEST_CASE(ExternalTypedDataPretenure) {
+  Isolate* isolate = Isolate::Current();
+  {
+    Dart_EnterScope();
+    static const int kBigLength = 16*MB/8;
+    int64_t* big_data = new int64_t[kBigLength]();
+    Dart_Handle big = Dart_NewExternalTypedData(
+        Dart_TypedData_kInt64,
+        big_data,
+        kBigLength);
+    EXPECT_VALID(big);
+    static const int kSmallLength = 16*KB/8;
+    int64_t* small_data = new int64_t[kSmallLength]();
+    Dart_Handle small = Dart_NewExternalTypedData(
+        Dart_TypedData_kInt64,
+        small_data,
+        kSmallLength);
+    EXPECT_VALID(small);
+    {
+      DARTSCOPE(isolate);
+      ExternalTypedData& handle = ExternalTypedData::Handle();
+      handle ^= Api::UnwrapHandle(big);
+      EXPECT(handle.IsOld());
+      handle ^= Api::UnwrapHandle(small);
+      EXPECT(handle.IsNew());
+    }
+    Dart_ExitScope();
+    delete[] big_data;
+    delete[] small_data;
+  }
+}
+
+
 TEST_CASE(ListAccess) {
   const char* kScriptChars =
       "List testMain() {"
@@ -1266,7 +1351,10 @@ static void ByteDataNativeFunction(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction ByteDataNativeResolver(Dart_Handle name,
-                                                  int arg_count) {
+                                                  int arg_count,
+                                                  bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return &ByteDataNativeFunction;
 }
 
@@ -1324,8 +1412,10 @@ static void ExternalByteDataNativeFunction(Dart_NativeArguments args) {
 }
 
 
-static Dart_NativeFunction ExternalByteDataNativeResolver(Dart_Handle name,
-                                                          int arg_count) {
+static Dart_NativeFunction ExternalByteDataNativeResolver(
+    Dart_Handle name, int arg_count, bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return &ExternalByteDataNativeFunction;
 }
 
@@ -1687,9 +1777,10 @@ TEST_CASE(ExternalUint8ClampedArrayAccess) {
 }
 
 
-static void ExternalTypedDataFinalizer(Dart_WeakPersistentHandle handle,
-                                               void* peer) {
-  Dart_DeleteWeakPersistentHandle(handle);
+static void ExternalTypedDataFinalizer(Dart_Isolate isolate,
+                                       Dart_WeakPersistentHandle handle,
+                                       void* peer) {
+  Dart_DeleteWeakPersistentHandle(isolate, handle);
   *static_cast<int*>(peer) = 42;
 }
 
@@ -1833,22 +1924,22 @@ UNIT_TEST_CASE(PersistentHandles) {
     HANDLESCOPE(isolate);
     for (int i = 0; i < 500; i++) {
       String& str = String::Handle();
-      str ^= Api::UnwrapAsPersistentHandle(handles[i])->raw();
+      str ^= PersistentHandle::Cast(handles[i])->raw();
       EXPECT(str.Equals(kTestString1));
     }
     for (int i = 500; i < 1000; i++) {
       String& str = String::Handle();
-      str ^= Api::UnwrapAsPersistentHandle(handles[i])->raw();
+      str ^= PersistentHandle::Cast(handles[i])->raw();
       EXPECT(str.Equals(kTestString2));
     }
     for (int i = 1000; i < 1500; i++) {
       String& str = String::Handle();
-      str ^= Api::UnwrapAsPersistentHandle(handles[i])->raw();
+      str ^= PersistentHandle::Cast(handles[i])->raw();
       EXPECT(str.Equals(kTestString1));
     }
     for (int i = 1500; i < 2000; i++) {
       String& str = String::Handle();
-      str ^= Api::UnwrapAsPersistentHandle(handles[i])->raw();
+      str ^= PersistentHandle::Cast(handles[i])->raw();
       EXPECT(str.Equals(kTestString2));
     }
   }
@@ -1885,6 +1976,38 @@ UNIT_TEST_CASE(NewPersistentHandle_FromPersistentHandle) {
   Dart_Handle result = Dart_BooleanValue(obj4, &value);
   EXPECT_VALID(result);
   EXPECT(value);
+}
+
+
+// Test that we can assign to a persistent handle.
+UNIT_TEST_CASE(AssignToPersistentHandle) {
+  const char* kTestString1 = "Test String1";
+  const char* kTestString2 = "Test String2";
+  TestIsolateScope __test_isolate__;
+
+  Isolate* isolate = Isolate::Current();
+  EXPECT(isolate != NULL);
+  ApiState* state = isolate->api_state();
+  EXPECT(state != NULL);
+  DARTSCOPE(isolate);
+  String& str = String::Handle();
+
+  // Start with a known persistent handle.
+  Dart_Handle ref1 = Api::NewHandle(isolate, String::New(kTestString1));
+  Dart_PersistentHandle obj = Dart_NewPersistentHandle(ref1);
+  EXPECT(state->IsValidPersistentHandle(obj));
+  str ^= PersistentHandle::Cast(obj)->raw();
+  EXPECT(str.Equals(kTestString1));
+
+  // Now create another local handle and assign it to the persistent handle.
+  Dart_Handle ref2 = Api::NewHandle(isolate, String::New(kTestString2));
+  Dart_SetPersistentHandle(obj, ref2);
+  str ^= PersistentHandle::Cast(obj)->raw();
+  EXPECT(str.Equals(kTestString2));
+
+  // Now assign Null to the persistent handle and check.
+  Dart_SetPersistentHandle(obj, Dart_Null());
+  EXPECT(Dart_IsNull(obj));
 }
 
 
@@ -2010,8 +2133,9 @@ TEST_CASE(WeakPersistentHandle) {
     Dart_ExitScope();
   }
 
-  Dart_DeleteWeakPersistentHandle(weak_new_ref);
-  Dart_DeleteWeakPersistentHandle(weak_old_ref);
+  Dart_Isolate isolate = reinterpret_cast<Dart_Isolate>(Isolate::Current());
+  Dart_DeleteWeakPersistentHandle(isolate, weak_new_ref);
+  Dart_DeleteWeakPersistentHandle(isolate, weak_old_ref);
 
   // Garbage collect one last time to revisit deleted handles.
   Isolate::Current()->heap()->CollectGarbage(Heap::kNew);
@@ -2019,8 +2143,9 @@ TEST_CASE(WeakPersistentHandle) {
 }
 
 
-static void WeakPersistentHandlePeerFinalizer(
-    Dart_WeakPersistentHandle handle, void* peer) {
+static void WeakPersistentHandlePeerFinalizer(Dart_Isolate isolate,
+                                              Dart_WeakPersistentHandle handle,
+                                              void* peer) {
   *static_cast<int*>(peer) = 42;
 }
 
@@ -2042,7 +2167,8 @@ TEST_CASE(WeakPersistentHandleCallback) {
   EXPECT(peer == 0);
   GCTestHelper::CollectNewSpace(Heap::kIgnoreApiCallbacks);
   EXPECT(peer == 42);
-  Dart_DeleteWeakPersistentHandle(weak_ref);
+  Dart_Isolate isolate = reinterpret_cast<Dart_Isolate>(Isolate::Current());
+  Dart_DeleteWeakPersistentHandle(isolate, weak_ref);
 }
 
 
@@ -2059,7 +2185,8 @@ TEST_CASE(WeakPersistentHandleNoCallback) {
   }
   // A finalizer is not invoked on a deleted handle.  Therefore, the
   // peer value should not change after the referent is collected.
-  Dart_DeleteWeakPersistentHandle(weak_ref);
+  Dart_Isolate isolate = reinterpret_cast<Dart_Isolate>(Isolate::Current());
+  Dart_DeleteWeakPersistentHandle(isolate, weak_ref);
   EXPECT(peer == 0);
   Isolate::Current()->heap()->CollectGarbage(Heap::kOld);
   EXPECT(peer == 0);
@@ -3018,6 +3145,7 @@ UNIT_TEST_CASE(CurrentIsolateData) {
                          &err);
   EXPECT(isolate != NULL);
   EXPECT_EQ(mydata, reinterpret_cast<intptr_t>(Dart_CurrentIsolateData()));
+  EXPECT_EQ(mydata, reinterpret_cast<intptr_t>(Dart_IsolateData(isolate)));
   Dart_ShutdownIsolate();
 }
 
@@ -3580,7 +3708,10 @@ void NativeFieldLookup(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction native_field_lookup(Dart_Handle name,
-                                               int argument_count) {
+                                               int argument_count,
+                                               bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return reinterpret_cast<Dart_NativeFunction>(&NativeFieldLookup);
 }
 
@@ -3737,6 +3868,87 @@ TEST_CASE(InjectNativeFields4) {
       TestCase::url());
   EXPECT_SUBSTRING(Dart_GetError(expected_error), Dart_GetError(result));
 #endif
+}
+
+
+static const int kTestNumNativeFields = 2;
+static const intptr_t kNativeField1Value = 30;
+static const intptr_t kNativeField2Value = 40;
+
+void TestNativeFieldsAccess_init(Dart_NativeArguments args) {
+  Dart_Handle receiver = Dart_GetNativeArgument(args, 0);
+  Dart_SetNativeInstanceField(receiver, 0, kNativeField1Value);
+  Dart_SetNativeInstanceField(receiver, 1, kNativeField2Value);
+}
+
+
+void TestNativeFieldsAccess_access(Dart_NativeArguments args) {
+  intptr_t field_values[kTestNumNativeFields];
+  Dart_Handle result = Dart_GetNativeFieldsOfArgument(args,
+                                                      0,
+                                                      kTestNumNativeFields,
+                                                      field_values);
+  EXPECT_VALID(result);
+  EXPECT_EQ(kNativeField1Value, field_values[0]);
+  EXPECT_EQ(kNativeField2Value, field_values[1]);
+  result = Dart_GetNativeFieldsOfArgument(args,
+                                          1,
+                                          kTestNumNativeFields,
+                                          field_values);
+  EXPECT_VALID(result);
+  EXPECT_EQ(0, field_values[0]);
+  EXPECT_EQ(0, field_values[1]);
+}
+
+
+static Dart_NativeFunction TestNativeFieldsAccess_lookup(Dart_Handle name,
+                                                         int argument_count,
+                                                         bool* auto_scope) {
+  ASSERT(auto_scope != NULL);
+  *auto_scope = true;
+  const Object& obj = Object::Handle(Api::UnwrapHandle(name));
+  if (!obj.IsString()) {
+    return NULL;
+  }
+  const char* function_name = obj.ToCString();
+  ASSERT(function_name != NULL);
+  if (!strcmp(function_name, "TestNativeFieldsAccess_init")) {
+    return reinterpret_cast<Dart_NativeFunction>(&TestNativeFieldsAccess_init);
+  } else if (!strcmp(function_name, "TestNativeFieldsAccess_access")) {
+    return reinterpret_cast<Dart_NativeFunction>(
+        &TestNativeFieldsAccess_access);
+  } else {
+    return NULL;
+  }
+}
+
+
+TEST_CASE(TestNativeFieldsAccess) {
+  const char* kScriptChars =
+      "import 'dart:nativewrappers';"
+      "class NativeFields extends NativeFieldWrapperClass2 {\n"
+      "  NativeFields(int i, int j) : fld1 = i, fld2 = j {}\n"
+      "  int fld1;\n"
+      "  final int fld2;\n"
+      "  static int fld3;\n"
+      "  static const int fld4 = 10;\n"
+      "  int initNativeFlds() native 'TestNativeFieldsAccess_init';\n"
+      "  int accessNativeFlds(int i) native 'TestNativeFieldsAccess_access';\n"
+      "}\n"
+      "NativeFields testMain() {\n"
+      "  NativeFields obj = new NativeFields(10, 20);\n"
+      "  obj.initNativeFlds();\n"
+      "  obj.accessNativeFlds(null);\n"
+      "  return obj;\n"
+      "}\n";
+
+  // Load up a test script in the test library.
+  Dart_Handle lib = TestCase::LoadTestScript(kScriptChars,
+                                             TestNativeFieldsAccess_lookup);
+
+  // Invoke a function which returns an object of type NativeFields.
+  Dart_Handle result = Dart_Invoke(lib, NewString("testMain"), 0, NULL);
+  EXPECT_VALID(result);
 }
 
 
@@ -4572,7 +4784,7 @@ TEST_CASE(Invoke_Null) {
 
 TEST_CASE(InvokeNoSuchMethod) {
   const char* kScriptChars =
-      "import 'dart:_collection-dev' as _collection_dev;\n"
+      "import 'dart:_internal' as _internal;\n"
       "class Expect {\n"
       "  static equals(a, b) {\n"
       "    if (a != b) {\n"
@@ -4583,7 +4795,7 @@ TEST_CASE(InvokeNoSuchMethod) {
       "class TestClass {\n"
       "  static int fld1 = 0;\n"
       "  void noSuchMethod(Invocation invocation) {\n"
-      "    var name = _collection_dev.Symbol.getName(invocation.memberName);\n"
+      "    var name = _internal.Symbol.getName(invocation.memberName);\n"
       "    if (name == 'fld') {\n"
       "      Expect.equals(true, invocation.isGetter);\n"
       "      Expect.equals(false, invocation.isMethod);\n"
@@ -4744,7 +4956,11 @@ void ExceptionNative(Dart_NativeArguments args) {
 }
 
 
-static Dart_NativeFunction native_lookup(Dart_Handle name, int argument_count) {
+static Dart_NativeFunction native_lookup(Dart_Handle name,
+                                         int argument_count,
+                                         bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return reinterpret_cast<Dart_NativeFunction>(&ExceptionNative);
 }
 
@@ -4788,7 +5004,11 @@ void NativeArgumentCounter(Dart_NativeArguments args) {
 }
 
 
-static Dart_NativeFunction gnac_lookup(Dart_Handle name, int argument_count) {
+static Dart_NativeFunction gnac_lookup(Dart_Handle name,
+                                       int argument_count,
+                                       bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return reinterpret_cast<Dart_NativeFunction>(&NativeArgumentCounter);
 }
 
@@ -5682,7 +5902,10 @@ static void PatchNativeFunction(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction PatchNativeResolver(Dart_Handle name,
-                                               int arg_count) {
+                                               int arg_count,
+                                               bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return &PatchNativeFunction;
 }
 
@@ -5876,13 +6099,19 @@ static void MyNativeFunction2(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction MyNativeResolver1(Dart_Handle name,
-                                             int arg_count) {
+                                             int arg_count,
+                                             bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return &MyNativeFunction1;
 }
 
 
 static Dart_NativeFunction MyNativeResolver2(Dart_Handle name,
-                                             int arg_count) {
+                                             int arg_count,
+                                             bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return &MyNativeFunction2;
 }
 
@@ -5960,7 +6189,8 @@ TEST_CASE(SetNativeResolver) {
   EXPECT_VALID(result);
 
   EXPECT_ERROR(Dart_Invoke(type, NewString("baz"), 0, NULL),
-               "native function 'SomeNativeFunction3' cannot be found");
+               "native function 'SomeNativeFunction3' (0 arguments) "
+               "cannot be found");
 }
 
 
@@ -6343,7 +6573,9 @@ void MarkMainEntered(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction IsolateInterruptTestNativeLookup(
-    Dart_Handle name, int argument_count) {
+    Dart_Handle name, int argument_count, bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return reinterpret_cast<Dart_NativeFunction>(&MarkMainEntered);
 }
 
@@ -6648,7 +6880,10 @@ static void NativeFoo4(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction MyNativeClosureResolver(Dart_Handle name,
-                                                   int arg_count) {
+                                                   int arg_count,
+                                                   bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   const Object& obj = Object::Handle(Api::UnwrapHandle(name));
   if (!obj.IsString()) {
     return NULL;
@@ -6791,8 +7026,10 @@ static void StaticNativeFoo4(Dart_NativeArguments args) {
 }
 
 
-static Dart_NativeFunction MyStaticNativeClosureResolver(Dart_Handle name,
-                                                         int arg_count) {
+static Dart_NativeFunction MyStaticNativeClosureResolver(
+    Dart_Handle name, int arg_count, bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   const Object& obj = Object::Handle(Api::UnwrapHandle(name));
   if (!obj.IsString()) {
     return NULL;
@@ -7598,7 +7835,9 @@ static void A_change_str_native(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction ExternalStringDeoptimize_native_lookup(
-    Dart_Handle name, int argument_count) {
+    Dart_Handle name, int argument_count, bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return reinterpret_cast<Dart_NativeFunction>(&A_change_str_native);
 }
 

@@ -117,7 +117,7 @@ class AssetCascade {
   /// It loads source assets within [package] using [provider].
   AssetCascade(this.graph, this.package) {
     _onDirtyPool.add(_onDirtyController.stream);
-    _addPhase(new Phase(this, []));
+    _addPhase(new Phase(this, [], package));
 
     // Keep track of logged errors so we can know that the build failed.
     onLog.listen((entry) {
@@ -151,9 +151,9 @@ class AssetCascade {
       // If the requested asset is available, we can just return it.
       if (node != null && node.state.isAvailable) return node;
 
-      // If there's a build running, that build might generate the asset, so we
-      // wait for it to complete and then try again.
       if (_processDone != null) {
+        // If there's a build running, that build might generate the asset, so
+        // we wait for it to complete and then try again.
         return _processDone.then((_) => getAssetNode(id));
       }
 
@@ -233,6 +233,14 @@ class AssetCascade {
     }
   }
 
+  /// Force all [LazyTransformer]s' transforms in this cascade to begin
+  /// producing concrete assets.
+  void forceAllTransforms() {
+    for (var phase in _phases) {
+      phase.forceAllTransforms();
+    }
+  }
+
   void reportError(BarbackException error) {
     _accumulatedErrors.add(error);
     _errorsController.add(error);
@@ -266,17 +274,6 @@ class AssetCascade {
       // TODO(rnystrom): Put some useful data in here.
       _resultsController.add(
           new BuildResult(_accumulatedErrors));
-    }).catchError((error, stackTrace) {
-      // If we get here, it's an unexpected error. Runtime errors like missing
-      // assets should be handled earlier. Errors from transformers or other
-      // external code that barback calls into should be caught at that API
-      // boundary.
-      //
-      // On the off chance we get here, pipe the error to the results stream
-      // as an error. That will let applications handle it without it appearing
-      // in the same path as "normal" errors that get reported.
-      _resultsController.addError(error, stackTrace);
-    }).whenComplete(() {
       _processDone = null;
       _accumulatedErrors = null;
     });
@@ -308,4 +305,6 @@ class AssetCascade {
       return future.then((_) => _process());
     });
   }
+
+  String toString() => "cascade for $package";
 }

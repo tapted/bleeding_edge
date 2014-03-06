@@ -13,6 +13,7 @@
  */
 package com.google.dart.engine.ast;
 
+import com.google.dart.engine.element.Element;
 import com.google.dart.engine.scanner.Token;
 import com.google.dart.engine.utilities.general.StringUtilities;
 
@@ -26,7 +27,7 @@ import com.google.dart.engine.utilities.general.StringUtilities;
  *   | basicStringLiteral
  *
  * rawStringLiteral ::=
- *     '@' basicStringLiteral
+ *     'r' basicStringLiteral
  *
  * simpleStringLiteral ::=
  *     multiLineStringLiteral
@@ -55,6 +56,11 @@ public class SimpleStringLiteral extends StringLiteral {
   private String value;
 
   /**
+   * The toolkit specific element associated with this literal, or {@code null}.
+   */
+  private Element toolkitElement;
+
+  /**
    * Initialize a newly created simple string literal.
    * 
    * @param literal the token representing the literal
@@ -66,7 +72,7 @@ public class SimpleStringLiteral extends StringLiteral {
   }
 
   @Override
-  public <R> R accept(ASTVisitor<R> visitor) {
+  public <R> R accept(AstVisitor<R> visitor) {
     return visitor.visitSimpleStringLiteral(this);
   }
 
@@ -90,6 +96,15 @@ public class SimpleStringLiteral extends StringLiteral {
   }
 
   /**
+   * Return the toolkit specific, non-Dart, element associated with this literal, or {@code null}.
+   * 
+   * @return the element associated with this literal
+   */
+  public Element getToolkitElement() {
+    return toolkitElement;
+  }
+
+  /**
    * Return the value of the literal.
    * 
    * @return the value of the literal
@@ -99,15 +114,35 @@ public class SimpleStringLiteral extends StringLiteral {
   }
 
   /**
+   * Return the offset of the first value character.
+   * 
+   * @return the offset of the first value character
+   */
+  public int getValueOffset() {
+    int valueOffset = 0;
+    if (isRaw()) {
+      valueOffset += 1;
+    }
+    if (isMultiline()) {
+      valueOffset += 3;
+    } else {
+      valueOffset += 1;
+    }
+    return getOffset() + valueOffset;
+  }
+
+  /**
    * Return {@code true} if this string literal is a multi-line string.
    * 
    * @return {@code true} if this string literal is a multi-line string
    */
   public boolean isMultiline() {
-    if (value.length() < 6) {
+    String lexeme = literal.getLexeme();
+    if (lexeme.length() < 6) {
       return false;
     }
-    return value.endsWith("\"\"\"") || value.endsWith("'''");
+    return StringUtilities.endsWith3(lexeme, '"', '"', '"')
+        || StringUtilities.endsWith3(lexeme, '\'', '\'', '\'');
   }
 
   /**
@@ -116,7 +151,7 @@ public class SimpleStringLiteral extends StringLiteral {
    * @return {@code true} if this string literal is a raw string
    */
   public boolean isRaw() {
-    return value.charAt(0) == '@';
+    return literal.getLexeme().charAt(0) == 'r';
   }
 
   @Override
@@ -134,6 +169,15 @@ public class SimpleStringLiteral extends StringLiteral {
   }
 
   /**
+   * Set the toolkit specific, non-Dart, element associated with this literal.
+   * 
+   * @param element the toolkit specific element to be associated with this literal
+   */
+  public void setToolkitElement(Element element) {
+    toolkitElement = element;
+  }
+
+  /**
    * Set the value of the literal to the given string.
    * 
    * @param string the value of the literal
@@ -143,7 +187,7 @@ public class SimpleStringLiteral extends StringLiteral {
   }
 
   @Override
-  public void visitChildren(ASTVisitor<?> visitor) {
+  public void visitChildren(AstVisitor<?> visitor) {
     // There are no children to visit.
   }
 

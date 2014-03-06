@@ -13,6 +13,7 @@ namespace dart {
 class Instance;
 class RawInstance;
 class RawObject;
+class DeoptContext;
 
 // Used by the deoptimization infrastructure to defer allocation of
 // unboxed objects until frame is fully rewritten and GC is safe.
@@ -27,7 +28,7 @@ class DeferredSlot {
   RawInstance** slot() const { return slot_; }
   DeferredSlot* next() const { return next_; }
 
-  virtual void Materialize() = 0;
+  virtual void Materialize(DeoptContext* deopt_context) = 0;
 
  private:
   RawInstance** const slot_;
@@ -42,7 +43,7 @@ class DeferredDouble : public DeferredSlot {
   DeferredDouble(double value, RawInstance** slot, DeferredSlot* next)
       : DeferredSlot(slot, next), value_(value) { }
 
-  virtual void Materialize();
+  virtual void Materialize(DeoptContext* deopt_context);
 
   double value() const { return value_; }
 
@@ -58,7 +59,7 @@ class DeferredMint : public DeferredSlot {
   DeferredMint(int64_t value, RawInstance** slot, DeferredSlot* next)
       : DeferredSlot(slot, next), value_(value) { }
 
-  virtual void Materialize();
+  virtual void Materialize(DeoptContext* deopt_context);
 
   int64_t value() const { return value_; }
 
@@ -75,7 +76,7 @@ class DeferredFloat32x4 : public DeferredSlot {
                     DeferredSlot* next)
       : DeferredSlot(slot, next), value_(value) { }
 
-  virtual void Materialize();
+  virtual void Materialize(DeoptContext* deopt_context);
 
   simd128_value_t value() const { return value_; }
 
@@ -86,13 +87,30 @@ class DeferredFloat32x4 : public DeferredSlot {
 };
 
 
+class DeferredFloat64x2 : public DeferredSlot {
+ public:
+  DeferredFloat64x2(simd128_value_t value, RawInstance** slot,
+                    DeferredSlot* next)
+      : DeferredSlot(slot, next), value_(value) { }
+
+  virtual void Materialize(DeoptContext* deopt_context);
+
+  simd128_value_t value() const { return value_; }
+
+ private:
+  const simd128_value_t value_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeferredFloat64x2);
+};
+
+
 class DeferredInt32x4 : public DeferredSlot {
  public:
   DeferredInt32x4(simd128_value_t value, RawInstance** slot,
                    DeferredSlot* next)
       : DeferredSlot(slot, next), value_(value) { }
 
-  virtual void Materialize();
+  virtual void Materialize(DeoptContext* deopt_context);
 
   simd128_value_t value() const { return value_; }
 
@@ -111,7 +129,7 @@ class DeferredObjectRef : public DeferredSlot {
   DeferredObjectRef(intptr_t index, RawInstance** slot, DeferredSlot* next)
       : DeferredSlot(slot, next), index_(index) { }
 
-  virtual void Materialize();
+  virtual void Materialize(DeoptContext* deopt_context);
 
   intptr_t index() const { return index_; }
 
@@ -146,7 +164,7 @@ class DeferredObject {
   };
 
   enum {
-    kFieldIndex = 0,
+    kOffsetIndex = 0,
     kValueIndex,
     kFieldEntrySize,
   };
@@ -160,8 +178,8 @@ class DeferredObject {
     return args_[kClassIndex];
   }
 
-  RawObject* GetField(intptr_t index) const {
-    return args_[kFieldsStartIndex + kFieldEntrySize * index + kFieldIndex];
+  RawObject* GetFieldOffset(intptr_t index) const {
+    return args_[kFieldsStartIndex + kFieldEntrySize * index + kOffsetIndex];
   }
 
   RawObject* GetValue(intptr_t index) const {

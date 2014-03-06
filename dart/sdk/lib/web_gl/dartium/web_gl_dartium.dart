@@ -2,7 +2,7 @@ library dart.dom.web_gl;
 
 import 'dart:async';
 import 'dart:collection';
-import 'dart:_collection-dev' hide deprecated;
+import 'dart:_internal' hide deprecated;
 import 'dart:html';
 import 'dart:html_common';
 import 'dart:nativewrappers';
@@ -543,6 +543,16 @@ class ContextAttributes extends NativeFieldWrapperClass2 {
   @DomName('WebGLContextAttributes.depth')
   @DocsEditable()
   void set depth(bool value) native "WebGLContextAttributes_depth_Setter";
+
+  @DomName('WebGLContextAttributes.failIfMajorPerformanceCaveat')
+  @DocsEditable()
+  @Experimental() // untriaged
+  bool get failIfMajorPerformanceCaveat native "WebGLContextAttributes_failIfMajorPerformanceCaveat_Getter";
+
+  @DomName('WebGLContextAttributes.failIfMajorPerformanceCaveat')
+  @DocsEditable()
+  @Experimental() // untriaged
+  void set failIfMajorPerformanceCaveat(bool value) native "WebGLContextAttributes_failIfMajorPerformanceCaveat_Setter";
 
   @DomName('WebGLContextAttributes.premultipliedAlpha')
   @DocsEditable()
@@ -2990,8 +3000,8 @@ class RenderingContext extends CanvasRenderingContext {
    *
    */
   void texSubImage2DUntyped(int targetTexture, int levelOfDetail, 
-      int internalFormat, int format, int type, data) {
-    texSubImage2D(targetTexture, levelOfDetail, internalFormat,
+      int xOffset, int yOffset, int format, int type, data) {
+    texSubImage2D(targetTexture, levelOfDetail, xOffset, yOffset,
         format, type, data);
   }
 
@@ -2999,10 +3009,10 @@ class RenderingContext extends CanvasRenderingContext {
    * Updates a sub-rectangle of the currently bound texture to [data].
    */
   void texSubImage2DTyped(int targetTexture, int levelOfDetail,
-      int internalFormat, int width, int height, int border, int format,
+      int xOffset, int yOffset, int width, int height, int format,
       int type, TypedData data) {
-    texSubImage2D(targetTexture, levelOfDetail, internalFormat,
-        width, height, border, format, type, data);
+    texSubImage2D(targetTexture, levelOfDetail, xOffset, yOffset,
+        width, height, format, type, data);
   }
 }
 // Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file

@@ -19,33 +19,25 @@ class SsaCodeGeneratorTask extends CompilerTask {
     // TODO(sra): Attaching positions might be cleaner if the source position
     // was on a wrapping node.
     SourceFile sourceFile = sourceFileOfElement(element);
-    if (compiler.irBuilder.hasIr(element)) {
-      IrFunction function = compiler.irBuilder.getIr(element);
-      node.sourcePosition = new OffsetSourceFileLocation(
-          sourceFile, function.offset, function.sourceName);
-      node.endSourcePosition = new OffsetSourceFileLocation(
-          sourceFile, function.endOffset);
+    ast.Node expression = element.implementation.parseNode(backend.compiler);
+    Token beginToken;
+    Token endToken;
+    if (expression == null) {
+      // Synthesized node. Use the enclosing element for the location.
+      beginToken = endToken = element.position();
     } else {
-      Node expression = element.implementation.parseNode(backend.compiler);
-      Token beginToken;
-      Token endToken;
-      if (expression == null) {
-        // Synthesized node. Use the enclosing element for the location.
-        beginToken = endToken = element.position();
-      } else {
-        beginToken = expression.getBeginToken();
-        endToken = expression.getEndToken();
-      }
-      // TODO(podivilov): find the right sourceFile here and remove offset
-      // checks below.
-      if (beginToken.charOffset < sourceFile.length) {
-        node.sourcePosition =
-            new TokenSourceFileLocation(sourceFile, beginToken);
-      }
-      if (endToken.charOffset < sourceFile.length) {
-        node.endSourcePosition =
-            new TokenSourceFileLocation(sourceFile, endToken);
-      }
+      beginToken = expression.getBeginToken();
+      endToken = expression.getEndToken();
+    }
+    // TODO(podivilov): find the right sourceFile here and remove offset
+    // checks below.
+    if (beginToken.charOffset < sourceFile.length) {
+      node.sourcePosition =
+          new TokenSourceFileLocation(sourceFile, beginToken);
+    }
+    if (endToken.charOffset < sourceFile.length) {
+      node.endSourcePosition =
+          new TokenSourceFileLocation(sourceFile, endToken);
     }
     return node;
   }
@@ -445,7 +437,7 @@ class SsaCodeGenerator implements HVisitor, HBlockInformationVisitor {
     if (len == 0) return new js.EmptyStatement();
     if (len == 1) {
       js.Statement result = block.statements[0];
-      if (result is Block) return unwrapStatement(result);
+      if (result is ast.Block) return unwrapStatement(result);
       return result;
     }
     return block;
@@ -1354,7 +1346,7 @@ class SsaCodeGenerator implements HVisitor, HBlockInformationVisitor {
     } else {
       TargetElement target = node.target;
       if (!tryCallAction(continueAction, target)) {
-        if (target.statement is SwitchStatement) {
+        if (target.statement is ast.SwitchStatement) {
           pushStatement(new js.Continue(
               backend.namer.implicitContinueLabelName(target)), node);
         } else {
@@ -1637,7 +1629,10 @@ class SsaCodeGenerator implements HVisitor, HBlockInformationVisitor {
         // bound closure for a method.
         TypeMask receiverType = new TypeMask.nonNullExact(superClass);
         selector = new TypedSelector(receiverType, selector);
+        // TODO(floitsch): we know the target. We shouldn't register a
+        // dynamic getter.
         world.registerDynamicGetter(selector);
+        world.registerGetterForSuperMethod(node.element);
         methodName = backend.namer.invocationName(selector);
       } else {
         methodName = backend.namer.getNameOfInstanceMember(superMethod);
@@ -1803,7 +1798,7 @@ class SsaCodeGenerator implements HVisitor, HBlockInformationVisitor {
 
       HInstruction left = relational.left;
       HInstruction right = relational.right;
-      if (left.isString(compiler) && right.isString(compiler)) {
+      if (left.isStringOrNull(compiler) && right.isStringOrNull(compiler)) {
         return true;
       }
 
@@ -1817,6 +1812,8 @@ class SsaCodeGenerator implements HVisitor, HBlockInformationVisitor {
       handledBySpecialCase = true;
       if (input is HIs) {
         emitIs(input, '!==');
+      } else if (input is HNot) {
+        use(input.inputs[0]);
       } else if (input is HIdentity) {
         HIdentity identity = input;
         emitIdentityComparison(identity.left, identity.right, true);
@@ -1866,11 +1863,7 @@ class SsaCodeGenerator implements HVisitor, HBlockInformationVisitor {
     } else if (node.inputs[1].isConstantBoolean()) {
       String operation = node.inputs[1].isConstantFalse() ? '&&' : '||';
       if (operation == '||') {
-        if (input is HNot) {
-          use(input.inputs[0]);
-        } else {
-          generateNot(input);
-        }
+        generateNot(input);
       } else {
         use(input);
       }

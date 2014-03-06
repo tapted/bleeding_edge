@@ -89,6 +89,26 @@ public class LibraryElementHandle extends ElementHandle implements LibraryElemen
   }
 
   @Override
+  public CompilationUnitElement[] getUnits() {
+    return getActualElement().getUnits();
+  }
+
+  @Override
+  public LibraryElement[] getVisibleLibraries() {
+    return getActualElement().getVisibleLibraries();
+  }
+
+  @Override
+  public boolean hasExtUri() {
+    return getActualElement().hasExtUri();
+  }
+
+  @Override
+  public boolean isAngularHtml() {
+    return getActualElement().isAngularHtml();
+  }
+
+  @Override
   public boolean isBrowserApplication() {
     return getActualElement().isBrowserApplication();
   }

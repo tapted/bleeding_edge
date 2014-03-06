@@ -26,8 +26,8 @@ import '../../../sdk/lib/_internal/compiler/implementation/dart2jslib.dart'
     hide TreeElementMapping;
 
 import '../../../sdk/lib/_internal/compiler/implementation/deferred_load.dart'
-    show DeferredLoadTask;
-
+    show DeferredLoadTask,
+         OutputUnit;
 
 class WarningMessage {
   Spannable node;
@@ -151,7 +151,12 @@ const String DEFAULT_INTERCEPTORSLIB = r'''
     operator ==(other) => true;
     get hashCode => throw "JSNumber.hashCode not implemented.";
 
-    _tdivFast(other) => 42;
+    // We force side effects on _tdivFast to mimic the shortcomings of
+    // the effect analysis: because the `_tdivFast` implementation of
+    // the core library has calls that may not already be analyzed,
+    // the analysis will conclude that `_tdivFast` may have side
+    // effects.
+    _tdivFast(other) => new List()..length = 42;
     _shlPositive(other) => 42;
     _shrBothPositive(other) => 42;
     _shrReceiverPositive(other) => 42;
@@ -207,6 +212,7 @@ const String DEFAULT_CORELIB = r'''
   class Type {}
   class Function {}
   class List<E> {
+    var length;
     List([length]);
     List.filled(length, element);
   }
@@ -231,6 +237,12 @@ class MockCompiler extends Compiler {
   List<WarningMessage> errors;
   List<WarningMessage> hints;
   List<WarningMessage> infos;
+  List<WarningMessage> crashes;
+  /// Expected number of warnings. If `null`, the number of warnings is
+  /// not checked.
+  final int expectedWarnings;
+  /// Expected number of errors. If `null`, the number of errors is not checked.
+  final int expectedErrors;
   final Map<String, SourceFile> sourceFiles;
   Node parsedTree;
 
@@ -249,9 +261,10 @@ class MockCompiler extends Compiler {
                 bool preserveComments: false,
                 // Our unit tests check code generation output that is
                 // affected by inlining support.
-                bool disableInlining: true})
-      : warnings = [], errors = [], hints = [], infos = [],
-        sourceFiles = new Map<String, SourceFile>(),
+                bool disableInlining: true,
+                int this.expectedWarnings,
+                int this.expectedErrors})
+      : sourceFiles = new Map<String, SourceFile>(),
         super(enableTypeAssertions: enableTypeAssertions,
               enableMinification: enableMinification,
               enableConcreteTypeInference: enableConcreteTypeInference,
@@ -260,7 +273,9 @@ class MockCompiler extends Compiler {
               analyzeAllFlag: analyzeAll,
               analyzeOnly: analyzeOnly,
               emitJavaScript: emitJavaScript,
-              preserveComments: preserveComments) {
+              preserveComments: preserveComments,
+              showPackageWarnings: true) {
+    clearMessages();
     coreLibrary = createLibrary("core", coreSource);
 
     // We need to set the assert method to avoid calls with a 'null'
@@ -293,6 +308,20 @@ class MockCompiler extends Compiler {
     deferredLoadTask = new MockDeferredLoadTask(this);
   }
 
+  Future runCompiler(Uri uri) {
+    return super.runCompiler(uri).then((result) {
+      if (expectedErrors != null &&
+          expectedErrors != errors.length) {
+        throw "unexpected error during compilation ${errors}";
+      } else if (expectedWarnings != null &&
+                 expectedWarnings != warnings.length) {
+        throw "unexpected warnings during compilation ${warnings}";
+      } else {
+        return result;
+      }
+    });
+  }
+
   /**
    * Registers the [source] with [uri] making it possible load [source] as a
    * library.
@@ -317,46 +346,28 @@ class MockCompiler extends Compiler {
     return library;
   }
 
-  void reportWarning(Node node, var message) {
-    if (message is! Message) message = message.message;
-    warnings.add(new WarningMessage(node, message));
-    reportDiagnostic(spanFromNode(node),
-        'Warning: $message', api.Diagnostic.WARNING);
-  }
-
-  void reportError(Spannable node,
-                   MessageKind errorCode,
-                   [Map arguments = const {}]) {
-    Message message = errorCode.message(arguments);
-    errors.add(new WarningMessage(node, message));
-    reportDiagnostic(spanFromSpannable(node), '$message', api.Diagnostic.ERROR);
-  }
-
-  void reportInfo(Spannable node,
-                   MessageKind errorCode,
-                   [Map arguments = const {}]) {
-    Message message = errorCode.message(arguments);
-    infos.add(new WarningMessage(node, message));
-    reportDiagnostic(spanFromSpannable(node), '$message', api.Diagnostic.INFO);
-  }
-
-  void reportHint(Spannable node,
-                   MessageKind errorCode,
-                   [Map arguments = const {}]) {
-    Message message = errorCode.message(arguments);
-    hints.add(new WarningMessage(node, message));
-    reportDiagnostic(spanFromSpannable(node), '$message', api.Diagnostic.HINT);
+  // TODO(johnniwinther): Remove this when we don't filter certain type checker
+  // warnings.
+  void reportWarning(Spannable node, MessageKind messageKind,
+                     [Map arguments = const {}]) {
+    reportDiagnostic(node,
+                     messageKind.message(arguments, terseDiagnostics),
+                     api.Diagnostic.WARNING);
   }
 
   void reportFatalError(Spannable node,
-                        MessageKind errorCode,
+                        MessageKind messageKind,
                         [Map arguments = const {}]) {
-    reportError(node, errorCode, arguments);
+    reportError(node, messageKind, arguments);
   }
 
-  void reportMessage(SourceSpan span, var message, api.Diagnostic kind) {
-    var diagnostic = new WarningMessage(null, message.message);
-    if (kind == api.Diagnostic.ERROR) {
+  void reportDiagnostic(Spannable node,
+                        Message message,
+                        api.Diagnostic kind) {
+    var diagnostic = new WarningMessage(node, message);
+    if (kind == api.Diagnostic.CRASH) {
+      crashes.add(diagnostic);
+    } else if (kind == api.Diagnostic.ERROR) {
       errors.add(diagnostic);
     } else if (kind == api.Diagnostic.WARNING) {
       warnings.add(diagnostic);
@@ -365,26 +376,24 @@ class MockCompiler extends Compiler {
     } else if (kind == api.Diagnostic.HINT) {
       hints.add(diagnostic);
     }
-    reportDiagnostic(span, "$message", kind);
-  }
-
-  void reportDiagnostic(SourceSpan span, String message, api.Diagnostic kind) {
     if (diagnosticHandler != null) {
+      SourceSpan span = spanFromSpannable(node);
       if (span != null) {
-        diagnosticHandler(span.uri, span.begin, span.end, message, kind);
+        diagnosticHandler(span.uri, span.begin, span.end, '$message', kind);
       } else {
-        diagnosticHandler(null, null, null, message, kind);
+        diagnosticHandler(null, null, null, '$message', kind);
       }
     }
   }
 
-  bool get compilationFailed => !errors.isEmpty;
+  bool get compilationFailed => !crashes.isEmpty || !errors.isEmpty;
 
   void clearMessages() {
     warnings = [];
     errors = [];
     hints = [];
     infos = [];
+    crashes = [];
   }
 
   CollectingTreeElements resolveStatement(String text) {
@@ -472,15 +481,22 @@ CheckMessage checkMessage(MessageKind kind, Map arguments) {
   };
 }
 
-/// [expectedWarnings] must be a list of either [MessageKind] or [CheckMessage].
 void compareWarningKinds(String text,
                          List expectedWarnings,
                          List<WarningMessage> foundWarnings) {
+  compareMessageKinds(text, expectedWarnings, foundWarnings, 'warning');
+}
+
+/// [expectedMessages] must be a list of either [MessageKind] or [CheckMessage].
+void compareMessageKinds(String text,
+                         List expectedMessages,
+                         List<WarningMessage> foundMessages,
+                         String kind) {
   var fail = (message) => Expect.fail('$text: $message');
   HasNextIterator expectedIterator =
-      new HasNextIterator(expectedWarnings.iterator);
+      new HasNextIterator(expectedMessages.iterator);
   HasNextIterator<WarningMessage> foundIterator =
-      new HasNextIterator(foundWarnings.iterator);
+      new HasNextIterator(foundMessages.iterator);
   while (expectedIterator.hasNext && foundIterator.hasNext) {
     var expected = expectedIterator.next();
     var found = foundIterator.next();
@@ -490,22 +506,22 @@ void compareWarningKinds(String text,
       String error = expected(found.message);
       Expect.isNull(error, error);
     } else {
-      Expect.fail("Unexpected expectedWarnings value: $expected.");
+      Expect.fail("Unexpected $kind value: $expected.");
     }
   }
   if (expectedIterator.hasNext) {
     do {
       var expected = expectedIterator.next();
       if (expected is CheckMessage) expected = expected(null);
-      print('Expected warning "${expected}" did not occur');
+      print('Expected $kind "${expected}" did not occur');
     } while (expectedIterator.hasNext);
-    fail('Too few warnings');
+    fail('Too few ${kind}s');
   }
   if (foundIterator.hasNext) {
     do {
-      print('Additional warning "${foundIterator.next()}"');
+      print('Additional $kind "${foundIterator.next()}"');
     } while (foundIterator.hasNext);
-    fail('Too many warnings');
+    fail('Too many ${kind}s');
   }
 }
 
@@ -542,11 +558,12 @@ class CollectingTreeElements extends TreeElementMapping {
   }
 }
 
+// The mock compiler does not split the program in output units.
 class MockDeferredLoadTask extends DeferredLoadTask {
   MockDeferredLoadTask(Compiler compiler) : super(compiler);
 
-  void registerMainApp(LibraryElement mainApp) {
-    // Do nothing.
+  OutputUnit getElementOutputUnit(dynamic dependency) {
+    return mainOutputUnit;
   }
 }
 

@@ -19,7 +19,6 @@ namespace dart {
 
 // Forward declarations.
 class AbstractType;
-class AbstractTypeArguments;
 class Array;
 class Class;
 class ClassTable;
@@ -30,7 +29,6 @@ class LanguageError;
 class Library;
 class Object;
 class ObjectStore;
-class RawAbstractTypeArguments;
 class RawApiError;
 class RawArray;
 class RawBigint;
@@ -45,6 +43,7 @@ class RawRedirectionData;
 class RawFunction;
 class RawGrowableObjectArray;
 class RawFloat32x4;
+class RawFloat64x2;
 class RawInt32x4;
 class RawImmutableArray;
 class RawLanguageError;
@@ -68,6 +67,7 @@ class RawTwoByteString;
 class RawUnresolvedClass;
 class String;
 class TokenStream;
+class TypeArguments;
 class UnhandledException;
 
 // Serialized object header encoding is as follows:
@@ -129,7 +129,7 @@ class Snapshot {
     kMessage,   // A partial snapshot used only for isolate messaging.
   };
 
-  static const int kHeaderSize = 2 * sizeof(int32_t);
+  static const int kHeaderSize = 2 * sizeof(int64_t);
   static const int kLengthIndex = 0;
   static const int kSnapshotFlagIndex = 1;
 
@@ -137,7 +137,7 @@ class Snapshot {
 
   // Getters.
   const uint8_t* content() const { return content_; }
-  int32_t length() const { return length_; }
+  int64_t length() const { return length_; }
   Kind kind() const { return static_cast<Kind>(kind_); }
 
   bool IsMessageSnapshot() const { return kind_ == kMessage; }
@@ -153,8 +153,8 @@ class Snapshot {
  private:
   Snapshot() : length_(0), kind_(kFull) {}
 
-  int32_t length_;  // Stream length.
-  int32_t kind_;  // Kind of snapshot.
+  int64_t length_;  // Stream length.
+  int64_t kind_;  // Kind of snapshot.
   uint8_t content_[];  // Stream content.
 
   DISALLOW_COPY_AND_ASSIGN(Snapshot);
@@ -221,9 +221,10 @@ class SnapshotReader : public BaseReader {
   ObjectStore* object_store() const { return isolate_->object_store(); }
   ClassTable* class_table() const { return isolate_->class_table(); }
   Object* ObjectHandle() { return &obj_; }
+  Array* ArrayHandle() { return &array_; }
   String* StringHandle() { return &str_; }
   AbstractType* TypeHandle() { return &type_; }
-  AbstractTypeArguments* TypeArgumentsHandle() { return &type_arguments_; }
+  TypeArguments* TypeArgumentsHandle() { return &type_arguments_; }
   Array* TokensHandle() { return &tokens_; }
   TokenStream* StreamHandle() { return &stream_; }
   ExternalTypedData* DataHandle() { return &data_; }
@@ -252,6 +253,7 @@ class SnapshotReader : public BaseReader {
   RawTokenStream* NewTokenStream(intptr_t len);
   RawContext* NewContext(intptr_t num_variables);
   RawClass* NewClass(intptr_t class_id);
+  RawInstance* NewInstance();
   RawMint* NewMint(int64_t value);
   RawBigint* NewBigint(const char* hex_string);
   RawDouble* NewDouble(double value);
@@ -274,6 +276,7 @@ class SnapshotReader : public BaseReader {
   RawGrowableObjectArray* NewGrowableObjectArray();
   RawFloat32x4* NewFloat32x4(float v0, float v1, float v2, float v3);
   RawInt32x4* NewInt32x4(uint32_t v0, uint32_t v1, uint32_t v2, uint32_t v3);
+  RawFloat64x2* NewFloat64x2(double v0, double v1);
   RawApiError* NewApiError();
   RawLanguageError* NewLanguageError();
   RawObject* NewInteger(int64_t value);
@@ -327,7 +330,7 @@ class SnapshotReader : public BaseReader {
   String& str_;  // Temporary String handle.
   Library& library_;  // Temporary library handle.
   AbstractType& type_;  // Temporary type handle.
-  AbstractTypeArguments& type_arguments_;  // Temporary type argument handle.
+  TypeArguments& type_arguments_;  // Temporary type argument handle.
   Array& tokens_;  // Temporary tokens handle.
   TokenStream& stream_;  // Temporary token stream handle.
   ExternalTypedData& data_;  // Temporary stream data handle.
@@ -347,7 +350,6 @@ class SnapshotReader : public BaseReader {
   friend class Function;
   friend class GrowableObjectArray;
   friend class ImmutableArray;
-  friend class InstantiatedTypeArguments;
   friend class JSRegExp;
   friend class LanguageError;
   friend class Library;
@@ -434,7 +436,7 @@ class BaseWriter {
   }
 
   void FillHeader(Snapshot::Kind kind) {
-    int32_t* data = reinterpret_cast<int32_t*>(stream_.buffer());
+    int64_t* data = reinterpret_cast<int64_t*>(stream_.buffer());
     data[Snapshot::kLengthIndex] = stream_.bytes_written();
     data[Snapshot::kSnapshotFlagIndex] = kind;
   }
@@ -507,7 +509,7 @@ class SnapshotWriter : public BaseWriter {
                     intptr_t array_kind,
                     intptr_t tags,
                     RawSmi* length,
-                    RawAbstractTypeArguments* type_arguments,
+                    RawTypeArguments* type_arguments,
                     RawObject* data[]);
   void CheckIfSerializable(RawClass* cls);
   void SetWriteException(Exceptions::ExceptionType type, const char* msg);

@@ -6,6 +6,7 @@
 #if defined(TARGET_ARCH_X64)
 
 #include "vm/assembler.h"
+#include "vm/cpu.h"
 #include "vm/heap.h"
 #include "vm/memory_region.h"
 #include "vm/runtime_entry.h"
@@ -15,54 +16,7 @@
 namespace dart {
 
 DEFINE_FLAG(bool, print_stop_message, true, "Print stop message.");
-DEFINE_FLAG(bool, use_sse41, true, "Use SSE 4.1 if available");
 DECLARE_FLAG(bool, inline_alloc);
-
-
-bool CPUFeatures::sse4_1_supported_ = false;
-#ifdef DEBUG
-bool CPUFeatures::initialized_ = false;
-#endif
-
-bool CPUFeatures::sse4_1_supported() {
-  DEBUG_ASSERT(initialized_);
-  return sse4_1_supported_ && FLAG_use_sse41;
-}
-
-
-#define __ assembler.
-
-void CPUFeatures::InitOnce() {
-  Assembler assembler;
-  __ pushq(RBP);
-  __ pushq(RBX);
-  __ movq(RBP, RSP);
-  // Get feature information in ECX:EDX and return it in RAX.
-  // Note that cpuid operates the same in 64-bit and 32-bit mode.
-  __ movq(RAX, Immediate(1));
-  __ cpuid();
-  __ movl(RAX, RCX);  // Zero extended.
-  __ shlq(RAX, Immediate(32));
-  __ movl(RCX, RDX);  // Zero extended.
-  __ orq(RAX, RCX);
-  __ movq(RSP, RBP);
-  __ popq(RBX);
-  __ popq(RBP);
-  __ ret();
-
-  const Code& code =
-      Code::Handle(Code::FinalizeCode("DetectCPUFeatures", &assembler));
-  Instructions& instructions = Instructions::Handle(code.instructions());
-  typedef uint64_t (*DetectCPUFeatures)();
-  uint64_t features =
-      reinterpret_cast<DetectCPUFeatures>(instructions.EntryPoint())();
-  sse4_1_supported_ = (features & kSSE4_1BitMask) != 0;
-#ifdef DEBUG
-  initialized_ = true;
-#endif
-}
-
-#undef __
 
 
 Assembler::Assembler(bool use_far_branches)
@@ -100,6 +54,16 @@ Assembler::Assembler(bool use_far_branches)
 
     if (StubCode::CallToRuntime_entry() != NULL) {
       FindExternalLabel(&StubCode::CallToRuntimeLabel(), kNotPatchable);
+    } else {
+      object_pool_.Add(Object::null_object(), Heap::kOld);
+      patchable_pool_entries_.Add(kNotPatchable);
+    }
+
+    // Create fixed object pool entry for debugger stub.
+    if (StubCode::BreakpointRuntime_entry() != NULL) {
+      intptr_t index =
+          FindExternalLabel(&StubCode::BreakpointRuntimeLabel(), kNotPatchable);
+      ASSERT(index == kBreakpointRuntimeCPIndex);
     } else {
       object_pool_.Add(Object::null_object(), Heap::kOld);
       patchable_pool_entries_.Add(kNotPatchable);
@@ -1032,6 +996,136 @@ void Assembler::shufps(XmmRegister dst, XmmRegister src, const Immediate& imm) {
   EmitXmmRegisterOperand(dst & 7, src);
   ASSERT(imm.is_uint8());
   EmitUint8(imm.value());
+}
+
+
+void Assembler::addpd(XmmRegister dst, XmmRegister src) {
+  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  ASSERT(src <= XMM15);
+  ASSERT(dst <= XMM15);
+  EmitUint8(0x66);
+  EmitREX_RB(dst, src);
+  EmitUint8(0x0F);
+  EmitUint8(0x58);
+  EmitXmmRegisterOperand(dst & 7, src);
+}
+
+
+void Assembler::negatepd(XmmRegister dst) {
+  static const struct ALIGN16 {
+    uint64_t a;
+    uint64_t b;
+  } double_negate_constant =
+      { 0x8000000000000000LL, 0x8000000000000000LL };
+  LoadImmediate(
+      TMP, Immediate(reinterpret_cast<intptr_t>(&double_negate_constant)), PP);
+  xorpd(dst, Address(TMP, 0));
+}
+
+
+void Assembler::subpd(XmmRegister dst, XmmRegister src) {
+  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  ASSERT(src <= XMM15);
+  ASSERT(dst <= XMM15);
+  EmitUint8(0x66);
+  EmitREX_RB(dst, src);
+  EmitUint8(0x0F);
+  EmitUint8(0x5C);
+  EmitXmmRegisterOperand(dst & 7, src);
+}
+
+
+void Assembler::mulpd(XmmRegister dst, XmmRegister src) {
+  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  ASSERT(src <= XMM15);
+  ASSERT(dst <= XMM15);
+  EmitUint8(0x66);
+  EmitREX_RB(dst, src);
+  EmitUint8(0x0F);
+  EmitUint8(0x59);
+  EmitXmmRegisterOperand(dst & 7, src);
+}
+
+
+void Assembler::divpd(XmmRegister dst, XmmRegister src) {
+  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  ASSERT(src <= XMM15);
+  ASSERT(dst <= XMM15);
+  EmitUint8(0x66);
+  EmitREX_RB(dst, src);
+  EmitUint8(0x0F);
+  EmitUint8(0x5E);
+  EmitXmmRegisterOperand(dst & 6, src);
+}
+
+
+void Assembler::abspd(XmmRegister dst) {
+  static const struct ALIGN16 {
+    uint64_t a;
+    uint64_t b;
+  } double_absolute_const =
+      { 0x7FFFFFFFFFFFFFFFLL, 0x7FFFFFFFFFFFFFFFLL };
+  LoadImmediate(
+      TMP, Immediate(reinterpret_cast<intptr_t>(&double_absolute_const)), PP);
+  andpd(dst, Address(TMP, 0));
+}
+
+
+void Assembler::minpd(XmmRegister dst, XmmRegister src) {
+  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  ASSERT(src <= XMM15);
+  ASSERT(dst <= XMM15);
+  EmitUint8(0x66);
+  EmitREX_RB(dst, src);
+  EmitUint8(0x0F);
+  EmitUint8(0x5D);
+  EmitXmmRegisterOperand(dst & 7, src);
+}
+
+
+void Assembler::maxpd(XmmRegister dst, XmmRegister src) {
+  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  ASSERT(src <= XMM15);
+  ASSERT(dst <= XMM15);
+  EmitUint8(0x66);
+  EmitREX_RB(dst, src);
+  EmitUint8(0x0F);
+  EmitUint8(0x5F);
+  EmitXmmRegisterOperand(dst & 7, src);
+}
+
+
+void Assembler::sqrtpd(XmmRegister dst) {
+  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  ASSERT(dst <= XMM15);
+  EmitUint8(0x66);
+  EmitREX_RB(dst, dst);
+  EmitUint8(0x0F);
+  EmitUint8(0x51);
+  EmitXmmRegisterOperand(dst & 7, dst);
+}
+
+
+void Assembler::cvtps2pd(XmmRegister dst, XmmRegister src) {
+  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  ASSERT(src <= XMM15);
+  ASSERT(dst <= XMM15);
+  EmitREX_RB(dst, src);
+  EmitUint8(0x0F);
+  EmitUint8(0x5A);
+  EmitXmmRegisterOperand(dst & 7, src);
+}
+
+
+void Assembler::cvtpd2ps(XmmRegister dst, XmmRegister src) {
+  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  ASSERT(src <= XMM15);
+  ASSERT(dst <= XMM15);
+  EmitUint8(0x66);
+  EmitREX_RB(dst, src);
+  EmitUint8(0x0F);
+  EmitUint8(0x5A);
+  EmitXmmRegisterOperand(dst & 7, src);
 }
 
 
@@ -2667,17 +2761,6 @@ void Assembler::LeaveFrame() {
 }
 
 
-void Assembler::ReturnPatchable() {
-  // This sequence must have a fixed size so that it can be patched by the
-  // debugger.
-  intptr_t start = buffer_.GetPosition();
-  LeaveDartFrame();
-  ret();
-  nop(4);
-  ASSERT((buffer_.GetPosition() - start) == 13);
-}
-
-
 void Assembler::ReserveAlignedFrameSpace(intptr_t frame_space) {
   // Reserve space for arguments and align frame before entering
   // the C++ world.
@@ -2880,6 +2963,74 @@ void Assembler::LeaveStubFrame() {
 }
 
 
+void Assembler::UpdateAllocationStats(intptr_t cid,
+                                      Heap::Space space) {
+  Register temp_reg = TMP;
+  ASSERT(cid > 0);
+  Isolate* isolate = Isolate::Current();
+  ClassTable* class_table = isolate->class_table();
+  if (cid < kNumPredefinedCids) {
+    const uword class_heap_stats_table_address =
+        class_table->PredefinedClassHeapStatsTableAddress();
+    const uword class_offset = cid * sizeof(ClassHeapStats);  // NOLINT
+    const uword count_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_since_gc_old_space_offset();
+    movq(temp_reg, Immediate(class_heap_stats_table_address + class_offset));
+    const Address& count_address = Address(temp_reg, count_field_offset);
+    incq(count_address);
+  } else {
+    ASSERT(temp_reg != kNoRegister);
+    const uword class_offset = cid * sizeof(ClassHeapStats);  // NOLINT
+    const uword count_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_since_gc_old_space_offset();
+    movq(temp_reg, Immediate(class_table->ClassStatsTableAddress()));
+    movq(temp_reg, Address(temp_reg, 0));
+    incq(Address(temp_reg, class_offset + count_field_offset));
+  }
+}
+
+
+void Assembler::UpdateAllocationStatsWithSize(intptr_t cid,
+                                              Register size_reg,
+                                              Heap::Space space) {
+  Register temp_reg = TMP;
+  ASSERT(cid > 0);
+  Isolate* isolate = Isolate::Current();
+  ClassTable* class_table = isolate->class_table();
+  if (cid < kNumPredefinedCids) {
+    const uword class_heap_stats_table_address =
+        class_table->PredefinedClassHeapStatsTableAddress();
+    const uword class_offset = cid * sizeof(ClassHeapStats);  // NOLINT
+    const uword count_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_since_gc_old_space_offset();
+    const uword size_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_size_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_size_since_gc_old_space_offset();
+    movq(temp_reg, Immediate(class_heap_stats_table_address + class_offset));
+    const Address& count_address = Address(temp_reg, count_field_offset);
+    const Address& size_address = Address(temp_reg, size_field_offset);
+    incq(count_address);
+    addq(size_address, size_reg);
+  } else {
+    ASSERT(temp_reg != kNoRegister);
+    const uword class_offset = cid * sizeof(ClassHeapStats);  // NOLINT
+    const uword count_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_since_gc_old_space_offset();
+    const uword size_field_offset = (space == Heap::kNew) ?
+      ClassHeapStats::allocated_size_since_gc_new_space_offset() :
+      ClassHeapStats::allocated_size_since_gc_old_space_offset();
+    movq(temp_reg, Immediate(class_table->ClassStatsTableAddress()));
+    movq(temp_reg, Address(temp_reg, 0));
+    incq(Address(temp_reg, class_offset + count_field_offset));
+    addq(Address(temp_reg, class_offset + size_field_offset), size_reg);
+  }
+}
+
+
 void Assembler::TryAllocate(const Class& cls,
                             Label* failure,
                             bool near_jump,
@@ -2900,6 +3051,7 @@ void Assembler::TryAllocate(const Class& cls,
     // next object start and store the class in the class field of object.
     LoadImmediate(TMP, Immediate(heap->TopAddress()), pp);
     movq(Address(TMP, 0), instance_reg);
+    UpdateAllocationStats(cls.id());
     ASSERT(instance_size >= kHeapObjectTag);
     AddImmediate(instance_reg, Immediate(kHeapObjectTag - instance_size), pp);
     uword tags = 0;

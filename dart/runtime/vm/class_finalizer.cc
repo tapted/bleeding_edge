@@ -36,30 +36,18 @@ bool ClassFinalizer::AllClassesFinalized() {
 // optimizations may have become invalid.
 // Only methods which owner classes where subclasses can be invalid.
 // TODO(srdjan): Be even more precise by recording the exact CHA optimization.
-static void RemoveOptimizedCode(
+static void RemoveCHAOptimizedCode(
     const GrowableArray<intptr_t>& added_subclass_to_cids) {
   ASSERT(FLAG_use_cha);
   if (added_subclass_to_cids.is_empty()) return;
-  // Deoptimize all live frames.
-  DeoptimizeIfOwner(added_subclass_to_cids);
   // Switch all functions' code to unoptimized.
   const ClassTable& class_table = *Isolate::Current()->class_table();
   Class& cls = Class::Handle();
-  Array& array = Array::Handle();
-  Function& function = Function::Handle();
   for (intptr_t i = 0; i < added_subclass_to_cids.length(); i++) {
     intptr_t cid = added_subclass_to_cids[i];
     cls = class_table.At(cid);
     ASSERT(!cls.IsNull());
-    array = cls.functions();
-    const intptr_t num_functions = array.IsNull() ? 0 : array.Length();
-    for (intptr_t f = 0; f < num_functions; f++) {
-      function ^= array.At(f);
-      ASSERT(!function.IsNull());
-      if (function.HasOptimizedCode()) {
-        function.SwitchToUnoptimizedCode();
-      }
-    }
+    cls.DisableCHAOptimizedCode();
   }
 }
 
@@ -121,9 +109,7 @@ bool ClassFinalizer::ProcessPendingClasses() {
     return true;
   }
 
-  LongJump* base = isolate->long_jump_base();
-  LongJump jump;
-  isolate->set_long_jump_base(&jump);
+  LongJumpScope jump;
   if (setjmp(*jump.Set()) == 0) {
     GrowableObjectArray& class_array = GrowableObjectArray::Handle();
     class_array = object_store->pending_classes();
@@ -153,7 +139,6 @@ bool ClassFinalizer::ProcessPendingClasses() {
   } else {
     retval = false;
   }
-  isolate->set_long_jump_base(base);
   return retval;
 }
 
@@ -320,7 +305,6 @@ void ClassFinalizer::ResolveRedirectingFactoryTarget(
     OS::Print("Resolving redirecting factory: %s\n",
               String::Handle(factory.name()).ToCString());
   }
-  ResolveType(cls, type, kCanonicalize);
   type ^= FinalizeType(cls, type, kCanonicalize);
   factory.SetRedirectionType(type);
   if (type.IsMalformedOrMalbounded()) {
@@ -417,8 +401,7 @@ void ClassFinalizer::ResolveRedirectingFactoryTarget(
     // If the target type refers to type parameters, substitute them with the
     // type arguments of the redirection type.
     if (!target_type.IsInstantiated()) {
-      const AbstractTypeArguments& type_args = AbstractTypeArguments::Handle(
-          type.arguments());
+      const TypeArguments& type_args = TypeArguments::Handle(type.arguments());
       Error& bound_error = Error::Handle();
       target_type ^= target_type.InstantiateFrom(type_args, &bound_error);
       if (bound_error.IsNull()) {
@@ -437,55 +420,69 @@ void ClassFinalizer::ResolveRedirectingFactoryTarget(
 }
 
 
-void ClassFinalizer::ResolveType(const Class& cls,
-                                 const AbstractType& type,
-                                 FinalizationKind finalization) {
-  if (type.IsResolved() || type.IsFinalized()) {
+void ClassFinalizer::ResolveTypeClass(const Class& cls,
+                                      const AbstractType& type) {
+  if (type.IsFinalized() || type.HasResolvedTypeClass()) {
     return;
   }
   if (FLAG_trace_type_finalization) {
+    OS::Print("Resolve type class of '%s'\n",
+              String::Handle(type.Name()).ToCString());
+  }
+
+  // Type parameters are always resolved in the parser in the correct
+  // non-static scope or factory scope. That resolution scope is unknown here.
+  // Being able to resolve a type parameter from class cls here would indicate
+  // that the type parameter appeared in a static scope. Leaving the type as
+  // unresolved is the correct thing to do.
+
+  // Lookup the type class.
+  const UnresolvedClass& unresolved_class =
+      UnresolvedClass::Handle(type.unresolved_class());
+  const Class& type_class =
+      Class::Handle(ResolveClass(cls, unresolved_class));
+
+  // Replace unresolved class with resolved type class.
+  const Type& parameterized_type = Type::Cast(type);
+  if (type_class.IsNull()) {
+    // The type class could not be resolved. The type is malformed.
+    FinalizeMalformedType(
+        Error::Handle(),  // No previous error.
+        Script::Handle(cls.script()),
+        parameterized_type,
+        "cannot resolve class '%s' from '%s'",
+        String::Handle(unresolved_class.Name()).ToCString(),
+        String::Handle(cls.Name()).ToCString());
+    return;
+  }
+  parameterized_type.set_type_class(type_class);
+}
+
+
+void ClassFinalizer::ResolveType(const Class& cls, const AbstractType& type) {
+  if (type.IsResolved()) {
+    return;
+  }
+  ASSERT(type.IsType());
+  if (FLAG_trace_type_finalization) {
     OS::Print("Resolve type '%s'\n", String::Handle(type.Name()).ToCString());
   }
-
-  // Resolve the type class.
-  if (!type.HasResolvedTypeClass()) {
-    // Type parameters are always resolved in the parser in the correct
-    // non-static scope or factory scope. That resolution scope is unknown here.
-    // Being able to resolve a type parameter from class cls here would indicate
-    // that the type parameter appeared in a static scope. Leaving the type as
-    // unresolved is the correct thing to do.
-
-    // Lookup the type class.
-    const UnresolvedClass& unresolved_class =
-        UnresolvedClass::Handle(type.unresolved_class());
-    const Class& type_class =
-        Class::Handle(ResolveClass(cls, unresolved_class));
-
-    // Replace unresolved class with resolved type class.
-    const Type& parameterized_type = Type::Cast(type);
-    if (type_class.IsNull()) {
-      // The type class could not be resolved. The type is malformed.
-      FinalizeMalformedType(
-          Error::Handle(),  // No previous error.
-          Script::Handle(cls.script()),
-          parameterized_type,
-          "cannot resolve class '%s' from '%s'",
-          String::Handle(unresolved_class.Name()).ToCString(),
-          String::Handle(cls.Name()).ToCString());
-      return;
-    }
-    parameterized_type.set_type_class(type_class);
+  ResolveTypeClass(cls, type);
+  if (type.IsMalformed()) {
+    ASSERT(type.IsResolved());
+    return;
   }
-
+  // Mark type as resolved before resolving its type arguments in order to avoid
+  // repeating resolution of recursive types.
+  Type::Cast(type).set_is_resolved();
   // Resolve type arguments, if any.
-  const AbstractTypeArguments& arguments =
-      AbstractTypeArguments::Handle(type.arguments());
+  const TypeArguments& arguments = TypeArguments::Handle(type.arguments());
   if (!arguments.IsNull()) {
     const intptr_t num_arguments = arguments.Length();
     AbstractType& type_argument = AbstractType::Handle();
     for (intptr_t i = 0; i < num_arguments; i++) {
       type_argument = arguments.TypeAt(i);
-      ResolveType(cls, type_argument, finalization);
+      ResolveType(cls, type_argument);
     }
   }
 }
@@ -548,7 +545,7 @@ void ClassFinalizer::FinalizeTypeParameters(
 // same time. Canonicalization happens when pending types are processed.
 void ClassFinalizer::FinalizeTypeArguments(
     const Class& cls,
-    const AbstractTypeArguments& arguments,
+    const TypeArguments& arguments,
     intptr_t num_uninitialized_arguments,
     Error* bound_error,
     GrowableObjectArray* pending_types) {
@@ -569,7 +566,7 @@ void ClassFinalizer::FinalizeTypeArguments(
           cls, super_type, kFinalize, pending_types);
       cls.set_super_type(super_type);
     }
-    AbstractTypeArguments& super_type_args = AbstractTypeArguments::Handle(
+    TypeArguments& super_type_args = TypeArguments::Handle(
         super_type.arguments());
     // Offset of super type's type parameters in cls' type argument vector.
     const intptr_t super_offset = num_super_type_args - num_super_type_params;
@@ -582,7 +579,8 @@ void ClassFinalizer::FinalizeTypeArguments(
               cls, super_type_arg, kFinalize, pending_types);
           super_type_args.SetTypeAt(i, super_type_arg);
         }
-        if (!super_type_arg.IsInstantiated()) {
+        if (!super_type_arg.IsBeingFinalized() &&
+            !super_type_arg.IsInstantiated()) {
           Error& error = Error::Handle();
           super_type_arg = super_type_arg.InstantiateFrom(arguments, &error);
           if (!error.IsNull()) {
@@ -610,10 +608,9 @@ void ClassFinalizer::FinalizeTypeArguments(
 // Replace a type argument that cannot be checked at compile time by a
 // BoundedType, thereby postponing the bound check to run time.
 // Return a bound error if a type argument is not within bound at compile time.
-void ClassFinalizer::CheckTypeArgumentBounds(
-    const Class& cls,
-    const AbstractTypeArguments& arguments,
-    Error* bound_error) {
+void ClassFinalizer::CheckTypeArgumentBounds(const Class& cls,
+                                             const TypeArguments& arguments,
+                                             Error* bound_error) {
   if (!cls.is_type_finalized()) {
     FinalizeUpperBounds(cls);
   }
@@ -642,6 +639,15 @@ void ClassFinalizer::CheckTypeArgumentBounds(
       continue;
     }
     ASSERT(type_arg.IsFinalized());
+    if (type_arg.IsMalbounded()) {
+      // The type argument itself is already malbounded, independently of the
+      // declared bound, which may be Object.
+      // Propagate the bound error from the type argument to the type.
+      if (bound_error->IsNull()) {
+        *bound_error = type_arg.error();
+        ASSERT(!bound_error->IsNull());
+      }
+    }
     cls_type_param = cls_type_params.TypeAt(i);
     const TypeParameter& type_param = TypeParameter::Cast(cls_type_param);
     ASSERT(type_param.IsFinalized());
@@ -697,8 +703,7 @@ void ClassFinalizer::CheckTypeArgumentBounds(
 
 void ClassFinalizer::CheckTypeBounds(const Class& cls, const Type& type) {
   ASSERT(type.IsFinalized());
-  AbstractTypeArguments& arguments =
-      AbstractTypeArguments::Handle(type.arguments());
+  TypeArguments& arguments = TypeArguments::Handle(type.arguments());
   if (arguments.IsNull()) {
     return;
   }
@@ -750,7 +755,6 @@ RawAbstractType* ClassFinalizer::FinalizeType(
     }
     return type.raw();
   }
-  ASSERT(type.IsResolved());
   ASSERT(finalization >= kFinalize);
 
   if (type.IsTypeRef()) {
@@ -768,6 +772,7 @@ RawAbstractType* ClassFinalizer::FinalizeType(
     return TypeRef::New(type);
   }
 
+  ResolveType(cls, type);
   if (FLAG_trace_type_finalization) {
     OS::Print("Finalizing type '%s' for class '%s'\n",
               String::Handle(type.Name()).ToCString(),
@@ -808,10 +813,11 @@ RawAbstractType* ClassFinalizer::FinalizeType(
   // At this point, we can only have a parameterized_type.
   const Type& parameterized_type = Type::Cast(type);
 
+  Isolate* isolate = Isolate::Current();
   // This type is the root type of the type graph if no pending types queue is
   // allocated yet.
   const bool is_root_type = (pending_types == NULL);
-  GrowableObjectArray& types = GrowableObjectArray::Handle();
+  GrowableObjectArray& types = GrowableObjectArray::Handle(isolate);
   if (is_root_type) {
     types = GrowableObjectArray::New();
     pending_types = &types;
@@ -822,7 +828,7 @@ RawAbstractType* ClassFinalizer::FinalizeType(
   // the type itself, a precondition to calling FinalizeType).
   // Also, the interfaces of the type class must be resolved and the type
   // parameters of the type class must be finalized.
-  Class& type_class = Class::Handle(parameterized_type.type_class());
+  Class& type_class = Class::Handle(isolate, parameterized_type.type_class());
   if (!type_class.is_type_finalized()) {
     FinalizeTypeParameters(type_class, pending_types);
     ResolveUpperBounds(type_class);
@@ -837,29 +843,30 @@ RawAbstractType* ClassFinalizer::FinalizeType(
   // Check the number of parsed type arguments, if any.
   // Specifying no type arguments indicates a raw type, which is not an error.
   // However, type parameter bounds are checked below, even for a raw type.
-  AbstractTypeArguments& arguments =
-      AbstractTypeArguments::Handle(parameterized_type.arguments());
+  TypeArguments& arguments =
+      TypeArguments::Handle(isolate, parameterized_type.arguments());
   if (!arguments.IsNull() && (arguments.Length() != num_type_parameters)) {
     // Wrong number of type arguments. The type is mapped to the raw type.
     if (FLAG_error_on_bad_type) {
-      const Script& script = Script::Handle(cls.script());
-      const String& type_class_name = String::Handle(type_class.Name());
-      ReportError(Error::Handle(),  // No previous error.
+      const Script& script = Script::Handle(isolate, cls.script());
+      const String& type_class_name =
+          String::Handle(isolate, type_class.Name());
+      ReportError(Error::Handle(isolate),  // No previous error.
                   script, parameterized_type.token_pos(),
                   "wrong number of type arguments for class '%s'",
                   type_class_name.ToCString());
     }
     // Make the type raw and continue without reporting any error.
     // A static warning should have been reported.
-    arguments = AbstractTypeArguments::null();
+    arguments = TypeArguments::null();
     parameterized_type.set_arguments(arguments);
   }
 
   // The full type argument vector consists of the type arguments of the
   // super types of type_class, which are initialized from the parsed
   // type arguments, followed by the parsed type arguments.
-  TypeArguments& full_arguments = TypeArguments::Handle();
-  Error& bound_error = Error::Handle();
+  TypeArguments& full_arguments = TypeArguments::Handle(isolate);
+  Error& bound_error = Error::Handle(isolate);
   if (num_type_arguments > 0) {
     // If no type arguments were parsed and if the super types do not prepend
     // type arguments to the vector, we can leave the vector as null.
@@ -868,12 +875,9 @@ RawAbstractType* ClassFinalizer::FinalizeType(
       // Copy the parsed type arguments at the correct offset in the full type
       // argument vector.
       const intptr_t offset = num_type_arguments - num_type_parameters;
-      AbstractType& type_arg = AbstractType::Handle(Type::DynamicType());
-      // TODO(regis): Leave the temporary type argument values as null.
-      for (intptr_t i = 0; i < offset; i++) {
-        // Temporarily set the type arguments of the super classes to dynamic.
-        full_arguments.SetTypeAt(i, type_arg);
-      }
+      AbstractType& type_arg =
+          AbstractType::Handle(isolate, Type::DynamicType());
+      // Leave the temporary type arguments at indices [0..offset[ as null.
       for (intptr_t i = 0; i < num_type_parameters; i++) {
         // If no type parameters were provided, a raw type is desired, so we
         // create a vector of dynamic.
@@ -914,10 +918,10 @@ RawAbstractType* ClassFinalizer::FinalizeType(
       // signature function may either be an alias or the enclosing class of a
       // local function, in which case the super type of the enclosing class is
       // also considered when filling up the argument vector.
-      Class& owner_class = Class::Handle();
+      Class& owner_class = Class::Handle(isolate);
       if (type_class.IsSignatureClass()) {
         const Function& signature_fun =
-            Function::Handle(type_class.signature_function());
+            Function::Handle(isolate, type_class.signature_function());
         ASSERT(!signature_fun.is_static());
         owner_class = signature_fun.Owner();
       } else {
@@ -953,7 +957,7 @@ RawAbstractType* ClassFinalizer::FinalizeType(
   // If we are done finalizing a graph of mutually recursive types, check their
   // bounds.
   if (is_root_type) {
-    Type& type = Type::Handle();
+    Type& type = Type::Handle(isolate);
     for (intptr_t i = 0; i < types.Length(); i++) {
       type ^= types.At(i);
       CheckTypeBounds(cls, type);
@@ -973,8 +977,8 @@ RawAbstractType* ClassFinalizer::FinalizeType(
 
   if (FLAG_trace_type_finalization) {
     OS::Print("Done finalizing type '%s' with %" Pd " type args: %s\n",
-              String::Handle(parameterized_type.Name()).ToCString(),
-              parameterized_type.arguments() == AbstractTypeArguments::null() ?
+              String::Handle(isolate, parameterized_type.Name()).ToCString(),
+              parameterized_type.arguments() == TypeArguments::null() ?
                   0 : num_type_arguments,
               parameterized_type.ToCString());
   }
@@ -993,7 +997,6 @@ void ClassFinalizer::ResolveAndFinalizeSignature(const Class& cls,
   AbstractType& type = AbstractType::Handle(function.result_type());
   // It is not a compile time error if this name does not resolve to a class or
   // interface.
-  ResolveType(cls, type, kCanonicalize);
   type = FinalizeType(cls, type, kCanonicalize);
   // The result type may be malformed or malbounded.
   function.set_result_type(type);
@@ -1001,7 +1004,6 @@ void ClassFinalizer::ResolveAndFinalizeSignature(const Class& cls,
   const intptr_t num_parameters = function.NumParameters();
   for (intptr_t i = 0; i < num_parameters; i++) {
     type = function.ParameterTypeAt(i);
-    ResolveType(cls, type, kCanonicalize);
     type = FinalizeType(cls, type, kCanonicalize);
     // The parameter type may be malformed or malbounded.
     function.SetParameterTypeAt(i, type);
@@ -1061,8 +1063,8 @@ void ClassFinalizer::ResolveUpperBounds(const Class& cls) {
   const intptr_t num_type_params = cls.NumTypeParameters();
   TypeParameter& type_param = TypeParameter::Handle();
   AbstractType& bound = AbstractType::Handle();
-  const AbstractTypeArguments& type_params =
-      AbstractTypeArguments::Handle(cls.type_parameters());
+  const TypeArguments& type_params =
+      TypeArguments::Handle(cls.type_parameters());
   ASSERT((type_params.IsNull() && (num_type_params == 0)) ||
          (type_params.Length() == num_type_params));
   // In a first pass, resolve all bounds. This guarantees that finalization
@@ -1070,7 +1072,7 @@ void ClassFinalizer::ResolveUpperBounds(const Class& cls) {
   for (intptr_t i = 0; i < num_type_params; i++) {
     type_param ^= type_params.TypeAt(i);
     bound = type_param.bound();
-    ResolveType(cls, bound, kCanonicalize);
+    ResolveType(cls, bound);
   }
 }
 
@@ -1080,8 +1082,8 @@ void ClassFinalizer::FinalizeUpperBounds(const Class& cls) {
   const intptr_t num_type_params = cls.NumTypeParameters();
   TypeParameter& type_param = TypeParameter::Handle();
   AbstractType& bound = AbstractType::Handle();
-  const AbstractTypeArguments& type_params =
-      AbstractTypeArguments::Handle(cls.type_parameters());
+  const TypeArguments& type_params =
+      TypeArguments::Handle(cls.type_parameters());
   ASSERT((type_params.IsNull() && (num_type_params == 0)) ||
          (type_params.Length() == num_type_params));
   for (intptr_t i = 0; i < num_type_params; i++) {
@@ -1130,7 +1132,6 @@ void ClassFinalizer::ResolveAndFinalizeMemberTypes(const Class& cls) {
   for (intptr_t i = 0; i < num_fields; i++) {
     field ^= array.At(i);
     type = field.type();
-    ResolveType(cls, type, kCanonicalize);
     type = FinalizeType(cls, type, kCanonicalize);
     field.set_type(type);
     name = field.name();
@@ -1202,7 +1203,7 @@ void ClassFinalizer::ResolveAndFinalizeMemberTypes(const Class& cls) {
       if (!error.IsNull() ||
           (!type.IsDynamicType() &&
            !const_value.IsInstanceOf(type,
-                                     AbstractTypeArguments::Handle(),
+                                     Object::null_type_arguments(),
                                      &error))) {
         if (FLAG_error_on_bad_type) {
           const AbstractType& const_value_type = AbstractType::Handle(
@@ -1278,6 +1279,9 @@ void ClassFinalizer::ResolveAndFinalizeMemberTypes(const Class& cls) {
       // A constructor cannot override anything.
       for (intptr_t i = 0; i < interfaces.Length(); i++) {
         super_class ^= interfaces.At(i);
+        // Finalize superclass since overrides check relies on all members
+        // of the superclass to be finalized.
+        FinalizeClass(super_class);
         overridden_function = super_class.LookupDynamicFunction(name);
         if (!overridden_function.IsNull() &&
             !function.HasCompatibleParametersWith(overridden_function,
@@ -1394,62 +1398,71 @@ void ClassFinalizer::ResolveAndFinalizeMemberTypes(const Class& cls) {
 // CloneMixinAppTypeParameters decorates class S&M with type parameters T` and
 // T, and use them as type arguments in S<T`> and M<T>.
 void ClassFinalizer::CloneMixinAppTypeParameters(const Class& mixin_app_class) {
-  ASSERT(mixin_app_class.type_parameters() == AbstractTypeArguments::null());
-  const AbstractType& super_type = AbstractType::Handle(
+  ASSERT(mixin_app_class.type_parameters() == TypeArguments::null());
+  Isolate* isolate = Isolate::Current();
+  const AbstractType& super_type = AbstractType::Handle(isolate,
       mixin_app_class.super_type());
   ASSERT(super_type.IsResolved());
-  const Class& super_class = Class::Handle(super_type.type_class());
+  const Class& super_class = Class::Handle(isolate, super_type.type_class());
   const intptr_t num_super_type_params = super_class.NumTypeParameters();
-  const Type& mixin_type = Type::Handle(mixin_app_class.mixin());
-  const Class& mixin_class = Class::Handle(mixin_type.type_class());
+  const Type& mixin_type = Type::Handle(isolate, mixin_app_class.mixin());
+  const Class& mixin_class = Class::Handle(isolate, mixin_type.type_class());
   const intptr_t num_mixin_type_params = mixin_class.NumTypeParameters();
   // The mixin class cannot be Object and this was checked earlier.
   ASSERT(!mixin_class.IsObjectClass());
 
-  // Add the mixin type to the interfaces that the mixin application
-  // class implements. This is necessary so that type tests work.
-  const Array& interfaces = Array::Handle(Array::New(1));
-  const Type& interface = Type::Handle(Type::New(
-      mixin_class,
-      Object::null_abstract_type_arguments(),  // Set again below if generic.
-      mixin_app_class.token_pos()));
-  ASSERT(!interface.IsFinalized());
-  interfaces.SetAt(0, interface);
-  ASSERT(mixin_app_class.interfaces() == Object::empty_array().raw());
-  mixin_app_class.set_interfaces(interfaces);
+  // The mixin type (in raw form) should have been added to the interfaces
+  // implemented by the mixin application class. This is necessary so that cycle
+  // check works at compile time (type arguments are ignored) and so that
+  // type tests work at runtime (by then, type arguments will have been set, see
+  // below).
+  ASSERT(mixin_app_class.interfaces() != Object::empty_array().raw());
 
   // If both the super type and the mixin type are non generic, the mixin
   // application class is non generic as well and we can skip type parameter
   // cloning.
+  bool has_uninstantiated_bounds = false;
   if ((num_super_type_params + num_mixin_type_params) > 0) {
+    // If the last ampersand in the name of the mixin application class is
+    // doubled, the same type parameters can propagate the type arguments to
+    // the super type and to the mixin type.
+    bool share_type_params = false;
+    if (num_super_type_params == num_mixin_type_params) {
+      const String& name = String::Handle(isolate, mixin_app_class.Name());
+      for (intptr_t i = name.Length() - 1; i > 0; --i) {
+        if (name.CharAt(i) == '&') {
+          if (name.CharAt(i - 1) == '&') {
+            share_type_params = true;
+          }
+          break;
+        }
+      }
+    }
+
+    const TypeArguments& cloned_type_params = TypeArguments::Handle(isolate,
+        TypeArguments::New((share_type_params ? 0 : num_super_type_params) +
+                           num_mixin_type_params));
+    TypeParameter& param = TypeParameter::Handle(isolate);
+    TypeParameter& cloned_param = TypeParameter::Handle(isolate);
+    String& param_name = String::Handle(isolate);
+    AbstractType& param_bound = AbstractType::Handle(isolate);
+    intptr_t cloned_index = 0;
+
     // First, clone the super class type parameters. Rename them so that
     // there can be no name conflict between the parameters of the super
     // class and the mixin class.
-    const TypeArguments& cloned_type_params = TypeArguments::Handle(
-        TypeArguments::New(num_super_type_params + num_mixin_type_params));
-    TypeParameter& param = TypeParameter::Handle();
-    TypeParameter& cloned_param = TypeParameter::Handle();
-    String& param_name = String::Handle();
-    AbstractType& param_bound = AbstractType::Handle();
-    intptr_t cloned_index = 0;
-    if (num_super_type_params > 0) {
+    if (!share_type_params && (num_super_type_params > 0)) {
       const TypeArguments& super_type_params =
-          TypeArguments::Handle(super_class.type_parameters());
-      const TypeArguments& super_type_args =
-          TypeArguments::Handle(TypeArguments::New(num_super_type_params));
+          TypeArguments::Handle(isolate, super_class.type_parameters());
+      const TypeArguments& super_type_args = TypeArguments::Handle(isolate,
+          TypeArguments::New(num_super_type_params));
+      // The cloned super class type parameters do not need to repeat their
+      // bounds, since the bound checks will be performed at the super class
+      // level.
+      param_bound = isolate->object_store()->object_type();
       for (intptr_t i = 0; i < num_super_type_params; i++) {
         param ^= super_type_params.TypeAt(i);
         param_name = param.name();
-        param_bound = param.bound();
-        // TODO(14453): handle type bounds.
-        if (!param_bound.IsObjectType()) {
-          const Script& script = Script::Handle(mixin_app_class.script());
-          ReportError(Error::Handle(),  // No previous error.
-                      script, param.token_pos(),
-                      "type parameter '%s': type bounds not yet"
-                      " implemented for mixins\n",
-                      param_name.ToCString());
-        }
         param_name = String::Concat(param_name, Symbols::Backtick());
         param_name = Symbols::New(param_name);
         cloned_param = TypeParameter::New(mixin_app_class,
@@ -1463,8 +1476,8 @@ void ClassFinalizer::CloneMixinAppTypeParameters(const Class& mixin_app_class) {
         super_type_args.SetTypeAt(cloned_index, cloned_param);
         cloned_index++;
       }
-      // TODO(14453): May need to handle BoundedType here.
-      ASSERT(super_type.IsType());
+      // The super type may have a BoundedType as type argument, but cannot be
+      // a BoundedType itself.
       Type::Cast(super_type).set_arguments(super_type_args);
       ASSERT(!super_type.IsFinalized());
     }
@@ -1476,25 +1489,15 @@ void ClassFinalizer::CloneMixinAppTypeParameters(const Class& mixin_app_class) {
     // with that name.
     if (num_mixin_type_params > 0) {
       const TypeArguments& mixin_params =
-          TypeArguments::Handle(mixin_class.type_parameters());
-      const TypeArguments& mixin_type_args = TypeArguments::Handle(
-          TypeArguments::New(num_mixin_type_params));
-      // TODO(regis): Can we share interface type and mixin_type?
-      const TypeArguments& interface_type_args = TypeArguments::Handle(
+          TypeArguments::Handle(isolate, mixin_class.type_parameters());
+      const TypeArguments& mixin_type_args = TypeArguments::Handle(isolate,
           TypeArguments::New(num_mixin_type_params));
       for (intptr_t i = 0; i < num_mixin_type_params; i++) {
         param ^= mixin_params.TypeAt(i);
         param_name = param.name();
-        param_bound = param.bound();
-
-        // TODO(14453): handle type bounds.
-        if (!param_bound.IsObjectType()) {
-          const Script& script = Script::Handle(mixin_app_class.script());
-          ReportError(Error::Handle(),  // No previous error.
-                      script, param.token_pos(),
-                      "type parameter '%s': type bounds not yet"
-                      " implemented for mixins\n",
-                      param_name.ToCString());
+        param_bound = param.bound();  // The bound will be adjusted below.
+        if (!param_bound.IsInstantiated()) {
+          has_uninstantiated_bounds = true;
         }
         cloned_param = TypeParameter::New(mixin_app_class,
                                           cloned_index,
@@ -1502,17 +1505,46 @@ void ClassFinalizer::CloneMixinAppTypeParameters(const Class& mixin_app_class) {
                                           param_bound,
                                           param.token_pos());
         cloned_type_params.SetTypeAt(cloned_index, cloned_param);
-        interface_type_args.SetTypeAt(i, cloned_param);
         mixin_type_args.SetTypeAt(i, cloned_param);
         cloned_index++;
       }
 
-      // Lastly, set the type arguments of the mixin type and of the single
-      // interface type.
+      // Third, replace the type parameters appearing in the bounds of the mixin
+      // type parameters, if any, by the cloned type parameters. This can be
+      // done by instantiating each bound using the mixin_type_args as
+      // instantiator. Since the mixin class must extend Object, its first type
+      // parameter has index 0, therefore, the instantiator does not require
+      // shifting. There is however an exception where the mixin class is an
+      // alias, in which case shifting is required and performed later in
+      // ApplyMixinAppAlias.
+      // Unfinalized type parameters replace finalized type parameters, which
+      // is not a problem since they will get finalized shortly as the mixin
+      // application class gets finalized.
+      if (has_uninstantiated_bounds && !mixin_class.is_mixin_app_alias()) {
+        Error& bound_error = Error::Handle(isolate);
+        for (intptr_t i = 0; i < num_mixin_type_params; i++) {
+          param ^= mixin_type_args.TypeAt(i);
+          param_bound = param.bound();
+          if (!param_bound.IsInstantiated()) {
+            param_bound = param_bound.InstantiateFrom(mixin_type_args,
+                                                      &bound_error);
+            // The instantiator contains only TypeParameter objects and no
+            // BoundedType objects, so no bound error may occur.
+            ASSERT(bound_error.IsNull());
+            ASSERT(!param_bound.IsInstantiated());
+            param.set_bound(param_bound);
+          }
+        }
+      }
+
+      // Lastly, set the type arguments of the mixin type, which is also the
+      // single interface type.
       ASSERT(!mixin_type.IsFinalized());
       mixin_type.set_arguments(mixin_type_args);
-      ASSERT(!interface.IsFinalized());
-      interface.set_arguments(interface_type_args);
+      if (share_type_params) {
+        Type::Cast(super_type).set_arguments(mixin_type_args);
+        ASSERT(!super_type.IsFinalized());
+      }
     }
     mixin_app_class.set_type_parameters(cloned_type_params);
   }
@@ -1521,7 +1553,7 @@ void ClassFinalizer::CloneMixinAppTypeParameters(const Class& mixin_app_class) {
   // application class. The new class will have the aliased mixin as actual
   // mixin.
   if (mixin_class.is_mixin_app_alias()) {
-    ApplyMixinAppAlias(mixin_app_class);
+    ApplyMixinAppAlias(mixin_app_class, has_uninstantiated_bounds);
   }
 }
 
@@ -1577,34 +1609,48 @@ parameters U and V of S&A. However, Map<U, V> is copied from the super type
 Object&M<Map<U, V>> of A and, therefore, U and V refer to A. An instantiation
 step with a properly crafted instantiator vector takes care of the required type
 parameter substitution.
-
 The instantiator vector must end with the type parameters U and V of S&A.
 The offset of the first type parameter U of S&A must be at the finalized index
 of type parameter U of A.
+
+The same instantiator vector is used to adjust the type parameter bounds on U
+and V, if any. This step was postponed from CloneMixinAppTypeParameters above.
+
+Also, a possible bound on type parameter T of M (not shown in the example above)
+must be applied to type parameter T of S&A`. If the bound is uninstantiated,
+i.e. if it refers to T or other type parameters of M, an instantiation step is
+required to substitute these type parameters of M with type parameters of S&A`.
+The instantiator vector consists of the cloned type parameters of M without
+offset, since class M must extend Object. This is done in the recursive call to
+CloneMixinAppTypeParameters and does not require specific code in
+ApplyMixinAppAlias.
 */
-void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class) {
+void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class,
+                                        bool has_uninstantiated_bounds) {
   // If this mixin alias is aliasing another mixin alias, another class
   // will be inserted via recursion. No need to check here.
   // The mixin type may or may not be finalized yet.
-  AbstractType& super_type = AbstractType::Handle(mixin_app_class.super_type());
-  const Type& mixin_type = Type::Handle(mixin_app_class.mixin());
-  const Class& mixin_class = Class::Handle(mixin_type.type_class());
+  Isolate* isolate = Isolate::Current();
+  AbstractType& super_type = AbstractType::Handle(isolate,
+                                                  mixin_app_class.super_type());
+  const Type& mixin_type = Type::Handle(isolate, mixin_app_class.mixin());
+  const Class& mixin_class = Class::Handle(isolate, mixin_type.type_class());
   ASSERT(mixin_class.is_mixin_app_alias());
-  const Class& aliased_mixin_app_class = Class::Handle(
+  const Class& aliased_mixin_app_class = Class::Handle(isolate,
       mixin_class.SuperClass());
-  const Type& aliased_mixin_type = Type::Handle(
+  const Type& aliased_mixin_type = Type::Handle(isolate,
       aliased_mixin_app_class.mixin());
   // The name of the inserted mixin application class is the name of mixin
   // class name with a backtick added.
-  String& inserted_class_name = String::Handle(mixin_app_class.Name());
+  String& inserted_class_name = String::Handle(isolate, mixin_app_class.Name());
   inserted_class_name = String::Concat(inserted_class_name,
                                        Symbols::Backtick());
-  const Library& library = Library::Handle(mixin_app_class.library());
-  Class& inserted_class = Class::Handle(
+  const Library& library = Library::Handle(isolate, mixin_app_class.library());
+  Class& inserted_class = Class::Handle(isolate,
       library.LookupLocalClass(inserted_class_name));
   if (inserted_class.IsNull()) {
     inserted_class_name = Symbols::New(inserted_class_name);
-    const Script& script = Script::Handle(mixin_app_class.script());
+    const Script& script = Script::Handle(isolate, mixin_app_class.script());
     inserted_class = Class::New(
         inserted_class_name, script, mixin_app_class.token_pos());
     inserted_class.set_is_synthesized_class();
@@ -1628,12 +1674,21 @@ void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class) {
     // CloneMixinAppTypeParameters.
     // After FinalizeTypesInClass, they will refer to the type parameters of
     // the mixin class typedef.
-    const Type& generic_mixin_type = Type::Handle(
-        Type::New(Class::Handle(aliased_mixin_type.type_class()),
-                  Object::null_abstract_type_arguments(),
+    const Type& generic_mixin_type = Type::Handle(isolate,
+        Type::New(Class::Handle(isolate, aliased_mixin_type.type_class()),
+                  Object::null_type_arguments(),
                   aliased_mixin_type.token_pos()));
     inserted_class.set_mixin(generic_mixin_type);
-    // The interface will be set in CloneMixinAppTypeParameters.
+    // Add the mixin type to the list of interfaces that the mixin application
+    // class implements. This is necessary so that cycle check work at
+    // compile time (type arguments are ignored by that check).
+    const Array& interfaces = Array::Handle(Array::New(1));
+    interfaces.SetAt(0, generic_mixin_type);
+    ASSERT(inserted_class.interfaces() == Object::empty_array().raw());
+    inserted_class.set_interfaces(interfaces);
+    // The type arguments of the interface, if any, will be set in
+    // CloneMixinAppTypeParameters, which is called indirectly from
+    // FinalizeTypesInClass below.
   }
 
   // Finalize the types and call CloneMixinAppTypeParameters.
@@ -1651,7 +1706,7 @@ void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class) {
   // It is important that the type parameters of the mixin application class
   // are not finalized yet, because new type parameters may have been added
   // to the super class.
-  Class& super_class = Class::Handle(super_type.type_class());
+  Class& super_class = Class::Handle(isolate, super_type.type_class());
   ASSERT(mixin_app_class.SuperClass() == super_class.raw());
   while (super_class.IsMixinApplication()) {
     super_class = super_class.SuperClass();
@@ -1661,16 +1716,16 @@ void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class) {
   intptr_t offset =
       mixin_class.NumTypeArguments() - mixin_class.NumTypeParameters();
   const TypeArguments& type_params =
-      TypeArguments::Handle(mixin_app_class.type_parameters());
-  TypeArguments& instantiator = TypeArguments::Handle(
+      TypeArguments::Handle(isolate, mixin_app_class.type_parameters());
+  TypeArguments& instantiator = TypeArguments::Handle(isolate,
       TypeArguments::New(offset + num_mixin_type_params));
-  AbstractType& type = AbstractType::Handle();
+  AbstractType& type = AbstractType::Handle(isolate);
   for (intptr_t i = 0; i < num_mixin_type_params; i++) {
     type = type_params.TypeAt(num_super_type_params + i);
     instantiator.SetTypeAt(offset + i, type);
   }
   ASSERT(aliased_mixin_type.IsFinalized());
-  const Class& aliased_mixin_type_class = Class::Handle(
+  const Class& aliased_mixin_type_class = Class::Handle(isolate,
       aliased_mixin_type.type_class());
   const intptr_t num_aliased_mixin_type_params =
       aliased_mixin_type_class.NumTypeParameters();
@@ -1680,10 +1735,10 @@ void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class) {
   ASSERT(inserted_class.NumTypeParameters() ==
          (num_super_type_params + num_aliased_mixin_type_params));
   // The aliased_mixin_type may be raw.
-  const AbstractTypeArguments& mixin_class_super_type_args =
-      AbstractTypeArguments::Handle(
-          AbstractType::Handle(mixin_class.super_type()).arguments());
-  TypeArguments& new_mixin_type_args = TypeArguments::Handle();
+  const TypeArguments& mixin_class_super_type_args =
+      TypeArguments::Handle(isolate,
+          AbstractType::Handle(isolate, mixin_class.super_type()).arguments());
+  TypeArguments& new_mixin_type_args = TypeArguments::Handle(isolate);
   if ((num_aliased_mixin_type_params > 0) &&
       !mixin_class_super_type_args.IsNull()) {
     new_mixin_type_args = TypeArguments::New(num_aliased_mixin_type_params);
@@ -1694,13 +1749,14 @@ void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class) {
   }
   if (!new_mixin_type_args.IsNull() &&
       !new_mixin_type_args.IsInstantiated()) {
-    Error& bound_error = Error::Handle();
+    Error& bound_error = Error::Handle(isolate);
     new_mixin_type_args ^=
         new_mixin_type_args.InstantiateFrom(instantiator, &bound_error);
-    // TODO(14453): Handle bound error.
+    // The instantiator contains only TypeParameter objects and no BoundedType
+    // objects, so no bound error may occur.
     ASSERT(bound_error.IsNull());
   }
-  TypeArguments& new_super_type_args = TypeArguments::Handle();
+  TypeArguments& new_super_type_args = TypeArguments::Handle(isolate);
   if ((num_super_type_params + num_aliased_mixin_type_params) > 0) {
     new_super_type_args = TypeArguments::New(num_super_type_params +
                                              num_aliased_mixin_type_params);
@@ -1721,6 +1777,26 @@ void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class) {
                          new_super_type_args,
                          mixin_app_class.token_pos());
   mixin_app_class.set_super_type(super_type);
+
+  // Perform the bound adjustment posponed from CloneMixinAppTypeParameters.
+  if (has_uninstantiated_bounds) {
+    TypeParameter& param = TypeParameter::Handle(isolate);
+    AbstractType& param_bound = AbstractType::Handle(isolate);
+    Error& bound_error = Error::Handle(isolate);
+    for (intptr_t i = 0; i < num_mixin_type_params; i++) {
+      param ^= type_params.TypeAt(num_super_type_params + i);
+      param_bound = param.bound();
+      if (!param_bound.IsInstantiated()) {
+        param_bound = param_bound.InstantiateFrom(instantiator, &bound_error);
+        // The instantiator contains only TypeParameter objects and no
+        // BoundedType objects, so no bound error may occur.
+        ASSERT(bound_error.IsNull());
+        ASSERT(!param_bound.IsInstantiated());
+        param.set_bound(param_bound);
+      }
+    }
+  }
+
   // Mark this mixin application class as being an alias.
   mixin_app_class.set_is_mixin_app_alias();
   ASSERT(!mixin_app_class.is_type_finalized());
@@ -1730,7 +1806,7 @@ void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class) {
               "with super type '%s'\n",
               inserted_class.ToCString(),
               mixin_app_class.ToCString(),
-              String::Handle(super_type.Name()).ToCString());
+              String::Handle(isolate, super_type.Name()).ToCString());
   }
 }
 
@@ -1808,7 +1884,10 @@ void ClassFinalizer::ApplyMixinType(const Class& mixin_app_class,
   ASSERT(!mixin_type.IsBeingFinalized());
   mixin_type ^=
       FinalizeType(mixin_app_class, mixin_type, kFinalize, pending_types);
-  // TODO(14453): Check for a malbounded mixin_type.
+  // The mixin type cannot be malbounded, since it merely substitutes the
+  // type parameters of the mixin class with those of the mixin application
+  // class, but it does not instantiate them.
+  ASSERT(!mixin_type.IsMalbounded());
   mixin_app_class.set_mixin(mixin_type);
 }
 
@@ -1878,7 +1957,8 @@ void ClassFinalizer::ApplyMixinMembers(const Class& cls) {
   ASSERT(!mixin_type.IsNull());
   ASSERT(mixin_type.HasResolvedTypeClass());
   const Class& mixin_cls = Class::Handle(isolate, mixin_type.type_class());
-  mixin_cls.EnsureIsFinalized(isolate);
+  const Error& error = Error::Handle(mixin_cls.EnsureIsFinalized(isolate));
+  ASSERT(error.IsNull());
   // If the mixin is a mixin application alias class, there are no members to
   // apply here. A new synthesized class representing the aliased mixin
   // application class was inserted in the super chain of this mixin application
@@ -1984,7 +2064,8 @@ void ClassFinalizer::FinalizeTypesInClass(const Class& cls) {
   AbstractType& super_type = AbstractType::Handle(cls.super_type());
   if (!super_type.IsNull()) {
     // In case of a bound error in the super type in production mode, the
-    // finalized super type will be a BoundedType with a malformed bound.
+    // finalized super type will have a BoundedType as type argument for the
+    // out of bound type argument.
     // It should not be a problem if the class is written to a snapshot and
     // later executed in checked mode. Note that the finalized type argument
     // vector of any type of the base class will contain a BoundedType for the
@@ -2123,7 +2204,7 @@ void ClassFinalizer::FinalizeClass(const Class& cls) {
     CheckForLegalConstClass(cls);
   }
   if (FLAG_use_cha) {
-    RemoveOptimizedCode(added_subclass_to_cids);
+    RemoveCHAOptimizedCode(added_subclass_to_cids);
   }
 }
 
@@ -2156,7 +2237,7 @@ bool ClassFinalizer::IsTypeCycleFree(
     const AbstractType& type,
     GrowableArray<intptr_t>* visited) {
   ASSERT(visited != NULL);
-  ResolveType(cls, type, kCanonicalize);
+  ResolveType(cls, type);
   if (type.IsType() && !type.IsMalformed()) {
     const Class& type_class = Class::Handle(type.type_class());
     if (!type_class.is_type_finalized() &&
@@ -2164,8 +2245,7 @@ bool ClassFinalizer::IsTypeCycleFree(
         !IsAliasCycleFree(type_class, visited)) {
       return false;
     }
-    const AbstractTypeArguments& type_args = AbstractTypeArguments::Handle(
-        type.arguments());
+    const TypeArguments& type_args = TypeArguments::Handle(type.arguments());
     if (!type_args.IsNull()) {
       AbstractType& type_arg = AbstractType::Handle();
       for (intptr_t i = 0; i < type_args.Length(); i++) {
@@ -2201,8 +2281,8 @@ bool ClassFinalizer::IsAliasCycleFree(const Class& cls,
   // Check the bounds of this signature type.
   const intptr_t num_type_params = cls.NumTypeParameters();
   TypeParameter& type_param = TypeParameter::Handle();
-  const AbstractTypeArguments& type_params =
-      AbstractTypeArguments::Handle(cls.type_parameters());
+  const TypeArguments& type_params =
+      TypeArguments::Handle(cls.type_parameters());
   ASSERT((type_params.IsNull() && (num_type_params == 0)) ||
          (type_params.Length() == num_type_params));
   for (intptr_t i = 0; i < num_type_params; i++) {
@@ -2269,8 +2349,7 @@ void ClassFinalizer::CollectTypeArguments(
     const GrowableObjectArray& collected_args) {
   ASSERT(type.HasResolvedTypeClass());
   Class& type_class = Class::Handle(type.type_class());
-  AbstractTypeArguments& type_args =
-      AbstractTypeArguments::Handle(type.arguments());
+  TypeArguments& type_args = TypeArguments::Handle(type.arguments());
   const intptr_t num_type_parameters = type_class.NumTypeParameters();
   const intptr_t num_type_arguments =
       type_args.IsNull() ? 0 : type_args.Length();
@@ -2316,10 +2395,10 @@ RawType* ClassFinalizer::ResolveMixinAppType(
       GrowableObjectArray::Handle(GrowableObjectArray::New());
   AbstractType& mixin_super_type =
       AbstractType::Handle(mixin_app_type.super_type());
-  ResolveType(cls, mixin_super_type, kCanonicalizeWellFormed);
-  ASSERT(mixin_super_type.HasResolvedTypeClass());
-  // TODO(14453): May need to handle BoundedType here.
-  ASSERT(mixin_super_type.IsType());
+  ResolveType(cls, mixin_super_type);
+  ASSERT(mixin_super_type.HasResolvedTypeClass());  // Even if malformed.
+  // The super type may have a BoundedType as type argument, but cannot be
+  // a BoundedType itself.
   CollectTypeArguments(cls, Type::Cast(mixin_super_type), type_args);
   AbstractType& mixin_type = AbstractType::Handle();
   Type& generic_mixin_type = Type::Handle();
@@ -2327,20 +2406,51 @@ RawType* ClassFinalizer::ResolveMixinAppType(
   Class& mixin_app_class = Class::Handle();
   String& mixin_app_class_name = String::Handle();
   String& mixin_type_class_name = String::Handle();
+  AbstractType& super_type_arg = AbstractType::Handle();
+  AbstractType& mixin_type_arg = AbstractType::Handle();
   const intptr_t depth = mixin_app_type.Depth();
   for (intptr_t i = 0; i < depth; i++) {
     mixin_type = mixin_app_type.MixinTypeAt(i);
     ASSERT(!mixin_type.IsNull());
-    ResolveType(cls, mixin_type, kCanonicalizeWellFormed);
-    ASSERT(mixin_type.HasResolvedTypeClass());
+    ResolveType(cls, mixin_type);
+    ASSERT(mixin_type.HasResolvedTypeClass());  // Even if malformed.
     ASSERT(mixin_type.IsType());
+    const intptr_t num_super_type_args = type_args.Length();
     CollectTypeArguments(cls, Type::Cast(mixin_type), type_args);
+
+    // If the mixin type has identical type arguments as the super type, they
+    // can share the same type parameters of the mixin application class,
+    // thereby allowing for further optimizations, such as instantiator vector
+    // reuse or sharing of type arguments with the super class.
+    bool share_type_params = (num_super_type_args > 0) &&
+        (type_args.Length() == 2*num_super_type_args);
+    if (share_type_params) {
+      for (intptr_t i = 0; i < num_super_type_args; i++) {
+        super_type_arg ^= type_args.At(i);
+        mixin_type_arg ^= type_args.At(num_super_type_args + i);
+        if (!super_type_arg.Equals(mixin_type_arg)) {
+          share_type_params = false;
+          break;
+        }
+      }
+      if (share_type_params) {
+        // Cut the type argument vector in half.
+        type_args.SetLength(num_super_type_args);
+      }
+    }
 
     // The name of the mixin application class is a combination of
     // the super class name and mixin class name.
     mixin_app_class_name = mixin_super_type.ClassName();
     mixin_app_class_name = String::Concat(mixin_app_class_name,
                                           Symbols::Ampersand());
+    // If the type parameters are shared between the super type and the mixin
+    // type, use two ampersand symbols, so that the class has a different name
+    // and is not reused in a context where this optimization is not possible.
+    if (share_type_params) {
+      mixin_app_class_name = String::Concat(mixin_app_class_name,
+                                            Symbols::Ampersand());
+    }
     mixin_type_class_name = mixin_type.ClassName();
     mixin_app_class_name = String::Concat(mixin_app_class_name,
                                           mixin_type_class_name);
@@ -2353,9 +2463,16 @@ RawType* ClassFinalizer::ResolveMixinAppType(
       mixin_app_class.set_super_type(mixin_super_type);
       mixin_type_class = mixin_type.type_class();
       generic_mixin_type = Type::New(mixin_type_class,
-                                     Object::null_abstract_type_arguments(),
+                                     Object::null_type_arguments(),
                                      mixin_type.token_pos());
       mixin_app_class.set_mixin(generic_mixin_type);
+      // Add the mixin type to the list of interfaces that the mixin application
+      // class implements. This is necessary so that cycle check work at
+      // compile time (type arguments are ignored by that check).
+      const Array& interfaces = Array::Handle(Array::New(1));
+      interfaces.SetAt(0, generic_mixin_type);
+      ASSERT(mixin_app_class.interfaces() == Object::empty_array().raw());
+      mixin_app_class.set_interfaces(interfaces);
       mixin_app_class.set_is_synthesized_class();
       library.AddClass(mixin_app_class);
 
@@ -2371,7 +2488,7 @@ RawType* ClassFinalizer::ResolveMixinAppType(
     // the next mixin application class. It is however too early to provide the
     // correct super type arguments. We use the raw type for now.
     mixin_super_type = Type::New(mixin_app_class,
-                                 Object::null_abstract_type_arguments(),
+                                 Object::null_type_arguments(),
                                  mixin_type.token_pos());
   }
   AbstractType& type_arg = AbstractType::Handle();
@@ -2404,6 +2521,9 @@ RawType* ClassFinalizer::ResolveMixinAppType(
 // we found a loop.
 void ClassFinalizer::ResolveSuperTypeAndInterfaces(
     const Class& cls, GrowableArray<intptr_t>* visited) {
+  if (cls.is_cycle_free()) {
+    return;
+  }
   ASSERT(visited != NULL);
   if (FLAG_trace_class_finalization) {
     OS::Print("Resolving super and interfaces: %s\n", cls.ToCString());
@@ -2427,10 +2547,15 @@ void ClassFinalizer::ResolveSuperTypeAndInterfaces(
   Array& super_interfaces = Array::Handle(cls.interfaces());
   if ((super_type.IsNull() || super_type.IsObjectType()) &&
       (super_interfaces.Length() == 0)) {
+    cls.set_is_cycle_free();
     return;
   }
 
   if (super_type.IsMixinAppType()) {
+    // For the cycle check below to work, ResolveMixinAppType needs to set
+    // the mixin interfaces in the super classes, even if only in raw form.
+    // It is indeed too early to set the correct type arguments, which is not
+    // a problem since they are ignored in the cycle check.
     const MixinAppType& mixin_app_type = MixinAppType::Cast(super_type);
     super_type = ResolveMixinAppType(cls, mixin_app_type);
     cls.set_super_type(super_type);
@@ -2446,7 +2571,7 @@ void ClassFinalizer::ResolveSuperTypeAndInterfaces(
   Class& interface_class = Class::Handle();
 
   // Resolve super type. Failures lead to a longjmp.
-  ResolveType(cls, super_type, kCanonicalizeWellFormed);
+  ResolveType(cls, super_type);
   if (super_type.IsMalformedOrMalbounded()) {
     ReportError(Error::Handle(super_type.error()));
   }
@@ -2523,7 +2648,7 @@ void ClassFinalizer::ResolveSuperTypeAndInterfaces(
   // Resolve interfaces. Failures lead to a longjmp.
   for (intptr_t i = 0; i < super_interfaces.Length(); i++) {
     interface ^= super_interfaces.At(i);
-    ResolveType(cls, interface, kCanonicalizeWellFormed);
+    ResolveType(cls, interface);
     ASSERT(!interface.IsTypeParameter());  // Should be detected by parser.
     // A malbounded interface is only reported when involved in a type test.
     if (interface.IsMalformed()) {
@@ -2574,6 +2699,7 @@ void ClassFinalizer::ResolveSuperTypeAndInterfaces(
     ResolveSuperTypeAndInterfaces(interface_class, visited);
   }
   visited->RemoveLast();
+  cls.set_is_cycle_free();
 }
 
 
@@ -2664,7 +2790,7 @@ void ClassFinalizer::ReportMalformedType(const Error& prev_error,
   // Make the type raw, since it may not be possible to
   // properly finalize its type arguments.
   type.set_type_class(Class::Handle(Object::dynamic_class()));
-  type.set_arguments(Object::null_abstract_type_arguments());
+  type.set_arguments(Object::null_type_arguments());
   if (!type.IsFinalized()) {
     type.SetIsFinalized();
     // Do not canonicalize malformed types, since they may not be resolved.

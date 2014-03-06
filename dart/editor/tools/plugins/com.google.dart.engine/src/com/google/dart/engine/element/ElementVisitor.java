@@ -13,6 +13,15 @@
  */
 package com.google.dart.engine.element;
 
+import com.google.dart.engine.element.angular.AngularComponentElement;
+import com.google.dart.engine.element.angular.AngularControllerElement;
+import com.google.dart.engine.element.angular.AngularDirectiveElement;
+import com.google.dart.engine.element.angular.AngularFilterElement;
+import com.google.dart.engine.element.angular.AngularPropertyElement;
+import com.google.dart.engine.element.angular.AngularScopePropertyElement;
+import com.google.dart.engine.element.angular.AngularSelectorElement;
+import com.google.dart.engine.element.angular.AngularViewElement;
+
 /**
  * The interface {@code ElementVisitor} defines the behavior of objects that can be used to visit an
  * element structure.
@@ -20,6 +29,22 @@ package com.google.dart.engine.element;
  * @coverage dart.engine.element
  */
 public interface ElementVisitor<R> {
+  public R visitAngularComponentElement(AngularComponentElement element);
+
+  public R visitAngularControllerElement(AngularControllerElement element);
+
+  public R visitAngularDirectiveElement(AngularDirectiveElement element);
+
+  public R visitAngularFilterElement(AngularFilterElement element);
+
+  public R visitAngularPropertyElement(AngularPropertyElement element);
+
+  public R visitAngularScopePropertyElement(AngularScopePropertyElement element);
+
+  public R visitAngularSelectorElement(AngularSelectorElement element);
+
+  public R visitAngularViewElement(AngularViewElement element);
+
   public R visitClassElement(ClassElement element);
 
   public R visitCompilationUnitElement(CompilationUnitElement element);

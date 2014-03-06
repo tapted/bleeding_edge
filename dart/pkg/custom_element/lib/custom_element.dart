@@ -249,8 +249,6 @@ class CustomElement implements Element {
     host.createFragment(html,
         validator: validator, treeSanitizer: treeSanitizer);
 
-  InputMethodContext get inputMethodContext => host.inputMethodContext;
-
   bool get isContentEditable => host.isContentEditable;
 
   String get lang => host.lang;
@@ -442,6 +440,9 @@ class CustomElement implements Element {
   String get regionOverset => host.regionOverset;
 
   List<Range> getRegionFlowRanges() => host.getRegionFlowRanges();
+
+  void animate(List<Map> keyframes, [num duration]) =>
+      host.animate(keyframes, duration);
 
   // TODO(jmesserly): rename "created" to "onCreated".
   void onCreated() => created();

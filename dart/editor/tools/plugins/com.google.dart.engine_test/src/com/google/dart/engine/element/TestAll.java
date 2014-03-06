@@ -22,6 +22,7 @@ public class TestAll {
   public static Test suite() {
     TestSuite suite = new ExtendedTestSuite("Tests in " + TestAll.class.getPackage().getName());
     suite.addTestSuite(ElementKindTest.class);
+    suite.addTest(com.google.dart.engine.element.angular.TestAll.suite());
     return suite;
   }
 }

@@ -223,13 +223,14 @@ class _EventStreamSubscription<T extends Event> extends StreamSubscription<T> {
     _tryResume();
   }
 
-  void cancel() {
-    if (_canceled) return;
+  Future cancel() {
+    if (_canceled) return null;
 
     _unlisten();
     // Clear out the target to indicate this is complete.
     _target = null;
     _onData = null;
+    return null;
   }
 
   bool get _canceled => _target == null;
@@ -427,4 +428,7 @@ class _CustomEventStreamProvider<T extends Event>
   String getEventType(EventTarget target) {
     return _eventTypeGetter(target);
   }
+
+  String get _eventType =>
+      throw new UnsupportedError('Access type through getEventType method.');
 }

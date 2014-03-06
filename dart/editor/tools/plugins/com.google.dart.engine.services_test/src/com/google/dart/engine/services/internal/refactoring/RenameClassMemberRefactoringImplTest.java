@@ -15,6 +15,7 @@
 package com.google.dart.engine.services.internal.refactoring;
 
 import com.google.dart.engine.ast.CompilationUnit;
+import com.google.dart.engine.context.AnalysisContextHelper;
 import com.google.dart.engine.services.change.Change;
 import com.google.dart.engine.services.change.SourceChange;
 import com.google.dart.engine.services.status.RefactoringStatusSeverity;
@@ -648,9 +649,9 @@ public class RenameClassMemberRefactoringImplTest extends RenameRefactoringImplT
         "}");
     // index unit in separate context
     {
-      ContextHelper helper = new ContextHelper();
+      AnalysisContextHelper helper = new AnalysisContextHelper();
       Source source = helper.addSource("/Test.dart", code);
-      CompilationUnit unit = helper.analyzeSingleUnitLibrary(source);
+      CompilationUnit unit = helper.resolveDefiningUnit(source);
       index.indexUnit(helper.context, unit);
     }
     // index same unit as "test"
@@ -806,8 +807,7 @@ public class RenameClassMemberRefactoringImplTest extends RenameRefactoringImplT
         "  myPublic() {}",
         "  _myPrivate() {}",
         "}");
-    Source externalSource = new FileBasedSource(sourceFactory.getContentCache(), new File(
-        "other.dart"));
+    Source externalSource = new FileBasedSource(new File("other.dart"));
     // check public
     createRenameRefactoring("myPublic() {}");
     assertTrue(refactoring.shouldReportUnsafeRefactoringSource(analysisContext, testSource));

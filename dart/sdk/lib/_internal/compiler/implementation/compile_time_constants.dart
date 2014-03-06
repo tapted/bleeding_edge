@@ -17,6 +17,8 @@ class ConstantHandler extends CompilerTask {
    * Contains the initial value of fields. Must contain all static and global
    * initializations of const fields. May contain eagerly compiled values for
    * statics and instance fields.
+   *
+   * Invariant: The keys in this map are declarations.
    */
   final Map<VariableElement, Constant> initialVariableValues;
 
@@ -44,7 +46,7 @@ class ConstantHandler extends CompilerTask {
   }
 
   Constant getConstantForVariable(VariableElement element) {
-    return initialVariableValues[element];
+    return initialVariableValues[element.declaration];
   }
 
   /**
@@ -61,8 +63,8 @@ class ConstantHandler extends CompilerTask {
    */
   Constant compileVariable(VariableElement element, {bool isConst: false}) {
     return measure(() {
-      if (initialVariableValues.containsKey(element)) {
-        Constant result = initialVariableValues[element];
+      if (initialVariableValues.containsKey(element.declaration)) {
+        Constant result = initialVariableValues[element.declaration];
         return result;
       }
       Element currentElement = element;
@@ -133,7 +135,7 @@ class ConstantHandler extends CompilerTask {
                                           constantType, elementType)) {
               if (isConst) {
                 compiler.reportFatalError(
-                    node, MessageKind.NOT_ASSIGNABLE.error,
+                    node, MessageKind.NOT_ASSIGNABLE,
                     {'fromType': constantType, 'toType': elementType});
               } else {
                 // If the field cannot be lazily initialized, we will throw
@@ -145,7 +147,7 @@ class ConstantHandler extends CompilerTask {
         }
       }
       if (value != null) {
-        initialVariableValues[element] = value;
+        initialVariableValues[element.declaration] = value;
       } else {
         assert(!isConst);
         lazyStatics.add(element);
@@ -223,7 +225,7 @@ class ConstantHandler extends CompilerTask {
   }
 
   Constant getInitialValueFor(VariableElement element) {
-    Constant initialValue = initialVariableValues[element];
+    Constant initialValue = initialVariableValues[element.declaration];
     if (initialValue == null) {
       compiler.internalError("No initial value for given element",
                              element: element);
@@ -300,7 +302,11 @@ class CompileTimeConstantEvaluator extends Visitor {
          link = link.tail) {
       LiteralMapEntry entry = link.head;
       Constant key = evaluateConstant(entry.key);
-      if (!map.containsKey(key)) keys.add(key);
+      if (!map.containsKey(key)) {
+        keys.add(key);
+      } else {
+        compiler.reportWarning(entry.key, MessageKind.EQUAL_MAP_ENTRY_KEY);
+      }
       map[key] = evaluateConstant(entry.value);
     }
 
@@ -569,7 +575,7 @@ class CompileTimeConstantEvaluator extends Visitor {
       DartType conditionType = condition.computeType(compiler);
       if (isEvaluatingConstant) {
         compiler.reportFatalError(
-            node.condition, MessageKind.NOT_ASSIGNABLE.error,
+            node.condition, MessageKind.NOT_ASSIGNABLE,
             {'fromType': conditionType, 'toType': compiler.boolClass.rawType});
       }
       return null;
@@ -607,7 +613,7 @@ class CompileTimeConstantEvaluator extends Visitor {
     if (!succeeded) {
       compiler.reportFatalError(
           node,
-          MessageKind.INVALID_ARGUMENTS.error, {'methodName': target.name});
+          MessageKind.INVALID_ARGUMENTS, {'methodName': target.name});
     }
     return compiledArguments;
   }
@@ -649,7 +655,7 @@ class CompileTimeConstantEvaluator extends Visitor {
       if (firstArgument is! StringConstant) {
         DartType type = defaultValue.computeType(compiler);
         compiler.reportFatalError(
-            send.arguments.head, MessageKind.NOT_ASSIGNABLE.error,
+            send.arguments.head, MessageKind.NOT_ASSIGNABLE,
             {'fromType': type, 'toType': compiler.stringClass.rawType});
       }
 
@@ -657,7 +663,7 @@ class CompileTimeConstantEvaluator extends Visitor {
           && !(defaultValue is NullConstant || defaultValue is IntConstant)) {
         DartType type = defaultValue.computeType(compiler);
         compiler.reportFatalError(
-            send.arguments.tail.head, MessageKind.NOT_ASSIGNABLE.error,
+            send.arguments.tail.head, MessageKind.NOT_ASSIGNABLE,
             {'fromType': type, 'toType': compiler.intClass.rawType});
       }
 
@@ -665,7 +671,7 @@ class CompileTimeConstantEvaluator extends Visitor {
           && !(defaultValue is NullConstant || defaultValue is BoolConstant)) {
         DartType type = defaultValue.computeType(compiler);
         compiler.reportFatalError(
-            send.arguments.tail.head, MessageKind.NOT_ASSIGNABLE.error,
+            send.arguments.tail.head, MessageKind.NOT_ASSIGNABLE,
             {'fromType': type, 'toType': compiler.boolClass.rawType});
       }
 
@@ -674,7 +680,7 @@ class CompileTimeConstantEvaluator extends Visitor {
                || defaultValue is StringConstant)) {
         DartType type = defaultValue.computeType(compiler);
         compiler.reportFatalError(
-            send.arguments.tail.head, MessageKind.NOT_ASSIGNABLE.error,
+            send.arguments.tail.head, MessageKind.NOT_ASSIGNABLE,
             {'fromType': type, 'toType': compiler.stringClass.rawType});
       }
 
@@ -767,6 +773,13 @@ class TryCompileTimeConstantEvaluator extends CompileTimeConstantEvaluator {
   }
 }
 
+class CompileTimeConstantError {
+  final Message message;
+  CompileTimeConstantError(MessageKind kind, Map arguments, bool terse)
+    : message = new Message(kind, arguments, terse);
+  String toString() => message.toString();
+}
+
 class ConstructorEvaluator extends CompileTimeConstantEvaluator {
   final FunctionElement constructor;
   final Map<Element, Constant> definitions;
@@ -810,7 +823,7 @@ class ConstructorEvaluator extends CompileTimeConstantEvaluator {
       if (elementType.element.isTypeVariable()) return;
       if (!constantSystem.isSubtype(compiler, constantType, elementType)) {
         compiler.reportFatalError(
-            node, MessageKind.NOT_ASSIGNABLE.error,
+            node, MessageKind.NOT_ASSIGNABLE,
             {'fromType': elementType, 'toType': constantType});
       }
     }

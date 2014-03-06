@@ -244,6 +244,7 @@ class HtmlEventGenerator(object):
     self._renamer = renamer
     self._metadata = metadata
     self._template_loader = template_loader
+    self._media_events = None
 
   def EmitStreamProviders(self, interface, custom_events,
       members_emitter, library_name):
@@ -382,10 +383,14 @@ class HtmlEventGenerator(object):
     if self._renamer.ShouldSuppressMember(interface, event_name, 'on:'):
       return True
 
-    if interface.doc_js_name == 'Window':
+    if (interface.doc_js_name == 'Window' or
+        interface.doc_js_name == 'Element' or
+        interface.doc_js_name == 'Document' or
+        interface.doc_js_name == 'GlobalEventHandlers'):
       media_interface = self._database.GetInterface('HTMLMediaElement')
-      media_events = self._GetEvents(media_interface, [])
-      if self._HasEvent(media_events, event_name, event_type):
+      if not self._media_events:
+        self._media_events = self._GetEvents(media_interface, [])
+      if self._HasEvent(self._media_events, event_name, event_type):
         return True
 
   def _GetEventRedirection(self, interface, event_name, event_type):

@@ -16,7 +16,6 @@
 namespace dart {
 
 class AbstractType;
-class AbstractTypeArguments;
 class Array;
 class Class;
 class Field;
@@ -24,6 +23,7 @@ class FlowGraph;
 class LocalVariable;
 class ParsedFunction;
 class String;
+class TypeArguments;
 
 class NestedStatement;
 class TestGraphVisitor;
@@ -47,6 +47,32 @@ class TestGraphVisitor;
   V(_Float64ArrayFactory, kTypedDataFloat64ArrayCid, 1599078532)               \
   V(_Float32ArrayFactory, kTypedDataFloat32ArrayCid, 1721244151)               \
   V(_Float32x4ArrayFactory, kTypedDataFloat32x4ArrayCid, 879975401)            \
+
+
+// Class that recognizes factories and returns corresponding result cid.
+class FactoryRecognizer : public AllStatic {
+ public:
+  // Return kDynamicCid if factory is not recognized.
+  static intptr_t ResultCid(const Function& factory) {
+    ASSERT(factory.IsFactory());
+    const Class& function_class = Class::Handle(factory.Owner());
+    const Library& lib = Library::Handle(function_class.library());
+    ASSERT((lib.raw() == Library::CoreLibrary()) ||
+        (lib.raw() == Library::TypedDataLibrary()));
+    const String& factory_name = String::Handle(factory.name());
+#define RECOGNIZE_FACTORY(test_factory_symbol, cid, fp)                        \
+    if (String::EqualsIgnoringPrivateKey(                                      \
+        factory_name, Symbols::test_factory_symbol())) {                       \
+      ASSERT(factory.CheckSourceFingerprint(fp));                              \
+      return cid;                                                              \
+    }                                                                          \
+
+RECOGNIZED_LIST_FACTORY_LIST(RECOGNIZE_FACTORY);
+#undef RECOGNIZE_FACTORY
+
+    return kDynamicCid;
+  }
+};
 
 
 // A class to collect the exits from an inlined function during graph
@@ -292,12 +318,8 @@ class EffectGraphVisitor : public AstNodeVisitor {
   Definition* BuildStoreExprTemp(Value* value);
   Definition* BuildLoadExprTemp();
 
-  Definition* BuildStoreLocal(const LocalVariable& local,
-                              Value* value,
-                              bool result_is_needed);
+  Definition* BuildStoreLocal(const LocalVariable& local, Value* value);
   Definition* BuildLoadLocal(const LocalVariable& local);
-
-  void HandleStoreLocal(StoreLocalNode* node, bool result_is_needed);
 
   // Helpers for translating parts of the AST.
   void BuildPushArguments(const ArgumentListNode& node,
@@ -308,15 +330,7 @@ class EffectGraphVisitor : public AstNodeVisitor {
   // May be called only if allocating an object of a parameterized class.
   Value* BuildInstantiatedTypeArguments(
       intptr_t token_pos,
-      const AbstractTypeArguments& type_arguments);
-
-  // Creates a possibly uninstantiated type argument vector and the type
-  // argument vector of the instantiator used in
-  // preparation of a constructor call.
-  // May be called only if allocating an object of a parameterized class.
-  void BuildConstructorTypeArguments(
-      ConstructorCallNode* node,
-      ZoneGrowableArray<PushArgumentInstr*>* call_arguments);
+      const TypeArguments& type_arguments);
 
   void BuildTypecheckPushArguments(
       intptr_t token_pos,
@@ -452,7 +466,6 @@ class ValueGraphVisitor : public EffectGraphVisitor {
   virtual void VisitBinaryOpNode(BinaryOpNode* node);
   virtual void VisitConditionalExprNode(ConditionalExprNode* node);
   virtual void VisitLoadLocalNode(LoadLocalNode* node);
-  virtual void VisitStoreLocalNode(StoreLocalNode* node);
   virtual void VisitStoreIndexedNode(StoreIndexedNode* node);
   virtual void VisitInstanceSetterNode(InstanceSetterNode* node);
   virtual void VisitThrowNode(ThrowNode* node);

@@ -1,14 +1,11 @@
 name: custom_element
-version: 0.9.1+1
+version: 0.10.0
 author: "Polymer.dart Team <web-ui-dev@dartlang.org>"
 homepage: http://www.dartlang.org/
 description: >
-  Custom Elements let authors define their own elements. Authors associate code
-  with custom tag names, and then use those custom tag names as they would any
-  standard tag.
-dependencies:
-  mutation_observer: ">=0.9.0 <0.10.0"
+  *Deprecated* newer version is in web_components package. This is for backwards
+  compatibility with polymer.dart 0.4.x (web_ui package).
 dev_dependencies:
-  unittest: ">=0.9.0 <0.10.0"
+  unittest: ">=0.10.0 <0.11.0"
 environment:
-  sdk: ">=1.0.0 <2.0.0"
+  sdk: ">=1.2.0 <2.0.0"

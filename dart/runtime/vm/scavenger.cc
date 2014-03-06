@@ -21,6 +21,9 @@
 
 namespace dart {
 
+  DEFINE_FLAG(int, early_tenuring_threshold, 66, "Skip TO space when promoting"
+                                                 " above this percentage.");
+
 // Scavenger uses RawObject::kMarkBit to distinguish forwaded and non-forwarded
 // objects. The kMarkBit does not intersect with the target address because of
 // object alignment.
@@ -182,11 +185,14 @@ class ScavengerVisitor : public ObjectPointerVisitor {
         delay_set_.erase(ret.first, ret.second);
       }
       intptr_t size = raw_obj->Size();
+      intptr_t cid = raw_obj->GetClassId();
+      ClassTable* class_table = isolate()->class_table();
       // Check whether object should be promoted.
       if (scavenger_->survivor_end_ <= raw_addr) {
         // Not a survivor of a previous scavenge. Just copy the object into the
         // to space.
         new_addr = scavenger_->TryAllocate(size);
+        class_table->UpdateLiveNew(cid, size);
       } else {
         // TODO(iposva): Experiment with less aggressive promotion. For example
         // a coin toss determines if an object is promoted or whether it should
@@ -200,6 +206,7 @@ class ScavengerVisitor : public ObjectPointerVisitor {
           // be traversed later.
           scavenger_->PushToPromotedStack(new_addr);
           bytes_promoted_ += size;
+          class_table->UpdateAllocatedOld(cid, size);
         } else if (!scavenger_->had_promotion_failure_) {
           // Signal a promotion failure and set the growth policy for
           // this, and all subsequent promotion allocations, to force
@@ -210,15 +217,18 @@ class ScavengerVisitor : public ObjectPointerVisitor {
           if (new_addr != 0) {
             scavenger_->PushToPromotedStack(new_addr);
             bytes_promoted_ += size;
+            class_table->UpdateAllocatedOld(cid, size);
           } else {
             // Promotion did not succeed. Copy into the to space
             // instead.
             new_addr = scavenger_->TryAllocate(size);
+            class_table->UpdateLiveNew(cid, size);
           }
         } else {
           ASSERT(growth_policy_ == PageSpace::kForceGrowth);
           // Promotion did not succeed. Copy into the to space instead.
           new_addr = scavenger_->TryAllocate(size);
+          class_table->UpdateLiveNew(cid, size);
         }
       }
       // During a scavenge we always succeed to at least copy all of the
@@ -261,15 +271,19 @@ class ScavengerVisitor : public ObjectPointerVisitor {
 
 class ScavengerWeakVisitor : public HandleVisitor {
  public:
-  explicit ScavengerWeakVisitor(Scavenger* scavenger) : scavenger_(scavenger) {
+  explicit ScavengerWeakVisitor(Scavenger* scavenger)
+      :  HandleVisitor(Isolate::Current()),
+         scavenger_(scavenger) {
   }
 
-  void VisitHandle(uword addr) {
+  void VisitHandle(uword addr, bool is_prologue_weak) {
     FinalizablePersistentHandle* handle =
         reinterpret_cast<FinalizablePersistentHandle*>(addr);
     RawObject** p = handle->raw_addr();
     if (scavenger_->IsUnreachable(p)) {
-      FinalizablePersistentHandle::Finalize(handle);
+      FinalizablePersistentHandle::Finalize(isolate(),
+                                            handle,
+                                            is_prologue_weak);
     }
   }
 
@@ -308,7 +322,9 @@ Scavenger::Scavenger(Heap* heap,
                      uword object_alignment)
     : heap_(heap),
       object_alignment_(object_alignment),
-      scavenging_(false) {
+      scavenging_(false),
+      gc_time_micros_(0),
+      collections_(0) {
   // Verify assumptions about the first word in objects which the scavenger is
   // going to use for forwarding pointers.
   ASSERT(Object::tags_offset() == 0);
@@ -369,10 +385,22 @@ void Scavenger::Prologue(Isolate* isolate, bool invoke_api_callbacks) {
 }
 
 
-void Scavenger::Epilogue(Isolate* isolate, bool invoke_api_callbacks) {
+void Scavenger::Epilogue(Isolate* isolate,
+                         ScavengerVisitor* visitor,
+                         bool invoke_api_callbacks) {
   // All objects in the to space have been copied from the from space at this
   // moment.
-  survivor_end_ = top_;
+  int promotion_ratio = static_cast<int>(
+      (static_cast<double>(visitor->bytes_promoted()) /
+       static_cast<double>(to_->size())) * 100.0);
+  if (promotion_ratio < FLAG_early_tenuring_threshold) {
+    // Remember the limit to which objects have been copied.
+    survivor_end_ = top_;
+  } else {
+    // Move survivor end to the end of the to_ space, making all surviving
+    // objects candidates for promotion.
+    survivor_end_ = end_;
+  }
 
 #if defined(DEBUG)
   VerifyStoreBufferPointerVisitor verify_store_buffer_visitor(isolate, to_);
@@ -673,7 +701,7 @@ void Scavenger::Scavenge(bool invoke_api_callbacks) {
   int64_t end = OS::GetCurrentTimeMicros();
   heap_->RecordTime(kProcessToSpace, middle - start);
   heap_->RecordTime(kIterateWeaks, end - middle);
-  Epilogue(isolate, invoke_api_callbacks);
+  Epilogue(isolate, &visitor, invoke_api_callbacks);
 
   if (FLAG_verify_after_gc) {
     OS::PrintErr("Verifying after Scavenge...");
@@ -690,6 +718,19 @@ void Scavenger::Scavenge(bool invoke_api_callbacks) {
 void Scavenger::WriteProtect(bool read_only) {
   space_->Protect(
       read_only ? VirtualMemory::kReadOnly : VirtualMemory::kReadWrite);
+}
+
+
+void Scavenger::PrintToJSONObject(JSONObject* object) {
+  JSONObject space(object, "new");
+  space.AddProperty("type", "@Scavenger");
+  space.AddProperty("id", "heaps/new");
+  space.AddProperty("name", "Scavenger");
+  space.AddProperty("user_name", "new");
+  space.AddProperty("collections", collections());
+  space.AddProperty("used", UsedInWords() * kWordSize);
+  space.AddProperty("capacity", CapacityInWords() * kWordSize);
+  space.AddProperty("time", RoundMicrosecondsToSeconds(gc_time_micros()));
 }
 
 

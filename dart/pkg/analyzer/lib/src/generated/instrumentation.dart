@@ -1,3 +1,7 @@
+// Copyright (c) 2014, the Dart project authors.  Please see the AUTHORS file
+// for details. All rights reserved. Use of this source code is governed by a
+// BSD-style license that can be found in the LICENSE file.
+
 // This code was auto-generated, is not intended to be edited, and is subject to
 // significant change. Please see the README file for more information.
 
@@ -33,20 +37,18 @@ import 'java_core.dart';
  * arguments and records the time at which the method is called so that the time to complete the
  * save operation can be calculated. The `log` method tells the builder that all of the data
  * has been collected and that the resulting information should be logged.
- *
- * @coverage dart.engine.utilities
  */
 class Instrumentation {
   /**
    * A builder that will silently ignore all data and logging requests.
    */
-  static InstrumentationBuilder _NULL_INSTRUMENTATION_BUILDER = new InstrumentationBuilder_18();
+  static InstrumentationBuilder _NULL_INSTRUMENTATION_BUILDER = new InstrumentationBuilder_Instrumentation_NULL_INSTRUMENTATION_BUILDER();
 
   /**
    * An instrumentation logger that can be used when no other instrumentation logger has been
    * configured. This logger will silently ignore all data and logging requests.
    */
-  static InstrumentationLogger _NULL_LOGGER = new InstrumentationLogger_19();
+  static InstrumentationLogger _NULL_LOGGER = new InstrumentationLogger_Instrumentation_NULL_LOGGER();
 
   /**
    * The current instrumentation logger.
@@ -99,7 +101,7 @@ class Instrumentation {
   }
 }
 
-class InstrumentationBuilder_18 implements InstrumentationBuilder {
+class InstrumentationBuilder_Instrumentation_NULL_INSTRUMENTATION_BUILDER implements InstrumentationBuilder {
   InstrumentationBuilder data(String name, bool value) => this;
 
   InstrumentationBuilder data2(String name, int value) => this;
@@ -127,7 +129,7 @@ class InstrumentationBuilder_18 implements InstrumentationBuilder {
   InstrumentationBuilder record(Exception exception) => this;
 }
 
-class InstrumentationLogger_19 implements InstrumentationLogger {
+class InstrumentationLogger_Instrumentation_NULL_LOGGER implements InstrumentationLogger {
   InstrumentationBuilder createBuilder(String name) => Instrumentation._NULL_INSTRUMENTATION_BUILDER;
 }
 
@@ -136,8 +138,6 @@ class InstrumentationLogger_19 implements InstrumentationLogger {
  * about an operation that has occurred and record that data through an instrumentation logger.
  *
  * For an example of using objects that implement this interface, see [Instrumentation].
- *
- * @coverage dart.engine.utilities
  */
 abstract class InstrumentationBuilder {
   /**
@@ -268,8 +268,6 @@ abstract class InstrumentationBuilder {
  * The instrumentation recording level representing (1) recording [EVERYTHING] recording of
  * all instrumentation data, (2) recording only [METRICS] information, or (3) recording
  * turned [OFF] in which case nothing is recorded.
- *
- * @coverage dart.engine.utilities
  */
 class InstrumentationLevel extends Enum<InstrumentationLevel> {
   /** Recording all instrumented information */
@@ -304,8 +302,6 @@ class InstrumentationLevel extends Enum<InstrumentationLevel> {
  * instrumentation data.
  *
  * For an example of using objects that implement this interface, see [Instrumentation].
- *
- * @coverage dart.engine.utilities
  */
 abstract class InstrumentationLogger {
   /**

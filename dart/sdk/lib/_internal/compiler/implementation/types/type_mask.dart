@@ -44,15 +44,16 @@ abstract class TypeMask {
    */
   TypeMask nonNullable();
 
-  TypeMask simplify(Compiler compiler);
-
   bool get isEmpty;
   bool get isNullable;
   bool get isExact;
 
   bool get isUnion;
   bool get isContainer;
+  bool get isMap;
+  bool get isDictionary;
   bool get isForwarding;
+  bool get isValue;
 
   bool containsOnlyInt(Compiler compiler);
   bool containsOnlyDouble(Compiler compiler);

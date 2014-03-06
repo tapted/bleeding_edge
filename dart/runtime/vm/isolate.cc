@@ -16,7 +16,6 @@
 #include "vm/debugger.h"
 #include "vm/deopt_instructions.h"
 #include "vm/heap.h"
-#include "vm/heap_histogram.h"
 #include "vm/message_handler.h"
 #include "vm/object_id_ring.h"
 #include "vm/object_store.h"
@@ -41,11 +40,22 @@ DEFINE_FLAG(bool, report_usage_count, false,
             "Track function usage and report.");
 DEFINE_FLAG(bool, trace_isolates, false,
             "Trace isolate creation and shut down.");
+DEFINE_FLAG(bool, pin_isolates, false,
+            "Stop isolates from being destroyed automatically.");
 
 
 void Isolate::RegisterClass(const Class& cls) {
   class_table()->Register(cls);
-  if (object_histogram() != NULL) object_histogram()->RegisterClass(cls);
+}
+
+
+void Isolate::RegisterClassAt(intptr_t index, const Class& cls) {
+  class_table()->RegisterAt(index, cls);
+}
+
+
+void Isolate::ValidateClassTable() {
+  class_table()->Validate();
 }
 
 
@@ -104,6 +114,9 @@ bool IsolateMessageHandler::HandleMessage(Message* message) {
   StartIsolateScope start_scope(isolate_);
   StackZone zone(isolate_);
   HandleScope handle_scope(isolate_);
+  // TODO(turnidge): Rework collection total dart execution.  This can
+  // overcount when other things (gc, compilation) are active.
+  TIMERSCOPE(time_dart_execution);
 
   // If the message is in band we lookup the receive port to dispatch to.  If
   // the receive port is closed, we drop the message without deserializing it.
@@ -143,11 +156,10 @@ bool IsolateMessageHandler::HandleMessage(Message* message) {
 
   bool success = true;
   if (message->IsOOB()) {
-    Service::HandleServiceMessage(isolate_, message->reply_port(), msg);
+    Service::HandleIsolateMessage(isolate_, msg);
   } else {
     const Object& result = Object::Handle(
-        DartLibraryCalls::HandleMessage(
-            receive_port, message->reply_port(), msg));
+        DartLibraryCalls::HandleMessage(receive_port, msg));
     if (result.IsError()) {
       success = ProcessUnhandledException(msg, Error::Cast(result));
     } else {
@@ -280,6 +292,7 @@ Isolate::Isolate()
       message_notify_callback_(NULL),
       name_(NULL),
       start_time_(OS::GetCurrentTimeMicros()),
+      pin_port_(0),
       main_port_(0),
       heap_(NULL),
       object_store_(NULL),
@@ -301,7 +314,7 @@ Isolate::Isolate()
       stack_limit_(0),
       saved_stack_limit_(0),
       message_handler_(NULL),
-      spawn_data_(0),
+      spawn_state_(NULL),
       is_runnable_(false),
       gc_prologue_callbacks_(),
       gc_epilogue_callbacks_(),
@@ -309,14 +322,13 @@ Isolate::Isolate()
       deopt_context_(NULL),
       stacktrace_(NULL),
       stack_frame_index_(-1),
-      object_histogram_(NULL),
+      cha_used_(false),
       object_id_ring_(NULL),
       profiler_data_(NULL),
+      thread_state_(NULL),
+      next_(NULL),
       REUSABLE_HANDLE_LIST(REUSABLE_HANDLE_INITIALIZERS)
       reusable_handles_() {
-  if (FLAG_print_object_histogram && (Dart::vm_isolate() != NULL)) {
-    object_histogram_ = new ObjectHistogram(this);
-  }
 }
 #undef REUSABLE_HANDLE_INITIALIZERS
 
@@ -336,15 +348,26 @@ Isolate::~Isolate() {
   delete message_handler_;
   message_handler_ = NULL;  // Fail fast if we send messages to a dead isolate.
   ASSERT(deopt_context_ == NULL);  // No deopt in progress when isolate deleted.
-  delete object_histogram_;
+  delete spawn_state_;
 }
+
 
 void Isolate::SetCurrent(Isolate* current) {
   Isolate* old_current = Current();
-  if (old_current != current) {
+  if (old_current != NULL) {
+    old_current->set_thread_state(NULL);
     Profiler::EndExecution(old_current);
-    Thread::SetThreadLocal(isolate_key, reinterpret_cast<uword>(current));
+  }
+  Thread::SetThreadLocal(isolate_key, reinterpret_cast<uword>(current));
+  if (current != NULL) {
+    ASSERT(current->thread_state() == NULL);
+    InterruptableThreadState* thread_state =
+        ThreadInterrupter::GetCurrentThreadState();
+#if defined(DEBUG)
+    CheckForDuplicateThreadState(thread_state);
+#endif
     Profiler::BeginExecution(current);
+    current->set_thread_state(thread_state);
   }
 }
 
@@ -361,6 +384,8 @@ void Isolate::InitOnce() {
   isolate_key = Thread::CreateThreadLocal();
   ASSERT(isolate_key != Thread::kUnsetThreadLocalKey);
   create_callback_ = NULL;
+  isolates_list_monitor_ = new Monitor();
+  ASSERT(isolates_list_monitor_ != NULL);
 }
 
 
@@ -370,6 +395,9 @@ Isolate* Isolate::Init(const char* name_prefix) {
 
   // Setup for profiling.
   Profiler::InitProfilingForIsolate(result);
+
+  // Add to isolate list.
+  AddIsolateTolist(result);
 
   // TODO(5411455): For now just set the recently created isolate as
   // the current isolate.
@@ -399,6 +427,9 @@ Isolate* Isolate::Init(const char* name_prefix) {
   result->SetStackLimitFromCurrentTOS(reinterpret_cast<uword>(&result));
   result->set_main_port(PortMap::CreatePort(result->message_handler()));
   result->BuildName(name_prefix);
+  if (FLAG_pin_isolates) {
+    result->CreatePinPort();
+  }
 
   result->debugger_ = new Debugger();
   result->debugger_->Initialize(result);
@@ -411,6 +442,28 @@ Isolate* Isolate::Init(const char* name_prefix) {
 
 
   return result;
+}
+
+
+void Isolate::CreatePinPort() {
+  ASSERT(FLAG_pin_isolates);
+  // Only do this once.
+  ASSERT(pin_port_ == 0);
+  pin_port_ = PortMap::CreatePort(message_handler());
+  ASSERT(pin_port_ != 0);
+  PortMap::SetLive(pin_port_);
+}
+
+
+void Isolate::ClosePinPort() {
+  if (pin_port_ == 0) {
+    // Support multiple calls to close.
+    return;
+  }
+  ASSERT(pin_port_ != 0);
+  bool r = PortMap::ClosePort(pin_port_);
+  ASSERT(r);
+  pin_port_ = 0;
 }
 
 
@@ -457,15 +510,15 @@ void Isolate::SetStackLimit(uword limit) {
 }
 
 
-bool Isolate::GetStackBounds(uintptr_t* lower, uintptr_t* upper) {
-  uintptr_t stack_lower = stack_limit();
-  if (stack_lower == static_cast<uintptr_t>(~0)) {
+bool Isolate::GetStackBounds(uword* lower, uword* upper) {
+  uword stack_lower = stack_limit();
+  if (stack_lower == kUwordMax) {
     stack_lower = saved_stack_limit();
   }
-  if (stack_lower == static_cast<uintptr_t>(~0)) {
+  if (stack_lower == kUwordMax) {
     return false;
   }
-  uintptr_t stack_upper = stack_lower + GetSpecifiedStackSize();
+  uword stack_upper = stack_lower + GetSpecifiedStackSize();
   *lower = stack_lower;
   *upper = stack_upper;
   return true;
@@ -499,7 +552,7 @@ bool Isolate::MakeRunnable() {
   // Set the isolate as runnable and if we are being spawned schedule
   // isolate on thread pool for execution.
   is_runnable_ = true;
-  IsolateSpawnState* state = reinterpret_cast<IsolateSpawnState*>(spawn_data());
+  IsolateSpawnState* state = spawn_state();
   if (state != NULL) {
     ASSERT(this == state->isolate());
     Run();
@@ -519,9 +572,9 @@ static bool RunIsolate(uword parameter) {
   Isolate* isolate = reinterpret_cast<Isolate*>(parameter);
   IsolateSpawnState* state = NULL;
   {
+    // TODO(turnidge): Is this locking required here at all anymore?
     MutexLocker ml(isolate->mutex());
-    state = reinterpret_cast<IsolateSpawnState*>(isolate->spawn_data());
-    isolate->set_spawn_data(0);
+    state = isolate->spawn_state();
   }
   {
     StartIsolateScope start_scope(isolate);
@@ -541,8 +594,6 @@ static bool RunIsolate(uword parameter) {
     Object& result = Object::Handle();
     result = state->ResolveFunction();
     bool is_spawn_uri = state->is_spawn_uri();
-    delete state;
-    state = NULL;
     if (result.IsError()) {
       StoreError(isolate, result);
       return false;
@@ -677,13 +728,13 @@ void Isolate::PrintInvokedFunctions() {
 
 class FinalizeWeakPersistentHandlesVisitor : public HandleVisitor {
  public:
-  FinalizeWeakPersistentHandlesVisitor() {
+  FinalizeWeakPersistentHandlesVisitor() : HandleVisitor(Isolate::Current()) {
   }
 
-  void VisitHandle(uword addr) {
+  void VisitHandle(uword addr, bool is_prologue_weak) {
     FinalizablePersistentHandle* handle =
         reinterpret_cast<FinalizablePersistentHandle*>(addr);
-    FinalizablePersistentHandle::Finalize(handle);
+    FinalizablePersistentHandle::Finalize(isolate(), handle, is_prologue_weak);
   }
 
  private:
@@ -702,11 +753,6 @@ void Isolate::Shutdown() {
     StackZone stack_zone(this);
     HandleScope handle_scope(this);
 
-    if (FLAG_print_object_histogram) {
-      heap()->CollectAllGarbage();
-      object_histogram()->Print();
-    }
-
     // Clean up debugger resources.
     debugger()->Shutdown();
 
@@ -724,14 +770,16 @@ void Isolate::Shutdown() {
     }
 
     // Write out profiler data if requested.
-    Profiler::WriteTracing(this);
+    Profiler::WriteProfile(this);
 
     // Write out the coverage data if collection has been enabled.
     CodeCoverage::Write(this);
 
     // Finalize any weak persistent handles with a non-null referent.
     FinalizeWeakPersistentHandlesVisitor visitor;
-    api_state()->weak_persistent_handles().VisitHandles(&visitor);
+    api_state()->weak_persistent_handles().VisitHandles(&visitor, false);
+    api_state()->prologue_weak_persistent_handles().VisitHandles(
+        &visitor, true);
 
     CompilerStats::Print();
     if (FLAG_trace_isolates) {
@@ -746,6 +794,7 @@ void Isolate::Shutdown() {
   // TODO(5411455): For now just make sure there are no current isolates
   // as we are shutting down the isolate.
   SetCurrent(NULL);
+  RemoveIsolateFromList(this);
   Profiler::ShutdownProfilingForIsolate(this);
 }
 
@@ -761,6 +810,10 @@ Dart_FileWriteCallback Isolate::file_write_callback_ = NULL;
 Dart_FileCloseCallback Isolate::file_close_callback_ = NULL;
 Dart_EntropySource Isolate::entropy_source_callback_ = NULL;
 Dart_IsolateInterruptCallback Isolate::vmstats_callback_ = NULL;
+Dart_ServiceIsolateCreateCalback Isolate::service_create_callback_ = NULL;
+
+Monitor* Isolate::isolates_list_monitor_ = NULL;
+Isolate* Isolate::isolates_list_head_ = NULL;
 
 
 void Isolate::VisitObjectPointers(ObjectPointerVisitor* visitor,
@@ -820,200 +873,104 @@ void Isolate::VisitWeakPersistentHandles(HandleVisitor* visitor,
 }
 
 
-static Monitor* status_sync = NULL;
-
-
-bool Isolate::FetchStacktrace() {
-  Isolate* isolate = Isolate::Current();
-  MonitorLocker ml(status_sync);
-  DebuggerStackTrace* stack = Debugger::CollectStackTrace();
-  TextBuffer buffer(256);
-  buffer.Printf("{ \"handle\": \"0x%" Px64 "\", \"stacktrace\": [ ",
-                reinterpret_cast<int64_t>(isolate));
-  intptr_t n_frames = stack->Length();
-  String& url = String::Handle();
-  String& function = String::Handle();
-  for (int i = 0; i < n_frames; i++) {
-    if (i > 0) {
-      buffer.Printf(", ");
-    }
-    ActivationFrame* frame = stack->FrameAt(i);
-    url ^= frame->SourceUrl();
-    function ^= frame->function().UserVisibleName();
-    buffer.Printf("{ \"url\": \"%s\", ", url.ToCString());
-    buffer.Printf("\"line\": %" Pd ", ", frame->LineNumber());
-    buffer.Printf("\"function\": \"%s\", ", function.ToCString());
-
-    const Code& code = frame->code();
-    buffer.Printf("\"code\": { ");
-    buffer.Printf("\"alive\": %s, ", code.is_alive() ? "false" : "true");
-    buffer.Printf("\"optimized\": %s }}",
-        code.is_optimized() ? "false" : "true");
-  }
-  buffer.Printf("]}");
-  isolate->stacktrace_ = OS::StrNDup(buffer.buf(), buffer.length());
-  ml.Notify();
-  return true;
-}
-
-
-bool Isolate::FetchStackFrameDetails() {
-  Isolate* isolate = Isolate::Current();
-  ASSERT(isolate->stack_frame_index_ >= 0);
-  MonitorLocker ml(status_sync);
-  DebuggerStackTrace* stack = Debugger::CollectStackTrace();
-  intptr_t frame_index = isolate->stack_frame_index_;
-  if (frame_index >= stack->Length()) {
-    // Frame no longer available.
-    return false;
-  }
-  ActivationFrame* frame = stack->FrameAt(frame_index);
-  TextBuffer buffer(256);
-  buffer.Printf("{ \"handle\": \"0x%" Px64 "\", \"frame_index\": %" Pd ", ",
-       reinterpret_cast<int64_t>(isolate), frame_index);
-
-  const Code& code = frame->code();
-  buffer.Printf("\"code\": { \"size\": %" Pd ", ", code.Size());
-  buffer.Printf("\"alive\": %s, ", code.is_alive() ? "false" : "true");
-  buffer.Printf("\"optimized\": %s }, ",
-      code.is_optimized() ? "false" : "true");
-  // TODO(tball): add compilation stats (time, etc.), when available.
-
-  buffer.Printf("\"local_vars\": [ ");
-  intptr_t n_local_vars = frame->NumLocalVariables();
-  String& var_name = String::Handle();
-  Instance& value = Instance::Handle();
-  for (int i = 0; i < n_local_vars; i++) {
-    if (i > 0) {
-      buffer.Printf(", ");
-    }
-    intptr_t token_pos, end_pos;
-    frame->VariableAt(i, &var_name, &token_pos, &end_pos, &value);
-    buffer.Printf(
-        "{ \"name\": \"%s\", \"pos\": %" Pd ", \"end_pos\": %" Pd ", "
-        "\"value\": \"%s\" }",
-        var_name.ToCString(), token_pos, end_pos, value.ToCString());
-  }
-  buffer.Printf("]}");
-  isolate->stacktrace_ = OS::StrNDup(buffer.buf(), buffer.length());
-  ml.Notify();
-  return true;
-}
-
-
-char* Isolate::DoStacktraceInterrupt(Dart_IsolateInterruptCallback cb) {
-  ASSERT(stacktrace_ == NULL);
-  SetVmStatsCallback(cb);
-  if (status_sync == NULL) {
-    status_sync = new Monitor();
-  }
-  if (is_runnable()) {
-    ScheduleInterrupts(Isolate::kVmStatusInterrupt);
-    {
-      MonitorLocker ml(status_sync);
-      if (stacktrace_ == NULL) {  // It may already be available.
-        ml.Wait(1000);
-      }
-    }
-    SetVmStatsCallback(NULL);
-  }
-  char* result = stacktrace_;
-  stacktrace_ = NULL;
-  if (result == NULL) {
-    // Return empty stack.
-    TextBuffer buffer(256);
-    buffer.Printf("{ \"handle\": \"0x%" Px64 "\", \"stacktrace\": []}",
-                  reinterpret_cast<int64_t>(this));
-
-    result = OS::StrNDup(buffer.buf(), buffer.length());
-  }
-  ASSERT(result != NULL);
-  // result is freed by VmStats::WebServer().
-  return result;
-}
-
-
-char* Isolate::GetStatusStacktrace() {
-  return DoStacktraceInterrupt(&FetchStacktrace);
-}
-
-char* Isolate::GetStatusStackFrame(intptr_t index) {
-  ASSERT(index >= 0);
-  stack_frame_index_ = index;
-  char* result = DoStacktraceInterrupt(&FetchStackFrameDetails);
-  stack_frame_index_ = -1;
-  return result;
-}
-
-
-// Returns the isolate's general detail information.
-char* Isolate::GetStatusDetails() {
-  const char* format = "{\n"
-      "  \"handle\": \"0x%" Px64 "\",\n"
-      "  \"name\": \"%s\",\n"
-      "  \"port\": %" Pd ",\n"
-      "  \"starttime\": %" Pd ",\n"
-      "  \"stacklimit\": %" Pd ",\n"
-      "  \"newspace\": {\n"
-      "    \"used\": %" Pd ",\n"
-      "    \"capacity\": %" Pd "\n"
-      "  },\n"
-      "  \"oldspace\": {\n"
-      "    \"used\": %" Pd ",\n"
-      "    \"capacity\": %" Pd "\n"
-      "  }\n"
-      "}";
-  char buffer[300];
-  int64_t address = reinterpret_cast<int64_t>(this);
-  int n = OS::SNPrint(buffer, 300, format, address, name(), main_port(),
-                      start_time() / 1000L, saved_stack_limit(),
-                      RoundWordsToKB(heap()->UsedInWords(Heap::kNew)),
-                      RoundWordsToKB(heap()->CapacityInWords(Heap::kNew)),
-                      RoundWordsToKB(heap()->UsedInWords(Heap::kOld)),
-                      RoundWordsToKB(heap()->CapacityInWords(Heap::kOld)));
-  ASSERT(n < 300);
-  return strdup(buffer);
-}
-
-
-char* Isolate::GetStatus(const char* request) {
-  char* p = const_cast<char*>(request);
-  const char* service_type = "/isolate/";
-  ASSERT(!strncmp(p, service_type, strlen(service_type)));
-  p += strlen(service_type);
-
-  // Extract isolate handle.
-  int64_t addr;
-  OS::StringToInt64(p, &addr);
-  // TODO(tball): add validity check when issue 9600 is fixed.
-  Isolate* isolate = reinterpret_cast<Isolate*>(addr);
-  p += strcspn(p, "/");
-
-  // Query "/isolate/<handle>".
-  if (strlen(p) == 0) {
-    return isolate->GetStatusDetails();
-  }
-
-  // Query "/isolate/<handle>/stacktrace"
-  if (!strcmp(p, "/stacktrace")) {
-    return isolate->GetStatusStacktrace();
-  }
-
-  // Query "/isolate/<handle>/stacktrace/<frame-index>"
-  const char* stacktrace_query = "/stacktrace/";
-  int64_t frame_index = -1;
-  if (!strncmp(p, stacktrace_query, strlen(stacktrace_query))) {
-    p += strlen(stacktrace_query);
-    OS::StringToInt64(p, &frame_index);
-    if (frame_index >= 0) {
-      return isolate->GetStatusStackFrame(frame_index);
+void Isolate::PrintToJSONStream(JSONStream* stream) {
+  JSONObject jsobj(stream);
+  jsobj.AddProperty("type", "Isolate");
+  jsobj.AddPropertyF("id", "isolates/%" Pd "",
+                     static_cast<intptr_t>(main_port()));
+  jsobj.AddPropertyF("name", "%" Pd "",
+                     static_cast<intptr_t>(main_port()));
+  IsolateSpawnState* state = spawn_state();
+  if (state != NULL) {
+    const Object& entry = Object::Handle(this, state->ResolveFunction());
+    if (!entry.IsNull() && entry.IsFunction()) {
+      Function& func = Function::Handle(this);
+      func ^= entry.raw();
+      jsobj.AddProperty("entry", func);
     }
   }
+  {
+    JSONObject jsheap(&jsobj, "heap");
+    jsheap.AddProperty("usedNew", heap()->UsedInWords(Heap::kNew));
+    jsheap.AddProperty("capacityNew", heap()->CapacityInWords(Heap::kNew));
+    jsheap.AddProperty("usedOld", heap()->UsedInWords(Heap::kOld));
+    jsheap.AddProperty("capacityOld", heap()->CapacityInWords(Heap::kOld));
+  }
 
-  // TODO(tball): "/isolate/<handle>/stacktrace/<frame-index>"/disassemble"
+  DebuggerStackTrace* stack = debugger()->StackTrace();
+  if (stack->Length() > 0) {
+    JSONObject jsframe(&jsobj, "topFrame");
 
-  return NULL;  // Unimplemented query.
+    ActivationFrame* frame = stack->FrameAt(0);
+    frame->PrintToJSONObject(&jsobj);
+    // TODO(turnidge): Implement depth differently -- differentiate
+    // inlined frames.
+    jsobj.AddProperty("depth", (intptr_t)0);
+  }
+
+  const Library& lib =
+      Library::Handle(object_store()->root_library());
+  jsobj.AddProperty("rootLib", lib);
+
+  timer_list().PrintTimersToJSONProperty(&jsobj);
 }
+
+
+void Isolate::VisitIsolates(IsolateVisitor* visitor) {
+  if (visitor == NULL) {
+    return;
+  }
+  MonitorLocker ml(isolates_list_monitor_);
+  Isolate* current = isolates_list_head_;
+  while (current) {
+    visitor->VisitIsolate(current);
+    current = current->next_;
+  }
+}
+
+
+void Isolate::AddIsolateTolist(Isolate* isolate) {
+  MonitorLocker ml(isolates_list_monitor_);
+  ASSERT(isolate != NULL);
+  ASSERT(isolate->next_ == NULL);
+  isolate->next_ = isolates_list_head_;
+  isolates_list_head_ = isolate;
+}
+
+
+void Isolate::RemoveIsolateFromList(Isolate* isolate) {
+  MonitorLocker ml(isolates_list_monitor_);
+  ASSERT(isolate != NULL);
+  if (isolate == isolates_list_head_) {
+    isolates_list_head_ = isolate->next_;
+    return;
+  }
+  Isolate* previous = NULL;
+  Isolate* current = isolates_list_head_;
+  while (current) {
+    if (current == isolate) {
+      ASSERT(previous != NULL);
+      previous->next_ = current->next_;
+      return;
+    }
+    previous = current;
+    current = current->next_;
+  }
+  UNREACHABLE();
+}
+
+
+#if defined(DEBUG)
+void Isolate::CheckForDuplicateThreadState(InterruptableThreadState* state) {
+  MonitorLocker ml(isolates_list_monitor_);
+  ASSERT(state != NULL);
+  Isolate* current = isolates_list_head_;
+  while (current) {
+    ASSERT(current->thread_state() != state);
+    current = current->next_;
+  }
+}
+#endif
 
 
 template<class T>

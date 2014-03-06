@@ -34,9 +34,6 @@ DEFINE_FLAG(bool, eliminate_type_checks, true,
             "Eliminate type checks when allowed by static type analysis.");
 DEFINE_FLAG(bool, print_ast, false, "Print abstract syntax tree.");
 DEFINE_FLAG(bool, print_scopes, false, "Print scopes of local variables.");
-DEFINE_FLAG(bool, print_flow_graph, false, "Print the IR flow graph.");
-DEFINE_FLAG(bool, print_flow_graph_optimized, false,
-            "Print the IR flow graph when optimizing.");
 DEFINE_FLAG(bool, trace_type_check_elimination, false,
             "Trace type check elimination at compile time.");
 DECLARE_FLAG(bool, enable_type_checks);
@@ -593,7 +590,7 @@ void EffectGraphVisitor::Goto(JoinEntryInstr* join) {
   } else {
     exit()->Goto(join);
   }
-  exit_ = NULL;
+  CloseFragment();
 }
 
 
@@ -708,13 +705,10 @@ Definition* EffectGraphVisitor::BuildLoadExprTemp() {
 }
 
 
-Definition* EffectGraphVisitor::BuildStoreLocal(
-    const LocalVariable& local, Value* value, bool result_is_needed) {
+Definition* EffectGraphVisitor::BuildStoreLocal(const LocalVariable& local,
+                                                Value* value) {
   if (local.is_captured()) {
-    if (result_is_needed) {
-      value = Bind(BuildStoreExprTemp(value));
-    }
-
+    LocalVariable* tmp_var = EnterTempLocalScope(value);
     intptr_t delta =
         owner()->context_level() - local.owner()->context_level();
     ASSERT(delta >= 0);
@@ -723,18 +717,14 @@ Definition* EffectGraphVisitor::BuildStoreLocal(
       context = Bind(new LoadFieldInstr(
           context, Context::parent_offset(), Type::ZoneHandle()));
     }
-
-    StoreVMFieldInstr* store =
-        new StoreVMFieldInstr(context,
-                              Context::variable_offset(local.index()),
-                              value,
-                              local.type());
-    if (result_is_needed) {
-      Do(store);
-      return BuildLoadExprTemp();
-    } else {
-      return store;
-    }
+    Value* tmp_val = Bind(new LoadLocalInstr(*tmp_var));
+    StoreInstanceFieldInstr* store =
+        new StoreInstanceFieldInstr(Context::variable_offset(local.index()),
+                                    context,
+                                    tmp_val,
+                                    kEmitStoreBarrier);
+    Do(store);
+    return ExitTempLocalScope(tmp_var);
   } else {
     return new StoreLocalInstr(local, value);
   }
@@ -742,7 +732,9 @@ Definition* EffectGraphVisitor::BuildStoreLocal(
 
 
 Definition* EffectGraphVisitor::BuildLoadLocal(const LocalVariable& local) {
-  if (local.is_captured()) {
+  if (local.IsConst()) {
+    return new ConstantInstr(*local.ConstValue());
+  } else if (local.is_captured()) {
     intptr_t delta =
         owner()->context_level() - local.owner()->context_level();
     ASSERT(delta >= 0);
@@ -763,7 +755,7 @@ Definition* EffectGraphVisitor::BuildLoadLocal(const LocalVariable& local) {
 // Stores current context into the 'variable'
 void EffectGraphVisitor::BuildSaveContext(const LocalVariable& variable) {
   Value* context = Bind(new CurrentContextInstr());
-  Do(BuildStoreLocal(variable, context, kResultNotNeeded));
+  Do(BuildStoreLocal(variable, context));
 }
 
 
@@ -952,21 +944,36 @@ void EffectGraphVisitor::VisitReturnNode(ReturnNode* node) {
   ValueGraphVisitor for_value(owner());
   node->value()->Visit(&for_value);
   Append(for_value);
+  Value* return_value = for_value.value();
 
-  for (intptr_t i = 0; i < node->inlined_finally_list_length(); i++) {
-    InlineBailout("EffectGraphVisitor::VisitReturnNode (exception)");
-    EffectGraphVisitor for_effect(owner());
-    node->InlinedFinallyNodeAt(i)->Visit(&for_effect);
-    Append(for_effect);
-    if (!is_open()) {
-      owner()->DeallocateTemps(owner()->temp_count());
-      return;
+  if (node->inlined_finally_list_length() > 0) {
+    LocalVariable* temp = node->saved_return_value_var();
+    Do(BuildStoreLocal(*temp, return_value));
+    for (intptr_t i = 0; i < node->inlined_finally_list_length(); i++) {
+      InlineBailout("EffectGraphVisitor::VisitReturnNode (exception)");
+      EffectGraphVisitor for_effect(owner());
+      node->InlinedFinallyNodeAt(i)->Visit(&for_effect);
+      Append(for_effect);
+      if (!is_open()) {
+        return;
+      }
     }
+    return_value = Bind(BuildLoadLocal(*temp));
   }
 
-  Value* return_value = for_value.value();
+  // Call to stub that checks whether the debugger is in single
+  // step mode. This call must happen before the contexts are
+  // unchained so that captured variables can be inspected.
+  // No debugger check is done in native functions or for return
+  // statements for which there is no associated source position.
+  const Function& function = owner()->parsed_function()->function();
+  if ((node->token_pos() != Scanner::kNoSourcePos) &&
+      !function.is_native()) {
+    AddInstruction(new DebugStepCheckInstr(node->token_pos(),
+                                           PcDescriptors::kReturn));
+  }
+
   if (FLAG_enable_type_checks) {
-    const Function& function = owner()->parsed_function()->function();
     const bool is_implicit_dynamic_getter =
         (!function.is_static() &&
         ((function.kind() == RawFunction::kImplicitGetter) ||
@@ -978,8 +985,7 @@ void EffectGraphVisitor::VisitReturnNode(ReturnNode* node) {
     // However, factories may create an instance of the wrong type.
     if (!is_implicit_dynamic_getter && !function.IsConstructor()) {
       const AbstractType& dst_type =
-          AbstractType::ZoneHandle(
-              owner()->parsed_function()->function().result_type());
+          AbstractType::ZoneHandle(function.result_type());
       return_value = BuildAssignableValue(node->value()->token_pos(),
                                           return_value,
                                           dst_type,
@@ -2158,18 +2164,19 @@ void ValueGraphVisitor::VisitLetNode(LetNode* node) {
 
 
 void EffectGraphVisitor::VisitArrayNode(ArrayNode* node) {
-  const AbstractTypeArguments& type_args =
-      AbstractTypeArguments::ZoneHandle(node->type().arguments());
+  const TypeArguments& type_args =
+      TypeArguments::ZoneHandle(node->type().arguments());
   Value* element_type = BuildInstantiatedTypeArguments(node->token_pos(),
                                                        type_args);
+  Value* num_elements =
+      Bind(new ConstantInstr(Smi::ZoneHandle(Smi::New(node->length()))));
   CreateArrayInstr* create = new CreateArrayInstr(node->token_pos(),
-                                                  node->length(),
-                                                  node->type(),
-                                                  element_type);
+                                                  element_type,
+                                                  num_elements);
   Value* array_val = Bind(create);
 
   { LocalVariable* tmp_var = EnterTempLocalScope(array_val);
-    const intptr_t class_id = create->Type()->ToCid();
+    const intptr_t class_id = kArrayCid;
     const intptr_t deopt_id = Isolate::kNoDeoptId;
     for (int i = 0; i < node->length(); ++i) {
       Value* array = Bind(new LoadLocalInstr(*tmp_var));
@@ -2213,137 +2220,131 @@ void EffectGraphVisitor::VisitClosureNode(ClosureNode* node) {
     ReturnDefinition(new ConstantInstr(closure));
     return;
   }
-  if (function.IsNonImplicitClosureFunction()) {
-    // The context scope may have already been set by the non-optimizing
-    // compiler.  If it was not, set it here.
-    if (function.context_scope() == ContextScope::null()) {
-      const ContextScope& context_scope = ContextScope::ZoneHandle(
-          node->scope()->PreserveOuterScope(owner()->context_level()));
-      ASSERT(!function.HasCode());
-      ASSERT(function.context_scope() == ContextScope::null());
-      function.set_context_scope(context_scope);
-      const Class& cls = Class::Handle(
-          owner()->parsed_function()->function().Owner());
-      // The closure is now properly setup, add it to the lookup table.
+  const bool is_implicit = function.IsImplicitInstanceClosureFunction();
+  ASSERT(is_implicit || function.IsNonImplicitClosureFunction());
+  // The context scope may have already been set by the non-optimizing
+  // compiler.  If it was not, set it here.
+  if (function.context_scope() == ContextScope::null()) {
+    ASSERT(!is_implicit);
+    const ContextScope& context_scope = ContextScope::ZoneHandle(
+        node->scope()->PreserveOuterScope(owner()->context_level()));
+    ASSERT(!function.HasCode());
+    ASSERT(function.context_scope() == ContextScope::null());
+    function.set_context_scope(context_scope);
+    const Class& cls = Class::Handle(
+        owner()->parsed_function()->function().Owner());
+    // The closure is now properly setup, add it to the lookup table.
 #if DEBUG
-      const Function& found_func = Function::Handle(
-          cls.LookupClosureFunction(function.token_pos()));
-      ASSERT(found_func.IsNull() ||
-             (found_func.token_pos() != function.token_pos()) ||
-             // TODO(hausner): The following check should not be necessary.
-             // Since we only lookup based on the token_pos we can get
-             // duplicate entries due to closurized and non-closurized parent
-             // functions (see Parser::ParseFunctionStatement).
-             // We need two ways to lookup in this cache: One way to cache the
-             // appropriate closure function and one way to find the functions
-             // while debugging (we might need to set breakpoints in multiple
-             // different function for a single token index.)
-             (found_func.parent_function() != function.parent_function()));
+    const Function& found_func = Function::Handle(
+        cls.LookupClosureFunction(function.token_pos()));
+    ASSERT(found_func.IsNull() ||
+           (found_func.token_pos() != function.token_pos()) ||
+           // TODO(hausner): The following check should not be necessary.
+           // Since we only lookup based on the token_pos we can get
+           // duplicate entries due to closurized and non-closurized parent
+           // functions (see Parser::ParseFunctionStatement).
+           // We need two ways to lookup in this cache: One way to cache the
+           // appropriate closure function and one way to find the functions
+           // while debugging (we might need to set breakpoints in multiple
+           // different function for a single token index.)
+           (found_func.parent_function() != function.parent_function()));
 #endif  // DEBUG
-      cls.AddClosureFunction(function);
-    }
-    ZoneGrowableArray<PushArgumentInstr*>* arguments =
-        new ZoneGrowableArray<PushArgumentInstr*>(2);
-    ASSERT(function.context_scope() != ContextScope::null());
+    cls.AddClosureFunction(function);
+  }
+  ZoneGrowableArray<PushArgumentInstr*>* arguments =
+      new ZoneGrowableArray<PushArgumentInstr*>(1);
+  ASSERT(function.context_scope() != ContextScope::null());
 
-    // The function type of a closure may have type arguments. In that case,
-    // pass the type arguments of the instantiator.
-    const Class& cls = Class::ZoneHandle(function.signature_class());
-    ASSERT(!cls.IsNull());
-    const bool requires_type_arguments = cls.NumTypeArguments() > 0;
-    Value* type_arguments = NULL;
-    if (requires_type_arguments) {
-      ASSERT(cls.type_arguments_field_offset() ==
-             Closure::type_arguments_offset());
-      const Class& instantiator_class = Class::Handle(
-          owner()->parsed_function()->function().Owner());
-      type_arguments = BuildInstantiatorTypeArguments(node->token_pos(),
-                                                      instantiator_class,
-                                                      NULL);
-      arguments->Add(PushArgument(type_arguments));
+  // The function type of a closure may have type arguments. In that case,
+  // pass the type arguments of the instantiator.
+  const Class& cls = Class::ZoneHandle(function.signature_class());
+  ASSERT(!cls.IsNull());
+  const bool requires_type_arguments = cls.NumTypeArguments() > 0;
+  Value* type_arguments = NULL;
+  if (requires_type_arguments) {
+    ASSERT(cls.type_arguments_field_offset() ==
+           Closure::type_arguments_offset());
+    ASSERT(cls.instance_size() == Closure::InstanceSize());
+    const Class& instantiator_class = Class::Handle(
+        owner()->parsed_function()->function().Owner());
+    type_arguments = BuildInstantiatorTypeArguments(node->token_pos(),
+                                                    instantiator_class,
+                                                    NULL);
+    arguments->Add(PushArgument(type_arguments));
+  }
+  AllocateObjectInstr* alloc = new AllocateObjectInstr(node->token_pos(),
+                                                       cls,
+                                                       arguments);
+  alloc->set_closure_function(function);
 
-      Value* instantiator_val = Bind(new ConstantInstr(
-          Smi::ZoneHandle(Smi::New(StubCode::kNoInstantiator))));
-      arguments->Add(PushArgument(instantiator_val));
-    }
-    AllocateObjectInstr* alloc = new AllocateObjectInstr(node->token_pos(),
-                                                         cls,
-                                                         arguments);
-    alloc->set_closure_function(function);
+  // Create fake fields for function and context. Only the context field is
+  // stored at the allocation to be used later when inlining a closure call.
+  const Field& function_field =
+      Field::ZoneHandle(
+          Field::New(Symbols::ClosureFunctionField(),
+          false,  // !static
+          true,  // final
+          false,  // !const
+          alloc->cls(),
+          0));  // No token position.
+  function_field.SetOffset(Closure::function_offset());
+  const Field& context_field =
+      Field::ZoneHandle(Field::New(
+          Symbols::ClosureContextField(),
+          false,  // !static
+          true,  // final
+          false,  // !const
+          alloc->cls(),
+          0));  // No token position.
+  context_field.SetOffset(Closure::context_offset());
+  alloc->set_context_field(context_field);
 
-    // Create fake fields for function and context. Only the context field is
-    // stored at the allocation to be used later when inlining a closure call.
-    const Field& function_field =
-        Field::ZoneHandle(
-            Field::New(Symbols::ClosureFunctionField(),
-            false,  // !static
-            false,  // !final
-            false,  // !const
-            alloc->cls(),
-            0));  // No token position.
-    function_field.SetOffset(Closure::function_offset());
-    const Field& context_field =
-        Field::ZoneHandle(Field::New(
-            Symbols::ClosureContextField(),
-            false,  // !static
-            false,  // !final
-            false,  // !const
-            alloc->cls(),
-            0));  // No token position.
-    context_field.SetOffset(Closure::context_offset());
-    alloc->set_context_field(context_field);
-
-    Value* closure_val = Bind(alloc);
-    { LocalVariable* tmp_var = EnterTempLocalScope(closure_val);
-      // Store function.
-      Value* tmp_val = Bind(new LoadLocalInstr(*tmp_var));
-      Value* func_val =
-          Bind(new ConstantInstr(Function::ZoneHandle(function.raw())));
-      Do(new StoreInstanceFieldInstr(function_field,
-                                     tmp_val,
-                                     func_val,
-                                     kEmitStoreBarrier));
-      // Store current context.
-      tmp_val = Bind(new LoadLocalInstr(*tmp_var));
+  Value* closure_val = Bind(alloc);
+  { LocalVariable* closure_tmp_var = EnterTempLocalScope(closure_val);
+    // Store function.
+    Value* closure_tmp_val = Bind(new LoadLocalInstr(*closure_tmp_var));
+    Value* func_val =
+        Bind(new ConstantInstr(Function::ZoneHandle(function.raw())));
+    Do(new StoreInstanceFieldInstr(function_field,
+                                   closure_tmp_val,
+                                   func_val,
+                                   kEmitStoreBarrier));
+    if (is_implicit) {
+      // Create new context containing the receiver.
+      const intptr_t kNumContextVariables = 1;  // The receiver.
+      Value* allocated_context =
+          Bind(new AllocateContextInstr(node->token_pos(),
+                                        kNumContextVariables));
+      { LocalVariable* context_tmp_var = EnterTempLocalScope(allocated_context);
+        // Store receiver in context.
+        Value* context_tmp_val = Bind(new LoadLocalInstr(*context_tmp_var));
+        ValueGraphVisitor for_receiver(owner());
+        node->receiver()->Visit(&for_receiver);
+        Append(for_receiver);
+        Value* receiver = for_receiver.value();
+        Do(new StoreInstanceFieldInstr(Context::variable_offset(0),
+                                       context_tmp_val,
+                                       receiver,
+                                       kEmitStoreBarrier));
+        // Store new context in closure.
+        closure_tmp_val = Bind(new LoadLocalInstr(*closure_tmp_var));
+        context_tmp_val = Bind(new LoadLocalInstr(*context_tmp_var));
+        Do(new StoreInstanceFieldInstr(context_field,
+                                       closure_tmp_val,
+                                       context_tmp_val,
+                                       kEmitStoreBarrier));
+        Do(ExitTempLocalScope(context_tmp_var));
+      }
+    } else {
+      // Store current context in closure.
+      closure_tmp_val = Bind(new LoadLocalInstr(*closure_tmp_var));
       Value* context = Bind(new CurrentContextInstr());
       Do(new StoreInstanceFieldInstr(context_field,
-                                     tmp_val,
+                                     closure_tmp_val,
                                      context,
                                      kEmitStoreBarrier));
-      ReturnDefinition(ExitTempLocalScope(tmp_var));
     }
-  } else {
-    ASSERT(function.IsImplicitInstanceClosureFunction());
-    ValueGraphVisitor for_receiver(owner());
-    node->receiver()->Visit(&for_receiver);
-    Append(for_receiver);
-    Value* receiver = for_receiver.value();
-
-    PushArgumentInstr* push_receiver = PushArgument(receiver);
-    ZoneGrowableArray<PushArgumentInstr*>* arguments =
-        new ZoneGrowableArray<PushArgumentInstr*>(2);
-    arguments->Add(push_receiver);
-    ASSERT(function.context_scope() != ContextScope::null());
-
-    // The function type of a closure may have type arguments. In that case,
-    // pass the type arguments of the instantiator. Otherwise, pass null object.
-    const Class& cls = Class::Handle(function.signature_class());
-    ASSERT(!cls.IsNull());
-    const bool requires_type_arguments = cls.NumTypeArguments() > 0;
-    Value* type_arguments = NULL;
-    if (requires_type_arguments) {
-      const Class& instantiator_class = Class::Handle(
-          owner()->parsed_function()->function().Owner());
-      type_arguments = BuildInstantiatorTypeArguments(node->token_pos(),
-                                                      instantiator_class,
-                                                      NULL);
-    } else {
-      type_arguments = BuildNullValue();
-    }
-    PushArgumentInstr* push_type_arguments = PushArgument(type_arguments);
-    arguments->Add(push_type_arguments);
-    ReturnDefinition(
-        new CreateClosureInstr(node->function(), arguments, node->token_pos()));
+    ReturnDefinition(ExitTempLocalScope(closure_tmp_var));
   }
 }
 
@@ -2384,7 +2385,7 @@ void EffectGraphVisitor::VisitInstanceCallNode(InstanceCallNode* node) {
 }
 
 
-static intptr_t GetResultCidOfNative(const Function& function) {
+static intptr_t GetResultCidOfNativeFactory(const Function& function) {
   const Class& function_class = Class::Handle(function.Owner());
   if (function_class.library() == Library::TypedDataLibrary()) {
     const String& function_name = String::Handle(function.name());
@@ -2427,8 +2428,11 @@ void EffectGraphVisitor::VisitStaticCallNode(StaticCallNode* node) {
                           arguments,
                           owner()->ic_data_array());
   if (node->function().is_native()) {
-    const intptr_t result_cid = GetResultCidOfNative(node->function());
-    call->set_result_cid(result_cid);
+    const intptr_t result_cid = GetResultCidOfNativeFactory(node->function());
+    if (result_cid != kDynamicCid) {
+      call->set_result_cid(result_cid);
+      call->set_is_native_list_factory(true);
+    }
   }
   ReturnDefinition(call);
 }
@@ -2477,46 +2481,23 @@ void EffectGraphVisitor::VisitCloneContextNode(CloneContextNode* node) {
 }
 
 
-Value* EffectGraphVisitor::BuildObjectAllocation(
-    ConstructorCallNode* node) {
+Value* EffectGraphVisitor::BuildObjectAllocation(ConstructorCallNode* node) {
   const Class& cls = Class::ZoneHandle(node->constructor().Owner());
-  const bool requires_type_arguments = cls.NumTypeArguments() > 0;
+  const bool cls_is_parameterized = cls.NumTypeArguments() > 0;
 
-  // In checked mode, if the type arguments are uninstantiated, they may need to
-  // be checked against declared bounds at run time.
-  Definition* allocation = NULL;
-  if (FLAG_enable_type_checks &&
-      requires_type_arguments &&
-      !node->type_arguments().IsNull() &&
-      !node->type_arguments().IsInstantiated() &&
-      node->type_arguments().IsBounded()) {
-    ZoneGrowableArray<PushArgumentInstr*>* allocate_arguments =
-        new ZoneGrowableArray<PushArgumentInstr*>(4);
-    // Argument 1: Empty argument slot for return value.
-    Value* null_val = Bind(new ConstantInstr(Object::ZoneHandle()));
-    allocate_arguments->Add(PushArgument(null_val));
-    // Argument 2: Class.
-    Value* cls_val =
-        Bind(new ConstantInstr(Class::ZoneHandle(node->constructor().Owner())));
-    allocate_arguments->Add(PushArgument(cls_val));
-    // Build arguments 3 and 4.
-    BuildConstructorTypeArguments(node, allocate_arguments);
-
-    // The uninstantiated type arguments cannot be verified to be within their
-    // bounds at compile time, so verify them at runtime.
-    allocation = new AllocateObjectWithBoundsCheckInstr(node);
-  } else {
-    ZoneGrowableArray<PushArgumentInstr*>* allocate_arguments =
-        new ZoneGrowableArray<PushArgumentInstr*>();
-    if (requires_type_arguments) {
-      BuildConstructorTypeArguments(node, allocate_arguments);
-    }
-
-    allocation = new AllocateObjectInstr(
-        node->token_pos(),
-        Class::ZoneHandle(node->constructor().Owner()),
-        allocate_arguments);
+  ZoneGrowableArray<PushArgumentInstr*>* allocate_arguments =
+      new ZoneGrowableArray<PushArgumentInstr*>(cls_is_parameterized ? 1 : 0);
+  if (cls_is_parameterized) {
+    Value* type_args = BuildInstantiatedTypeArguments(node->token_pos(),
+                                                      node->type_arguments());
+    allocate_arguments->Add(PushArgument(type_args));
   }
+
+  Definition* allocation = new AllocateObjectInstr(
+      node->token_pos(),
+      Class::ZoneHandle(node->constructor().Owner()),
+      allocate_arguments);
+
   return Bind(allocation);
 }
 
@@ -2540,32 +2521,6 @@ void EffectGraphVisitor::BuildConstructorCall(
                          arguments,
                          owner()->ic_data_array()));
 }
-
-
-// Class that recognizes factories and returns corresponding result cid.
-class FactoryRecognizer : public AllStatic {
- public:
-  // Return kDynamicCid if factory is not recognized.
-  static intptr_t ResultCid(const Function& factory) {
-    ASSERT(factory.IsFactory());
-    const Class& function_class = Class::Handle(factory.Owner());
-    const Library& lib = Library::Handle(function_class.library());
-    ASSERT((lib.raw() == Library::CoreLibrary()) ||
-        (lib.raw() == Library::TypedDataLibrary()));
-    const String& factory_name = String::Handle(factory.name());
-#define RECOGNIZE_FACTORY(test_factory_symbol, cid, fp)                        \
-    if (String::EqualsIgnoringPrivateKey(                                      \
-        factory_name, Symbols::test_factory_symbol())) {                       \
-      ASSERT(factory.CheckSourceFingerprint(fp));                              \
-      return cid;                                                              \
-    }                                                                          \
-
-RECOGNIZED_LIST_FACTORY_LIST(RECOGNIZE_FACTORY);
-#undef RECOGNIZE_FACTORY
-
-    return kDynamicCid;
-  }
-};
 
 
 static intptr_t GetResultCidOfListFactory(ConstructorCallNode* node) {
@@ -2663,7 +2618,7 @@ Value* EffectGraphVisitor::BuildInstantiatorTypeArguments(
     Value* instantiator) {
   if (instantiator_class.NumTypeParameters() == 0) {
     // The type arguments are compile time constants.
-    AbstractTypeArguments& type_arguments = AbstractTypeArguments::ZoneHandle();
+    TypeArguments& type_arguments = TypeArguments::ZoneHandle();
     // Type is temporary. Only its type arguments are preserved.
     Type& type = Type::Handle(
         Type::New(instantiator_class, type_arguments, token_pos, Heap::kNew));
@@ -2692,9 +2647,9 @@ Value* EffectGraphVisitor::BuildInstantiatorTypeArguments(
     instantiator = BuildInstantiator();
   }
   // The instantiator is the receiver of the caller, which is not a factory.
-  // The receiver cannot be null; extract its AbstractTypeArguments object.
+  // The receiver cannot be null; extract its TypeArguments object.
   // Note that in the factory case, the instantiator is the first parameter
-  // of the factory, i.e. already an AbstractTypeArguments object.
+  // of the factory, i.e. already a TypeArguments object.
   intptr_t type_arguments_field_offset =
       instantiator_class.type_arguments_field_offset();
   ASSERT(type_arguments_field_offset != Class::kNoTypeArguments);
@@ -2708,7 +2663,7 @@ Value* EffectGraphVisitor::BuildInstantiatorTypeArguments(
 
 Value* EffectGraphVisitor::BuildInstantiatedTypeArguments(
     intptr_t token_pos,
-    const AbstractTypeArguments& type_arguments) {
+    const TypeArguments& type_arguments) {
   if (type_arguments.IsNull() || type_arguments.IsInstantiated()) {
     return Bind(new ConstantInstr(type_arguments));
   }
@@ -2720,79 +2675,14 @@ Value* EffectGraphVisitor::BuildInstantiatedTypeArguments(
   const bool use_instantiator_type_args =
       type_arguments.IsUninstantiatedIdentity() ||
       type_arguments.CanShareInstantiatorTypeArguments(instantiator_class);
-  return use_instantiator_type_args
-      ? instantiator_value
-      : Bind(new InstantiateTypeArgumentsInstr(token_pos,
-                                               type_arguments,
-                                               instantiator_class,
-                                               instantiator_value));
-}
-
-
-void EffectGraphVisitor::BuildConstructorTypeArguments(
-    ConstructorCallNode* node,
-    ZoneGrowableArray<PushArgumentInstr*>* call_arguments) {
-  const Class& cls = Class::ZoneHandle(node->constructor().Owner());
-  ASSERT((cls.NumTypeArguments() > 0) && !node->constructor().IsFactory());
-  if (node->type_arguments().IsNull() ||
-      node->type_arguments().IsInstantiated()) {
-    Value* type_arguments_val = Bind(new ConstantInstr(node->type_arguments()));
-    call_arguments->Add(PushArgument(type_arguments_val));
-
-    // No instantiator required.
-    Value* instantiator_val = Bind(new ConstantInstr(
-        Smi::ZoneHandle(Smi::New(StubCode::kNoInstantiator))));
-    call_arguments->Add(PushArgument(instantiator_val));
-    return;
-  }
-
-  // The type arguments are uninstantiated. We use expression_temp_var to save
-  // the instantiator type arguments because they have two uses.
-  ASSERT(owner()->parsed_function()->expression_temp_var() != NULL);
-  const Class& instantiator_class = Class::Handle(
-      owner()->parsed_function()->function().Owner());
-  Value* type_arguments_val = BuildInstantiatorTypeArguments(
-      node->token_pos(), instantiator_class, NULL);
-
-  const bool use_instantiator_type_args =
-      node->type_arguments().IsUninstantiatedIdentity() ||
-      node->type_arguments().CanShareInstantiatorTypeArguments(
-          instantiator_class);
-
-  if (!use_instantiator_type_args) {
-    const intptr_t len = node->type_arguments().Length();
-    if (node->type_arguments().IsRawInstantiatedRaw(len)) {
-      type_arguments_val =
-          Bind(BuildStoreExprTemp(type_arguments_val));
-      type_arguments_val = Bind(
-          new ExtractConstructorTypeArgumentsInstr(
-              node->token_pos(),
-              node->type_arguments(),
-              instantiator_class,
-              type_arguments_val));
-    } else {
-      Do(BuildStoreExprTemp(type_arguments_val));
-      type_arguments_val = Bind(new ConstantInstr(node->type_arguments()));
-    }
-  }
-  call_arguments->Add(PushArgument(type_arguments_val));
-
-  Value* instantiator_val = NULL;
-  if (!use_instantiator_type_args) {
-    instantiator_val = Bind(BuildLoadExprTemp());
-    const intptr_t len = node->type_arguments().Length();
-    if (node->type_arguments().IsRawInstantiatedRaw(len)) {
-      instantiator_val =
-          Bind(new ExtractConstructorInstantiatorInstr(node,
-                                                       instantiator_class,
-                                                       instantiator_val));
-    }
+  if (use_instantiator_type_args) {
+    return instantiator_value;
   } else {
-    // No instantiator required.
-    instantiator_val = Bind(new ConstantInstr(
-        Smi::ZoneHandle(Smi::New(StubCode::kNoInstantiator))));
+    return Bind(new InstantiateTypeArgumentsInstr(token_pos,
+                                                  type_arguments,
+                                                  instantiator_class,
+                                                  instantiator_value));
   }
-  call_arguments->Add(PushArgument(instantiator_val));
 }
 
 
@@ -3175,7 +3065,6 @@ void EffectGraphVisitor::VisitNativeBodyNode(NativeBodyNode* node) {
     }
   }
   InlineBailout("EffectGraphVisitor::VisitNativeBodyNode");
-  function.set_is_optimizable(false);
   NativeCallInstr* native_call = new NativeCallInstr(node);
   ReturnDefinition(native_call);
 }
@@ -3201,8 +3090,16 @@ void ValueGraphVisitor::VisitLoadLocalNode(LoadLocalNode* node) {
 
 // <Expression> ::= StoreLocal { local: LocalVariable
 //                               value: <Expression> }
-void EffectGraphVisitor::HandleStoreLocal(StoreLocalNode* node,
-                                          bool result_is_needed) {
+void EffectGraphVisitor::VisitStoreLocalNode(StoreLocalNode* node) {
+  // If the right hand side is an expression that does not contain
+  // a safe point for the debugger to stop, add an explicit stub
+  // call.
+  if (node->value()->IsLiteralNode() ||
+      node->value()->IsLoadLocalNode()) {
+    AddInstruction(new DebugStepCheckInstr(node->token_pos(),
+                                           PcDescriptors::kRuntimeCall));
+  }
+
   ValueGraphVisitor for_value(owner());
   node->value()->Visit(&for_value);
   Append(for_value);
@@ -3213,20 +3110,8 @@ void EffectGraphVisitor::HandleStoreLocal(StoreLocalNode* node,
                                        node->local().type(),
                                        node->local().name());
   }
-  Definition* store = BuildStoreLocal(node->local(),
-                                      store_value,
-                                      result_is_needed);
+  Definition* store = BuildStoreLocal(node->local(), store_value);
   ReturnDefinition(store);
-}
-
-
-void EffectGraphVisitor::VisitStoreLocalNode(StoreLocalNode* node) {
-  HandleStoreLocal(node, kResultNotNeeded);
-}
-
-
-void ValueGraphVisitor::VisitStoreLocalNode(StoreLocalNode* node) {
-  HandleStoreLocal(node, kResultNeeded);
 }
 
 
@@ -3237,9 +3122,8 @@ void EffectGraphVisitor::VisitLoadInstanceFieldNode(
   Append(for_instance);
   LoadFieldInstr* load = new LoadFieldInstr(
       for_instance.value(),
-      node->field().Offset(),
+      &node->field(),
       AbstractType::ZoneHandle(node->field().type()));
-  load->set_field(&node->field());
   if (owner()->exit_collector() != NULL) {
     // While inlining into an optimized function, the field has
     // to be added to the list of guarded fields of the caller.
@@ -3555,18 +3439,19 @@ void EffectGraphVisitor::VisitSequenceNode(SequenceNode* node) {
       // allocated context but saved on entry and restored on exit as to prevent
       // memory leaks.
       // In this case, the parser pre-allocates a variable to save the context.
+      Value* tmp_val = Bind(new LoadLocalInstr(*tmp_var));
+      Value* parent_context = NULL;
       if (MustSaveRestoreContext(node)) {
         BuildSaveContext(
             *owner()->parsed_function()->saved_entry_context_var());
-        Value* null_context = Bind(new ConstantInstr(Object::ZoneHandle()));
-        AddInstruction(new StoreContextInstr(null_context));
+        parent_context = Bind(new ConstantInstr(Object::ZoneHandle()));
+      } else {
+        parent_context = Bind(new CurrentContextInstr());
       }
-      Value* current_context = Bind(new CurrentContextInstr());
-      Value* tmp_val = Bind(new LoadLocalInstr(*tmp_var));
-      Do(new StoreVMFieldInstr(tmp_val,
-                               Context::parent_offset(),
-                               current_context,
-                               Type::ZoneHandle()));
+      Do(new StoreInstanceFieldInstr(Context::parent_offset(),
+                                     tmp_val,
+                                     parent_context,
+                                     kEmitStoreBarrier));
       AddInstruction(
           new StoreContextInstr(Bind(ExitTempLocalScope(tmp_var))));
     }
@@ -3594,15 +3479,31 @@ void EffectGraphVisitor::VisitSequenceNode(SequenceNode* node) {
 
           // Copy parameter from local frame to current context.
           Value* load = Bind(BuildLoadLocal(*temp_local));
-          Do(BuildStoreLocal(parameter, load, kResultNotNeeded));
+          Do(BuildStoreLocal(parameter, load));
           // Write NULL to the source location to detect buggy accesses and
           // allow GC of passed value if it gets overwritten by a new value in
           // the function.
           Value* null_constant =
               Bind(new ConstantInstr(Object::ZoneHandle()));
-          Do(BuildStoreLocal(*temp_local, null_constant, kResultNotNeeded));
+          Do(BuildStoreLocal(*temp_local, null_constant));
         }
       }
+    }
+  }
+
+  // This check may be deleted if the generated code is leaf.
+  // Native functions don't need a stack check at entry.
+  const Function& function = owner()->parsed_function()->function();
+  if ((node == owner()->parsed_function()->node_sequence()) &&
+      !function.is_native()) {
+    // Always allocate CheckOverflowInstr so that deopt-ids match regardless
+    // if we inline or not.
+    CheckStackOverflowInstr* check =
+        new CheckStackOverflowInstr(function.token_pos(), 0);
+    // If we are inlining don't actually attach the stack check. We must still
+    // create the stack check in order to allocate a deopt id.
+    if (!owner()->IsInlining()) {
+      AddInstruction(check);
     }
   }
 
@@ -3636,7 +3537,7 @@ void EffectGraphVisitor::VisitSequenceNode(SequenceNode* node) {
         // Store the type checked argument back to its corresponding local
         // variable so that ssa renaming detects the dependency and makes use
         // of the checked type in type propagation.
-        Do(BuildStoreLocal(parameter, parameter_value, kResultNotNeeded));
+        Do(BuildStoreLocal(parameter, parameter_value));
       }
       pos++;
     }
@@ -3981,23 +3882,11 @@ FlowGraph* FlowGraphBuilder::BuildGraph() {
   if (FLAG_print_scopes) {
     AstPrinter::PrintFunctionScope(*parsed_function());
   }
-  const Function& function = parsed_function()->function();
   TargetEntryInstr* normal_entry =
       new TargetEntryInstr(AllocateBlockId(),
                            CatchClauseNode::kInvalidTryIndex);
   graph_entry_ = new GraphEntryInstr(parsed_function(), normal_entry, osr_id_);
   EffectGraphVisitor for_effect(this);
-  // This check may be deleted if the generated code is leaf.
-  // Native functions don't need a stack check at entry.
-  if (!function.is_native()) {
-    CheckStackOverflowInstr* check =
-        new CheckStackOverflowInstr(function.token_pos(), 0);
-    // If we are inlining don't actually attach the stack check. We must still
-    // create the stack check in order to allocate a deopt id.
-    if (!IsInlining()) {
-      for_effect.AddInstruction(check);
-    }
-  }
   parsed_function()->node_sequence()->Visit(&for_effect);
   AppendFragment(normal_entry, for_effect);
   // Check that the graph is properly terminated.

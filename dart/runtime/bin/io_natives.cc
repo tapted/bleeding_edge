@@ -20,15 +20,20 @@ namespace bin {
 // Some classes, like File and Directory, list their implementations in
 // builtin_natives.cc instead.
 #define IO_NATIVE_LIST(V)                                                      \
-  V(Crypto_GetRandomBytes, 1)                                                  \
   V(EventHandler_SendData, 3)                                                  \
-  V(Filter_CreateZLibDeflate, 3)                                               \
-  V(Filter_CreateZLibInflate, 1)                                               \
+  V(FileSystemWatcher_CloseWatcher, 1)                                         \
+  V(FileSystemWatcher_GetSocketId, 2)                                          \
+  V(FileSystemWatcher_InitWatcher, 0)                                          \
+  V(FileSystemWatcher_IsSupported, 0)                                          \
+  V(FileSystemWatcher_ReadEvents, 2)                                           \
+  V(FileSystemWatcher_UnwatchPath, 2)                                          \
+  V(FileSystemWatcher_WatchPath, 4)                                            \
+  V(Filter_CreateZLibDeflate, 8)                                               \
+  V(Filter_CreateZLibInflate, 4)                                               \
   V(Filter_End, 1)                                                             \
   V(Filter_Process, 4)                                                         \
   V(Filter_Processed, 3)                                                       \
-  V(InternetAddress_Fixed, 1)                                                  \
-  V(InternetAddress_Parse, 2)                                                  \
+  V(InternetAddress_Parse, 1)                                                  \
   V(IOService_NewServicePort, 0)                                               \
   V(Platform_NumberOfProcessors, 0)                                            \
   V(Platform_OperatingSystem, 0)                                               \
@@ -46,6 +51,8 @@ namespace bin {
   V(Process_Exit, 1)                                                           \
   V(Process_Sleep, 1)                                                          \
   V(Process_Pid, 1)                                                            \
+  V(Process_SetSignalHandler, 1)                                               \
+  V(Process_ClearSignalHandler, 1)                                             \
   V(SecureSocket_Connect, 9)                                                   \
   V(SecureSocket_Destroy, 1)                                                   \
   V(SecureSocket_Handshake, 1)                                                 \
@@ -80,6 +87,7 @@ namespace bin {
   V(Stdin_SetEchoMode, 1)                                                      \
   V(Stdin_GetLineMode, 0)                                                      \
   V(Stdin_SetLineMode, 1)                                                      \
+  V(Stdout_GetTerminalSize, 0)                                                 \
   V(StringToSystemEncoding, 1)                                                 \
   V(SystemEncodingToString, 1)
 
@@ -96,11 +104,14 @@ static struct NativeEntries {
 
 
 Dart_NativeFunction IONativeLookup(Dart_Handle name,
-                                   int argument_count) {
+                                   int argument_count,
+                                   bool* auto_setup_scope) {
   const char* function_name = NULL;
   Dart_Handle result = Dart_StringToCString(name, &function_name);
   DART_CHECK_VALID(result);
   ASSERT(function_name != NULL);
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = true;
   int num_entries = sizeof(IOEntries) / sizeof(struct NativeEntries);
   for (int i = 0; i < num_entries; i++) {
     struct NativeEntries* entry = &(IOEntries[i]);

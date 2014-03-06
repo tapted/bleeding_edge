@@ -17,7 +17,7 @@
 
 namespace dart {
 
-static const intptr_t kPos = Scanner::kDummyTokenIndex;
+static const intptr_t kPos = Scanner::kNoSourcePos;
 
 
 CODEGEN_TEST_GENERATE(StackmapCodegen, test) {
@@ -25,7 +25,7 @@ CODEGEN_TEST_GENERATE(StackmapCodegen, test) {
   const String& function_name = String::ZoneHandle(Symbols::New("test"));
   Class& cls = Class::ZoneHandle();
   const Script& script = Script::Handle();
-  cls = Class::New(function_name, script, Scanner::kDummyTokenIndex);
+  cls = Class::New(function_name, script, Scanner::kNoSourcePos);
   const Function& function = Function::ZoneHandle(
       Function::New(function_name, RawFunction::kRegularFunction,
                     true, false, false, false, false, cls, 0));
@@ -49,9 +49,7 @@ CODEGEN_TEST_GENERATE(StackmapCodegen, test) {
   bool retval;
   Isolate* isolate = Isolate::Current();
   EXPECT(isolate != NULL);
-  LongJump* base = isolate->long_jump_base();
-  LongJump jump;
-  isolate->set_long_jump_base(&jump);
+  LongJumpScope jump;
   if (setjmp(*jump.Set()) == 0) {
     // Build a stackmap table and some stackmap table entries.
     const intptr_t kStackSlotCount = 11;
@@ -176,7 +174,6 @@ CODEGEN_TEST_GENERATE(StackmapCodegen, test) {
     retval = false;
   }
   EXPECT(retval);
-  isolate->set_long_jump_base(base);
 }
 CODEGEN_TEST_RUN(StackmapCodegen, Smi::New(1))
 
@@ -194,7 +191,10 @@ static void NativeFunc(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction native_resolver(Dart_Handle name,
-                                           int argument_count) {
+                                           int argument_count,
+                                           bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope);
+  *auto_setup_scope = false;
   return reinterpret_cast<Dart_NativeFunction>(&NativeFunc);
 }
 

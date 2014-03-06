@@ -13,6 +13,8 @@
  */
 package com.google.dart.engine.internal.element.member;
 
+import com.google.dart.engine.ast.AstNode;
+import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.context.AnalysisContext;
 import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.element.Element;
@@ -119,8 +121,18 @@ public abstract class Member implements Element {
   }
 
   @Override
+  public AstNode getNode() throws AnalysisException {
+    return baseElement.getNode();
+  }
+
+  @Override
   public Source getSource() {
     return baseElement.getSource();
+  }
+
+  @Override
+  public CompilationUnit getUnit() throws AnalysisException {
+    return baseElement.getUnit();
   }
 
   @Override
@@ -131,6 +143,21 @@ public abstract class Member implements Element {
   @Override
   public boolean isDeprecated() {
     return baseElement.isDeprecated();
+  }
+
+  @Override
+  public boolean isOverride() {
+    return baseElement.isOverride();
+  }
+
+  @Override
+  public boolean isPrivate() {
+    return baseElement.isPrivate();
+  }
+
+  @Override
+  public boolean isPublic() {
+    return baseElement.isPublic();
   }
 
   @Override

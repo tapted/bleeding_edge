@@ -13,6 +13,8 @@
  */
 package com.google.dart.engine.internal.element.handle;
 
+import com.google.dart.engine.ast.ClassDeclaration;
+import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.element.ClassElement;
 import com.google.dart.engine.element.ConstructorElement;
 import com.google.dart.engine.element.ElementKind;
@@ -20,6 +22,7 @@ import com.google.dart.engine.element.FieldElement;
 import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.MethodElement;
 import com.google.dart.engine.element.PropertyAccessorElement;
+import com.google.dart.engine.element.ToolkitObjectElement;
 import com.google.dart.engine.element.TypeParameterElement;
 import com.google.dart.engine.type.InterfaceType;
 
@@ -55,6 +58,11 @@ public class ClassElementHandle extends ElementHandle implements ClassElement {
   @Override
   public ConstructorElement[] getConstructors() {
     return getActualElement().getConstructors();
+  }
+
+  @Override
+  public FieldElement getField(String fieldName) {
+    return getActualElement().getField(fieldName);
   }
 
   @Override
@@ -98,6 +106,11 @@ public class ClassElementHandle extends ElementHandle implements ClassElement {
   }
 
   @Override
+  public ClassDeclaration getNode() throws AnalysisException {
+    return getActualElement().getNode();
+  }
+
+  @Override
   public PropertyAccessorElement getSetter(String setterName) {
     return getActualElement().getSetter(setterName);
   }
@@ -105,6 +118,11 @@ public class ClassElementHandle extends ElementHandle implements ClassElement {
   @Override
   public InterfaceType getSupertype() {
     return getActualElement().getSupertype();
+  }
+
+  @Override
+  public ToolkitObjectElement[] getToolkitObjects() {
+    return getActualElement().getToolkitObjects();
   }
 
   @Override
@@ -135,6 +153,11 @@ public class ClassElementHandle extends ElementHandle implements ClassElement {
   @Override
   public boolean isAbstract() {
     return getActualElement().isAbstract();
+  }
+
+  @Override
+  public boolean isOrInheritsProxy() {
+    return getActualElement().isOrInheritsProxy();
   }
 
   @Override

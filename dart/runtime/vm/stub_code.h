@@ -33,8 +33,7 @@ class RawCode;
   V(Deoptimize)                                                                \
   V(DeoptimizeLazy)                                                            \
   V(BreakpointRuntime)                                                         \
-  V(BreakpointStatic)                                                          \
-  V(BreakpointReturn)                                                          \
+  V(DebugStepCheck)                                                            \
   V(Subtype1TestCache)                                                         \
   V(Subtype2TestCache)                                                         \
   V(Subtype3TestCache)                                                         \
@@ -67,7 +66,6 @@ class RawCode;
   V(ZeroArgsUnoptimizedStaticCall)                                             \
   V(TwoArgsUnoptimizedStaticCall)                                              \
   V(OptimizeFunction)                                                          \
-  V(BreakpointDynamic)                                                         \
 
 // class StubEntry is used to describe stub methods generated in dart to
 // abstract out common code executed from generated dart code.
@@ -158,7 +156,6 @@ class StubCode {
 #undef STUB_CODE_ACCESSOR
 
   static RawCode* GetAllocationStubForClass(const Class& cls);
-  static RawCode* GetAllocationStubForClosure(const Function& func);
 
   static const intptr_t kNoInstantiator = 0;
 
@@ -194,8 +191,6 @@ class StubCode {
   static void GenerateMegamorphicMissStub(Assembler* assembler);
   static void GenerateAllocationStubForClass(Assembler* assembler,
                                              const Class& cls);
-  static void GenerateAllocationStubForClosure(Assembler* assembler,
-                                               const Function& func);
   static void GenerateNArgsCheckInlineCacheStub(
       Assembler* assembler,
       intptr_t num_args,

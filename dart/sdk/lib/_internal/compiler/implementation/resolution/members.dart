@@ -8,6 +8,11 @@ abstract class TreeElements {
   Element get currentElement;
   Setlet<Node> get superUses;
 
+  /// Iterables of the dependencies that this [TreeElement] records of
+  /// [currentElement].
+  Iterable<Element> get allElements;
+  Iterable<Constant> get allConstants;
+
   /// A set of additional dependencies.  See [registerDependency] below.
   Setlet<Element> get otherDependencies;
 
@@ -22,9 +27,9 @@ abstract class TreeElements {
   Selector getIteratorSelector(ForIn node);
   Selector getMoveNextSelector(ForIn node);
   Selector getCurrentSelector(ForIn node);
-  Selector setIteratorSelector(ForIn node, Selector selector);
-  Selector setMoveNextSelector(ForIn node, Selector selector);
-  Selector setCurrentSelector(ForIn node, Selector selector);
+  void setIteratorSelector(ForIn node, Selector selector);
+  void setMoveNextSelector(ForIn node, Selector selector);
+  void setCurrentSelector(ForIn node, Selector selector);
   void setConstant(Node node, Constant constant);
   Constant getConstant(Node node);
 
@@ -69,6 +74,7 @@ class TreeElementMapping implements TreeElements {
       new Map<VariableElement, List<Node>>();
   final Map<Node, Map<VariableElement, List<Node>>> accessedByClosureIn =
       new Map<Node, Map<VariableElement, List<Node>>>();
+  final Setlet<Element> elements = new Setlet<Element>();
 
   final int hashCode = ++hashCodeCounter;
   static int hashCodeCounter = 0;
@@ -97,6 +103,7 @@ class TreeElementMapping implements TreeElements {
     //                  getTreeElement(node) == null,
     //                  message: '${getTreeElement(node)}; $element'));
 
+    elements.add(element);
     setTreeElement(node, element);
   }
 
@@ -140,7 +147,7 @@ class TreeElementMapping implements TreeElements {
   // we're using three selectors, we need to use children of the node,
   // and we arbitrarily choose which ones.
 
-  Selector setIteratorSelector(ForIn node, Selector selector) {
+  void setIteratorSelector(ForIn node, Selector selector) {
     selectors[node] = selector;
   }
 
@@ -148,7 +155,7 @@ class TreeElementMapping implements TreeElements {
     return selectors[node];
   }
 
-  Selector setMoveNextSelector(ForIn node, Selector selector) {
+  void setMoveNextSelector(ForIn node, Selector selector) {
     selectors[node.forToken] = selector;
   }
 
@@ -156,7 +163,7 @@ class TreeElementMapping implements TreeElements {
     return selectors[node.forToken];
   }
 
-  Selector setCurrentSelector(ForIn node, Selector selector) {
+  void setCurrentSelector(ForIn node, Selector selector) {
     selectors[node.inToken] = selector;
   }
 
@@ -235,6 +242,10 @@ class TreeElementMapping implements TreeElements {
   }
 
   String toString() => 'TreeElementMapping($currentElement)';
+
+  Iterable<Element> get allElements => elements;
+
+  Iterable<Constant> get allConstants => constants.values;
 }
 
 class ResolverTask extends CompilerTask {
@@ -294,19 +305,19 @@ class ResolverTask extends CompilerTask {
                                      Node node,
                                      FunctionElement constructor,
                                      FunctionElement redirection) {
+    assert(invariant(node, constructor.isImplementation,
+        message: 'Redirecting constructors must be resolved on implementation '
+                 'elements.'));
     Setlet<FunctionElement> seen = new Setlet<FunctionElement>();
     seen.add(constructor);
     while (redirection != null) {
+      // Ensure that we follow redirections through implementation elements.
+      redirection = redirection.implementation;
       if (seen.contains(redirection)) {
         resolver.visitor.error(node, MessageKind.REDIRECTING_CONSTRUCTOR_CYCLE);
         return;
       }
       seen.add(redirection);
-
-      if (redirection.isPatched) {
-        checkMatchingPatchSignatures(constructor, redirection.patch);
-        redirection = redirection.patch;
-      }
       redirection = resolver.visitor.resolveConstructorRedirection(redirection);
     }
   }
@@ -315,8 +326,20 @@ class ResolverTask extends CompilerTask {
                                     Link<Element> originParameters,
                                     Link<Element> patchParameters) {
     while (!originParameters.isEmpty) {
-      Element originParameter = originParameters.head;
-      Element patchParameter = patchParameters.head;
+      ParameterElementX originParameter = originParameters.head;
+      ParameterElementX patchParameter = patchParameters.head;
+      // TODO(johnniwinther): Remove the case for reassignment of
+      // [patch]/[origin] when resolution is ensure to be done only once.
+      assert(invariant(originParameter, originParameter.origin == null));
+      assert(invariant(originParameter,
+          originParameter.patch == null ||
+          originParameter.patch == patchParameter));
+      originParameter.patch = patchParameter;
+      assert(invariant(patchParameter,
+          patchParameter.origin == null ||
+          patchParameter.origin == originParameter));
+      assert(invariant(patchParameter, patchParameter.patch == null));
+      patchParameter.origin = originParameter;
       // Hack: Use unparser to test parameter equality. This only works because
       // we are restricting patch uses and the approach cannot be used
       // elsewhere.
@@ -334,11 +357,9 @@ class ResolverTask extends CompilerTask {
             {'methodName': origin.name,
              'originParameter': originParameterText,
              'patchParameter': patchParameterText});
-        compiler.reportMessage(
-            compiler.spanFromSpannable(patchParameter),
-            MessageKind.PATCH_POINT_TO_PARAMETER.error(
-                {'parameterName': patchParameter.name}),
-            Diagnostic.INFO);
+        compiler.reportInfo(patchParameter,
+            MessageKind.PATCH_POINT_TO_PARAMETER,
+            {'parameterName': patchParameter.name});
       }
       DartType originParameterType = originParameter.computeType(compiler);
       DartType patchParameterType = patchParameter.computeType(compiler);
@@ -350,11 +371,9 @@ class ResolverTask extends CompilerTask {
              'parameterName': originParameter.name,
              'originParameterType': originParameterType,
              'patchParameterType': patchParameterType});
-        compiler.reportMessage(
-            compiler.spanFromSpannable(patchParameter),
-            MessageKind.PATCH_POINT_TO_PARAMETER.error(
-                {'parameterName': patchParameter.name}),
-            Diagnostic.INFO);
+        compiler.reportInfo(patchParameter,
+            MessageKind.PATCH_POINT_TO_PARAMETER,
+            {'parameterName': patchParameter.name});
       }
 
       originParameters = originParameters.tail;
@@ -645,8 +664,7 @@ class ResolverTask extends CompilerTask {
       InterfaceType factoryType =
           treeElements.getType(redirectionNode.expression);
 
-      targetType = targetType.subst(factoryType.typeArguments,
-                                    factoryType.element.typeVariables);
+      targetType = targetType.substByContext(factoryType);
       factory.redirectionTarget = target;
       factory.redirectionTargetType = targetType;
     }
@@ -665,12 +683,14 @@ class ResolverTask extends CompilerTask {
         compiler.reportError(from, MessageKind.CYCLIC_CLASS_HIERARCHY,
                                  {'className': cls.name});
         cls.supertypeLoadState = STATE_DONE;
+        cls.hasIncompleteHierarchy = true;
         cls.allSupertypesAndSelf =
             compiler.objectClass.allSupertypesAndSelf.extendClass(
                 cls.computeType(compiler));
         cls.supertype = cls.allSupertypes.head;
         assert(invariant(from, cls.supertype != null,
             message: 'Missing supertype on cyclic class $cls.'));
+        cls.interfaces = const Link<DartType>();
         return;
       }
       cls.supertypeLoadState = STATE_STARTED;
@@ -687,8 +707,44 @@ class ResolverTask extends CompilerTask {
 
   // TODO(johnniwinther): Remove this queue when resolution has been split into
   // syntax and semantic resolution.
-  ClassElement currentlyResolvedClass;
+  TypeDeclarationElement currentlyResolvedTypeDeclaration;
   Queue<ClassElement> pendingClassesToBeResolved = new Queue<ClassElement>();
+  Queue<ClassElement> pendingClassesToBePostProcessed =
+      new Queue<ClassElement>();
+
+  /// Resolve [element] using [resolveTypeDeclaration].
+  ///
+  /// This methods ensure that class declarations encountered through type
+  /// annotations during the resolution of [element] are resolved after
+  /// [element] has been resolved.
+  // TODO(johnniwinther): Encapsulate this functionality in a
+  // 'TypeDeclarationResolver'.
+  _resolveTypeDeclaration(TypeDeclarationElement element,
+                          resolveTypeDeclaration()) {
+    return compiler.withCurrentElement(element, () {
+      return measure(() {
+        TypeDeclarationElement previousResolvedTypeDeclaration =
+            currentlyResolvedTypeDeclaration;
+        currentlyResolvedTypeDeclaration = element;
+        var result = resolveTypeDeclaration();
+        if (previousResolvedTypeDeclaration == null) {
+          do {
+            while (!pendingClassesToBeResolved.isEmpty) {
+              pendingClassesToBeResolved.removeFirst().ensureResolved(compiler);
+            }
+            while (!pendingClassesToBePostProcessed.isEmpty) {
+              _postProcessClassElement(
+                  pendingClassesToBePostProcessed.removeFirst());
+            }
+          } while (!pendingClassesToBeResolved.isEmpty);
+          assert(pendingClassesToBeResolved.isEmpty);
+          assert(pendingClassesToBePostProcessed.isEmpty);
+        }
+        currentlyResolvedTypeDeclaration = previousResolvedTypeDeclaration;
+        return result;
+      });
+    });
+  }
 
   /**
    * Resolve the class [element].
@@ -702,21 +758,15 @@ class ResolverTask extends CompilerTask {
    * [:element.ensureResolved(compiler):].
    */
   void resolveClass(ClassElement element) {
-    ClassElement previousResolvedClass = currentlyResolvedClass;
-    currentlyResolvedClass = element;
-    // TODO(johnniwinther): Store the mapping in the resolution enqueuer.
-    TreeElementMapping mapping = new TreeElementMapping(element);
-    resolveClassInternal(element, mapping);
-    if (previousResolvedClass == null) {
-      while (!pendingClassesToBeResolved.isEmpty) {
-        pendingClassesToBeResolved.removeFirst().ensureResolved(compiler);
-      }
-    }
-    currentlyResolvedClass = previousResolvedClass;
+    _resolveTypeDeclaration(element, () {
+      // TODO(johnniwinther): Store the mapping in the resolution enqueuer.
+      TreeElementMapping mapping = new TreeElementMapping(element);
+      resolveClassInternal(element, mapping);
+    });
   }
 
   void _ensureClassWillBeResolved(ClassElement element) {
-    if (currentlyResolvedClass == null) {
+    if (currentlyResolvedTypeDeclaration == null) {
       element.ensureResolved(compiler);
     } else {
       pendingClassesToBeResolved.add(element);
@@ -737,6 +787,7 @@ class ResolverTask extends CompilerTask {
         visitor.visit(tree);
         element.resolutionState = STATE_DONE;
         compiler.onClassResolved(element);
+        pendingClassesToBePostProcessed.add(element);
       }));
       if (element.isPatched) {
         // Ensure handling patch after origin.
@@ -748,7 +799,7 @@ class ResolverTask extends CompilerTask {
       element.origin.ensureResolved(compiler);
       // Ensure that the type is computed.
       element.computeType(compiler);
-      // Copy class hiearchy from origin.
+      // Copy class hierarchy from origin.
       element.supertype = element.origin.supertype;
       element.interfaces = element.origin.interfaces;
       element.allSupertypesAndSelf = element.origin.allSupertypesAndSelf;
@@ -759,6 +810,9 @@ class ResolverTask extends CompilerTask {
       // TODO(johnniwinther): Check matching type variables and
       // empty extends/implements clauses.
     }
+  }
+
+  void _postProcessClassElement(BaseClassElementX element) {
     for (MetadataAnnotation metadata in element.metadata) {
       metadata.ensureResolved(compiler);
       if (!element.isProxy && metadata.value == compiler.proxyConstant) {
@@ -780,6 +834,12 @@ class ResolverTask extends CompilerTask {
         });
       }
     });
+
+    computeClassMembers(element);
+  }
+
+  void computeClassMembers(ClassElement element) {
+    MembersCreator.computeClassMembers(compiler, element);
   }
 
   void checkClass(ClassElement element) {
@@ -895,7 +955,6 @@ class ResolverTask extends CompilerTask {
           }
         }
         checkAbstractField(member);
-        checkValidOverride(member, cls.lookupSuperMember(member.name));
         checkUserDefinableOperator(member);
       });
     });
@@ -914,25 +973,6 @@ class ResolverTask extends CompilerTask {
       for (Element field in nonFinalInstanceFields) {
         compiler.reportInfo(field,
             MessageKind.CONST_CONSTRUCTOR_WITH_NONFINAL_FIELDS_FIELD);
-      }
-    }
-
-    if (!cls.isAbstract) {
-      for (DartType supertype in cls.allSupertypes) {
-        // This must have been reported elsewhere.
-        if (!supertype.element.isClass()) continue;
-        ClassElement superclass = supertype.element;
-        superclass.forEachMember((ClassElement holder, Element member) {
-          if (member.isAbstract) {
-            Element mine = cls.lookupMember(member.name);
-            if (mine == null || mine.isAbstract) {
-              compiler.reportWarningCode(
-                  cls, MessageKind.UNIMPLEMENTED_METHOD,
-                  {'class_name': cls.name, 'member_name': member.name});
-              compiler.reportHint(member, MessageKind.THIS_IS_THE_METHOD, {});
-            }
-          }
-        });
       }
     }
   }
@@ -983,7 +1023,6 @@ class ResolverTask extends CompilerTask {
     bool isMinus = false;
     int requiredParameterCount;
     MessageKind messageKind;
-    FunctionSignature signature = function.computeSignature(compiler);
     if (identical(value, 'unary-')) {
       isMinus = true;
       messageKind = MessageKind.MINUS_OPERATOR_BAD_ARITY;
@@ -1085,51 +1124,9 @@ class ResolverTask extends CompilerTask {
         errorMessage,
         {'memberName': contextElement.name,
          'className': contextElement.getEnclosingClass().name});
-    compiler.reportMessage(
-        compiler.spanFromElement(contextElement),
-        contextMessage.error(),
-        Diagnostic.INFO);
+    compiler.reportInfo(contextElement, contextMessage);
   }
 
-  void checkValidOverride(Element member, Element superMember) {
-    if (superMember == null) return;
-    if (member.modifiers.isStatic()) {
-      reportErrorWithContext(
-          member, MessageKind.NO_STATIC_OVERRIDE,
-          superMember, MessageKind.NO_STATIC_OVERRIDE_CONT);
-    } else {
-      FunctionElement superFunction = superMember.asFunctionElement();
-      FunctionElement function = member.asFunctionElement();
-      if (superFunction == null || superFunction.isAccessor()) {
-        // Field or accessor in super.
-        if (function != null && !function.isAccessor()) {
-          // But a plain method in this class.
-          reportErrorWithContext(
-              member, MessageKind.CANNOT_OVERRIDE_FIELD_WITH_METHOD,
-              superMember, MessageKind.CANNOT_OVERRIDE_FIELD_WITH_METHOD_CONT);
-        }
-      } else {
-        // Instance method in super.
-        if (function == null || function.isAccessor()) {
-          // But a field (or accessor) in this class.
-          reportErrorWithContext(
-              member, MessageKind.CANNOT_OVERRIDE_METHOD_WITH_FIELD,
-              superMember, MessageKind.CANNOT_OVERRIDE_METHOD_WITH_FIELD_CONT);
-        } else {
-          // Both are plain instance methods.
-          if (superFunction.requiredParameterCount(compiler) !=
-              function.requiredParameterCount(compiler)) {
-          reportErrorWithContext(
-              member,
-              MessageKind.BAD_ARITY_OVERRIDE,
-              superMember,
-              MessageKind.BAD_ARITY_OVERRIDE_CONT);
-          }
-          // TODO(ahe): Check optional parameters.
-        }
-      }
-    }
-  }
 
   FunctionSignature resolveSignature(FunctionElement element) {
     MessageKind defaultValuesError = null;
@@ -1144,30 +1141,29 @@ class ResolverTask extends CompilerTask {
           compiler.parser.measure(() => element.parseNode(compiler));
       return measure(() => SignatureResolver.analyze(
           compiler, node.parameters, node.returnType, element,
+          // TODO(johnniwinther): Use the [TreeElements] used for resolution of
+          // the method body.
+          new TreeElementMapping(element),
           defaultValuesError: defaultValuesError));
     });
   }
 
-  FunctionSignature resolveFunctionExpression(Element element,
-                                              FunctionExpression node) {
-    return measure(() => SignatureResolver.analyze(
-      compiler, node.parameters, node.returnType, element));
-  }
-
   TreeElements resolveTypedef(TypedefElementX element) {
     if (element.isResolved) return element.mapping;
-    TreeElementMapping mapping = new TreeElementMapping(element);
-    // TODO(johnniwinther): Store the mapping in the resolution enqueuer.
-    element.mapping = mapping;
-    return compiler.withCurrentElement(element, () {
-      return measure(() {
-        Typedef node =
-          compiler.parser.measure(() => element.parseNode(compiler));
-        TypedefResolverVisitor visitor =
-          new TypedefResolverVisitor(compiler, element, mapping);
-        visitor.visit(node);
+    return _resolveTypeDeclaration(element, () {
+      TreeElementMapping mapping = new TreeElementMapping(element);
+      // TODO(johnniwinther): Store the mapping in the resolution enqueuer.
+      element.mapping = mapping;
+      return compiler.withCurrentElement(element, () {
+        return measure(() {
+          Typedef node =
+            compiler.parser.measure(() => element.parseNode(compiler));
+          TypedefResolverVisitor visitor =
+            new TypedefResolverVisitor(compiler, element, mapping);
+          visitor.visit(node);
 
-        return mapping;
+          return mapping;
+        });
       });
     });
   }
@@ -1205,7 +1201,7 @@ class ResolverTask extends CompilerTask {
         namedParameterTypes);
   }
 
-  void resolveMetadataAnnotation(PartialMetadataAnnotation annotation) {
+  void resolveMetadataAnnotation(MetadataAnnotationX annotation) {
     compiler.withCurrentElement(annotation.annotatedElement, () => measure(() {
       assert(annotation.resolutionState == STATE_NOT_STARTED);
       annotation.resolutionState = STATE_STARTED;
@@ -1230,6 +1226,18 @@ class ResolverTask extends CompilerTask {
   error(Spannable node, MessageKind kind, [arguments = const {}]) {
     // TODO(ahe): Make non-fatal.
     compiler.reportFatalError(node, kind, arguments);
+  }
+
+  resolveMetadata(MetadataContainer variables, VariableDefinitions node) {
+    LinkBuilder<MetadataAnnotation> metadata =
+        new LinkBuilder<MetadataAnnotation>();
+    for (Metadata annotation in node.metadata.nodes) {
+      ParameterMetadataAnnotation metadataAnnotation =
+          new ParameterMetadataAnnotation(annotation);
+      metadataAnnotation.annotatedElement = variables;
+      metadata.addLast(metadataAnnotation.ensureResolved(compiler));
+    }
+    variables.metadata = metadata.toLink();
   }
 }
 
@@ -1307,7 +1315,7 @@ class InitializerResolver {
     if (isFieldInitializer(init)) {
       target = constructor.getEnclosingClass().lookupLocalMember(name);
       if (target == null) {
-        error(selector, MessageKind.CANNOT_RESOLVE.error, {'name': name});
+        error(selector, MessageKind.CANNOT_RESOLVE, {'name': name});
       } else if (target.kind != ElementKind.FIELD) {
         error(selector, MessageKind.NOT_A_FIELD, {'fieldName': name});
       } else if (!target.isInstanceMember()) {
@@ -1468,14 +1476,16 @@ class InitializerResolver {
     }
     FunctionElement result;
     bool resolvedSuper = false;
-    for (Link<Node> link = initializers;
-         !link.isEmpty;
-         link = link.tail) {
+    for (Link<Node> link = initializers; !link.isEmpty; link = link.tail) {
       if (link.head.asSendSet() != null) {
         final SendSet init = link.head.asSendSet();
         resolveFieldInitializer(constructor, init);
       } else if (link.head.asSend() != null) {
         final Send call = link.head.asSend();
+        if (call.argumentsNode == null) {
+          error(link.head, MessageKind.INVALID_INITIALIZER);
+          continue;
+        }
         if (Initializers.isSuperConstructorCall(call)) {
           if (resolvedSuper) {
             error(call, MessageKind.DUPLICATE_SUPER_INITIALIZER);
@@ -1526,6 +1536,7 @@ class CommonResolverVisitor<R> extends Visitor<R> {
   R visitNode(Node node) {
     cancel(node,
            'internal error: Unhandled node: ${node.getObjectDescription()}');
+    return null;
   }
 
   R visitEmptyStatement(Node node) => null;
@@ -1533,14 +1544,12 @@ class CommonResolverVisitor<R> extends Visitor<R> {
   /** Convenience method for visiting nodes that may be null. */
   R visit(Node node) => (node == null) ? null : node.accept(this);
 
-  void error(Node node, MessageKind kind, [Map arguments = const {}]) {
+  void error(Spannable node, MessageKind kind, [Map arguments = const {}]) {
     compiler.reportFatalError(node, kind, arguments);
   }
 
-  void warning(Node node, MessageKind kind, [Map arguments = const {}]) {
-    ResolutionWarning message =
-        new ResolutionWarning(kind, arguments, compiler.terseDiagnostics);
-    compiler.reportWarning(node, message);
+  void warning(Spannable node, MessageKind kind, [Map arguments = const {}]) {
+    compiler.reportWarning(node, kind, arguments);
   }
 
   void cancel(Node node, String message) {
@@ -1549,10 +1558,6 @@ class CommonResolverVisitor<R> extends Visitor<R> {
 
   void internalError(Node node, String message) {
     compiler.internalError(message, node: node);
-  }
-
-  void unimplemented(Node node, String message) {
-    compiler.unimplemented(message, node: node);
   }
 
   void addDeferredAction(Element element, DeferredAction action) {
@@ -1702,17 +1707,17 @@ class TypeResolver {
 
     Element element = resolveTypeName(visitor.scope, prefixName, typeName);
 
-    DartType reportFailureAndCreateType(DualKind messageKind,
+    DartType reportFailureAndCreateType(MessageKind messageKind,
                                         Map messageArguments,
                                         {DartType userProvidedBadType}) {
       if (malformedIsError) {
-        visitor.error(node, messageKind.error, messageArguments);
+        visitor.error(node, messageKind, messageArguments);
       } else {
         compiler.backend.registerThrowRuntimeError(visitor.mapping);
-        visitor.warning(node, messageKind.warning, messageArguments);
+        visitor.warning(node, messageKind, messageArguments);
       }
       Element erroneousElement = new ErroneousElementX(
-          messageKind.error, messageArguments, typeName.source,
+          messageKind, messageArguments, typeName.source,
           visitor.enclosingElement);
       LinkBuilder<DartType> arguments = new LinkBuilder<DartType>();
       resolveTypeArguments(visitor, node, null, arguments);
@@ -1832,7 +1837,7 @@ class TypeResolver {
                                    DartType bound) {
       compiler.backend.registerTypeVariableBoundCheck(elements);
       if (!compiler.types.isSubtype(typeArgument, bound)) {
-        compiler.reportWarningCode(node,
+        compiler.reportWarning(node,
             MessageKind.INVALID_TYPE_VARIABLE_BOUND,
             {'typeVariable': typeVariable,
              'bound': bound,
@@ -1864,7 +1869,7 @@ class TypeResolver {
          typeArguments = typeArguments.tail) {
       if (typeVariables != null && typeVariables.isEmpty) {
         visitor.warning(
-            typeArguments.head, MessageKind.ADDITIONAL_TYPE_ARGUMENT.warning);
+            typeArguments.head, MessageKind.ADDITIONAL_TYPE_ARGUMENT);
         typeArgumentCountMismatch = true;
       }
       DartType argType = resolveTypeAnnotation(visitor, typeArguments.head);
@@ -1875,7 +1880,7 @@ class TypeResolver {
     }
     if (typeVariables != null && !typeVariables.isEmpty) {
       visitor.warning(node.typeArguments,
-                      MessageKind.MISSING_TYPE_ARGUMENT.warning);
+                      MessageKind.MISSING_TYPE_ARGUMENT);
       typeArgumentCountMismatch = true;
     }
     return typeArgumentCountMismatch;
@@ -1927,13 +1932,10 @@ abstract class MappingVisitor<T> extends CommonResolverVisitor<T> {
   void reportDuplicateDefinition(/*Node|String*/ name,
                                  Spannable definition,
                                  Spannable existing) {
-    compiler.reportError(
-        definition,
+    compiler.reportError(definition,
         MessageKind.DUPLICATE_DEFINITION, {'name': name});
-    compiler.reportMessage(
-        compiler.spanFromSpannable(existing),
-        MessageKind.EXISTING_DEFINITION.error({'name': name}),
-        Diagnostic.INFO);
+    compiler.reportInfo(existing,
+        MessageKind.EXISTING_DEFINITION, {'name': name});
   }
 }
 
@@ -2042,9 +2044,9 @@ class ResolverVisitor extends MappingVisitor<Element> {
       } else if (result.isAmbiguous()) {
         AmbiguousElement ambiguous = result;
         compiler.reportError(
-            node, ambiguous.messageKind.error, ambiguous.messageArguments);
+            node, ambiguous.messageKind, ambiguous.messageArguments);
         ambiguous.diagnose(enclosingElement, compiler);
-        return new ErroneousElementX(ambiguous.messageKind.error,
+        return new ErroneousElementX(ambiguous.messageKind,
                                      ambiguous.messageArguments,
                                      name, enclosingElement);
       }
@@ -2093,12 +2095,10 @@ class ResolverVisitor extends MappingVisitor<Element> {
 
   ErroneousElement warnAndCreateErroneousElement(Node node,
                                                  String name,
-                                                 DualKind kind,
+                                                 MessageKind kind,
                                                  [Map arguments = const {}]) {
-    ResolutionWarning warning = new ResolutionWarning(
-        kind.warning, arguments, compiler.terseDiagnostics);
-    compiler.reportWarning(node, warning);
-    return new ErroneousElementX(kind.error, arguments, name, enclosingElement);
+    compiler.reportWarning(node, kind, arguments);
+    return new ErroneousElementX(kind, arguments, name, enclosingElement);
   }
 
   Element visitIdentifier(Identifier node) {
@@ -2237,7 +2237,7 @@ class ResolverVisitor extends MappingVisitor<Element> {
     visit(node.expression);
   }
 
-  Element visitClassNode(ClassNode node) {
+  visitClassNode(ClassNode node) {
     cancel(node, "shouldn't be called");
   }
 
@@ -2426,7 +2426,7 @@ class ResolverVisitor extends MappingVisitor<Element> {
         // TODO(karlklose): this should be reported by the caller of
         // [resolveSend] to select better warning messages for getters and
         // setters.
-        DualKind kind = (target == null)
+        MessageKind kind = (target == null)
             ? MessageKind.MEMBER_NOT_FOUND
             : MessageKind.MEMBER_NOT_STATIC;
         return warnAndCreateErroneousElement(node, name, kind,
@@ -2681,8 +2681,6 @@ class ResolverVisitor extends MappingVisitor<Element> {
       }
     }
 
-    // TODO(ngeoffray): Warn if target is null and the send is
-    // unqualified.
     useElement(node, target);
     registerSend(selector, target);
     if (node.isPropertyAccess && Elements.isStaticOrTopLevelFunction(target)) {
@@ -2695,7 +2693,7 @@ class ResolverVisitor extends MappingVisitor<Element> {
     compiler.backend.registerThrowNoSuchMethod(mapping);
     // TODO(karlklose): we can be more precise about the reason of the
     // mismatch.
-    warning(node.argumentsNode, MessageKind.INVALID_ARGUMENTS.warning,
+    warning(node.argumentsNode, MessageKind.INVALID_ARGUMENTS,
             {'methodName': target.name});
   }
 
@@ -2736,14 +2734,21 @@ class ResolverVisitor extends MappingVisitor<Element> {
           compiler.backend.registerThrowNoSuchMethod(mapping);
         }
       } else if (target.impliesType()) {
+        setter = warnAndCreateErroneousElement(
+            node.selector, target.name, MessageKind.ASSIGNING_TYPE);
         compiler.backend.registerThrowNoSuchMethod(mapping);
       } else if (target.modifiers.isFinal() ||
                  target.modifiers.isConst() ||
                  (target.isFunction() &&
-                     Elements.isStaticOrTopLevelFunction(target) &&
-                     !target.isSetter())) {
-        setter = warnAndCreateErroneousElement(
-            node.selector, target.name, MessageKind.CANNOT_RESOLVE_SETTER);
+                  Elements.isStaticOrTopLevelFunction(target) &&
+                  !target.isSetter())) {
+        if (target.isFunction()) {
+          setter = warnAndCreateErroneousElement(
+              node.selector, target.name, MessageKind.ASSIGNING_METHOD);
+        } else {
+          setter = warnAndCreateErroneousElement(
+              node.selector, target.name, MessageKind.CANNOT_RESOLVE_SETTER);
+        }
         compiler.backend.registerThrowNoSuchMethod(mapping);
       }
       if (isPotentiallyMutableTarget(target)) {
@@ -2758,10 +2763,6 @@ class ResolverVisitor extends MappingVisitor<Element> {
     }
 
     resolveArguments(node.argumentsNode);
-
-    // TODO(ngeoffray): Check if the target can be assigned.
-    // TODO(ngeoffray): Warn if target is null and the send is
-    // unqualified.
 
     Selector selector = mapping.getSelector(node);
     if (isComplex) {
@@ -2852,8 +2853,9 @@ class ResolverVisitor extends MappingVisitor<Element> {
     world.registerStaticUse(compiler.symbolConstructor.declaration);
     world.registerConstSymbol(node.slowNameString, mapping);
     if (!validateSymbol(node, node.slowNameString, reportError: false)) {
-      compiler.reportError(node, MessageKind.UNSUPPORTED_LITERAL_SYMBOL,
-                           {'value': node.slowNameString});
+      compiler.reportInternalError(node,
+          MessageKind.UNSUPPORTED_LITERAL_SYMBOL,
+          {'value': node.slowNameString});
     }
     analyzeConstant(node);
   }
@@ -2870,7 +2872,7 @@ class ResolverVisitor extends MappingVisitor<Element> {
   }
 
   visitOperator(Operator node) {
-    unimplemented(node, 'operator');
+    internalError(node, 'operator');
   }
 
   visitRethrow(Rethrow node) {
@@ -2933,7 +2935,7 @@ class ResolverVisitor extends MappingVisitor<Element> {
     FunctionType constructorType = constructor.computeType(compiler);
     bool isSubtype = compiler.types.isSubtype(targetType, constructorType);
     if (!isSubtype) {
-      warning(node, MessageKind.NOT_ASSIGNABLE.warning,
+      warning(node, MessageKind.NOT_ASSIGNABLE,
               {'fromType': targetType, 'toType': constructorType});
     }
 
@@ -2969,14 +2971,15 @@ class ResolverVisitor extends MappingVisitor<Element> {
     VariableDefinitionsVisitor visitor =
         new VariableDefinitionsVisitor(compiler, node, this,
                                        ElementKind.VARIABLE);
+    VariableListElementX variables = visitor.variables;
     // Ensure that we set the type of the [VariableListElement] since it depends
     // on the current scope. If the current scope is a [MethodScope] or
     // [BlockScope] it will not be available for the
     // [VariableListElement.computeType] method.
     if (node.type != null) {
-      visitor.variables.type = resolveTypeAnnotation(node.type);
+      variables.type = resolveTypeAnnotation(node.type);
     } else {
-      visitor.variables.type = compiler.types.dynamicType;
+      variables.type = compiler.types.dynamicType;
     }
 
     Modifiers modifiers = node.modifiers;
@@ -3007,6 +3010,9 @@ class ResolverVisitor extends MappingVisitor<Element> {
       if (modifiers.isStatic()) {
         reportExtraModifier('static');
       }
+    }
+    if (node.metadata != null) {
+      compiler.resolver.resolveMetadata(variables, node);
     }
     visitor.visit(node.definitions);
   }
@@ -3092,30 +3098,51 @@ class ResolverVisitor extends MappingVisitor<Element> {
     return null;
   }
 
+  void checkConstMapKeysDontOverrideEquals(Spannable spannable,
+                                           MapConstant map) {
+    for (Constant key in map.keys.entries) {
+      if (!key.isObject()) continue;
+      ObjectConstant objectConstant = key;
+      DartType keyType = objectConstant.type;
+      ClassElement cls = keyType.element;
+      if (cls == compiler.stringClass) continue;
+      Element equals = cls.lookupMember('==');
+      if (equals.getEnclosingClass() != compiler.objectClass) {
+        compiler.reportError(spannable,
+                             MessageKind.CONST_MAP_KEY_OVERRIDES_EQUALS,
+                             {'type': keyType});
+      }
+    }
+  }
+
   void analyzeConstant(Node node, {bool isConst: true}) {
     addDeferredAction(enclosingElement, () {
-       Constant constant = compiler.constantHandler.compileNodeWithDefinitions(
-           node, mapping, isConst: isConst);
+      Constant constant = compiler.constantHandler.compileNodeWithDefinitions(
+          node, mapping, isConst: isConst);
 
-       // The type constant that is an argument to JS_INTERCEPTOR_CONSTANT names
-       // a class that will be instantiated outside the program by attaching a
-       // native class dispatch record referencing the interceptor.
-       if (argumentsToJsInterceptorConstant != null &&
-           argumentsToJsInterceptorConstant.contains(node)) {
-         if (constant.isType()) {
-           TypeConstant typeConstant = constant;
-           if (typeConstant.representedType is InterfaceType) {
-             world.registerInstantiatedType(typeConstant.representedType,
-                 mapping);
-           } else {
-             compiler.reportError(node,
-                 MessageKind.WRONG_ARGUMENT_FOR_JS_INTERCEPTOR_CONSTANT);
-           }
-         } else {
-           compiler.reportError(node,
-               MessageKind.WRONG_ARGUMENT_FOR_JS_INTERCEPTOR_CONSTANT);
-         }
-       }
+      if (isConst && constant != null && constant.isMap()) {
+        checkConstMapKeysDontOverrideEquals(node, constant);
+      }
+
+      // The type constant that is an argument to JS_INTERCEPTOR_CONSTANT names
+      // a class that will be instantiated outside the program by attaching a
+      // native class dispatch record referencing the interceptor.
+      if (argumentsToJsInterceptorConstant != null &&
+          argumentsToJsInterceptorConstant.contains(node)) {
+        if (constant.isType()) {
+          TypeConstant typeConstant = constant;
+          if (typeConstant.representedType is InterfaceType) {
+            world.registerInstantiatedType(typeConstant.representedType,
+                mapping);
+          } else {
+            compiler.reportError(node,
+                MessageKind.WRONG_ARGUMENT_FOR_JS_INTERCEPTOR_CONSTANT);
+          }
+        } else {
+          compiler.reportError(node,
+              MessageKind.WRONG_ARGUMENT_FOR_JS_INTERCEPTOR_CONSTANT);
+        }
+      }
     });
   }
 
@@ -3141,7 +3168,7 @@ class ResolverVisitor extends MappingVisitor<Element> {
   /**
    * Try to resolve the constructor that is referred to by [node].
    * Note: this function may return an ErroneousFunctionElement instead of
-   * [null], if there is no corresponding constructor, class or library.
+   * [:null:], if there is no corresponding constructor, class or library.
    */
   FunctionElement resolveConstructor(NewExpression node) {
     return node.accept(new ConstructorResolver(compiler, this));
@@ -3166,8 +3193,7 @@ class ResolverVisitor extends MappingVisitor<Element> {
   }
 
   visitModifiers(Modifiers node) {
-    // TODO(ngeoffray): Implement this.
-    unimplemented(node, 'modifiers');
+    internalError(node, 'modifiers');
   }
 
   visitLiteralList(LiteralList node) {
@@ -3177,11 +3203,11 @@ class ResolverVisitor extends MappingVisitor<Element> {
       Link<Node> nodes = arguments.nodes;
       if (nodes.isEmpty) {
         // The syntax [: <>[] :] is not allowed.
-        error(arguments, MessageKind.MISSING_TYPE_ARGUMENT.error);
+        error(arguments, MessageKind.MISSING_TYPE_ARGUMENT);
       } else {
         typeArgument = resolveTypeAnnotation(nodes.head);
         for (nodes = nodes.tail; !nodes.isEmpty; nodes = nodes.tail) {
-          warning(nodes.head, MessageKind.ADDITIONAL_TYPE_ARGUMENT.warning);
+          warning(nodes.head, MessageKind.ADDITIONAL_TYPE_ARGUMENT);
           resolveTypeAnnotation(nodes.head);
         }
       }
@@ -3392,16 +3418,16 @@ class ResolverVisitor extends MappingVisitor<Element> {
       Link<Node> nodes = arguments.nodes;
       if (nodes.isEmpty) {
         // The syntax [: <>{} :] is not allowed.
-        error(arguments, MessageKind.MISSING_TYPE_ARGUMENT.error);
+        error(arguments, MessageKind.MISSING_TYPE_ARGUMENT);
       } else {
         keyTypeArgument = resolveTypeAnnotation(nodes.head);
         nodes = nodes.tail;
         if (nodes.isEmpty) {
-          warning(arguments, MessageKind.MISSING_TYPE_ARGUMENT.warning);
+          warning(arguments, MessageKind.MISSING_TYPE_ARGUMENT);
         } else {
           valueTypeArgument = resolveTypeAnnotation(nodes.head);
           for (nodes = nodes.tail; !nodes.isEmpty; nodes = nodes.tail) {
-            warning(nodes.head, MessageKind.ADDITIONAL_TYPE_ARGUMENT.warning);
+            warning(nodes.head, MessageKind.ADDITIONAL_TYPE_ARGUMENT);
             resolveTypeAnnotation(nodes.head);
           }
         }
@@ -3439,6 +3465,91 @@ class ResolverVisitor extends MappingVisitor<Element> {
     visit(node.expression);
   }
 
+  DartType typeOfConstant(Constant constant) {
+    if (constant.isInt()) return compiler.intClass.rawType;
+    if (constant.isBool()) return compiler.boolClass.rawType;
+    if (constant.isDouble()) return compiler.doubleClass.rawType;
+    if (constant.isString()) return compiler.stringClass.rawType;
+    if (constant.isNull()) return compiler.nullClass.rawType;
+    if (constant.isFunction()) return compiler.functionClass.rawType;
+    assert(constant.isObject());
+    ObjectConstant objectConstant = constant;
+    return objectConstant.type;
+  }
+
+  bool overridesEquals(DartType type) {
+    ClassElement cls = type.element;
+    Element equals = cls.lookupMember('==');
+    return equals.getEnclosingClass() != compiler.objectClass;
+  }
+
+  void checkCaseExpressions(SwitchStatement node) {
+    TargetElement breakElement = getOrCreateTargetElement(node);
+    Map<String, LabelElement> continueLabels = <String, LabelElement>{};
+
+    Link<Node> cases = node.cases.nodes;
+    SwitchCase switchCase = cases.head;
+    CaseMatch firstCase = null;
+    DartType firstCaseType = null;
+    bool hasReportedProblem = false;
+
+    for (Link<Node> cases = node.cases.nodes;
+         !cases.isEmpty;
+         cases = cases.tail) {
+      SwitchCase switchCase = cases.head;
+
+      for (Node labelOrCase in switchCase.labelsAndCases) {
+        CaseMatch caseMatch = labelOrCase.asCaseMatch();
+        if (caseMatch == null) continue;
+
+        // Analyze the constant.
+        Constant constant = mapping.getConstant(caseMatch.expression);
+        assert(invariant(node, constant != null,
+            message: 'No constant computed for $node'));
+
+        DartType caseType = typeOfConstant(constant);
+
+        if (firstCaseType == null) {
+          firstCase = caseMatch;
+          firstCaseType = caseType;
+
+          // We only report the bad type on the first class element. All others
+          // get a "type differs" error.
+          if (caseType.element == compiler.doubleClass) {
+            compiler.reportError(node,
+                                 MessageKind.SWITCH_CASE_VALUE_OVERRIDES_EQUALS,
+                                 {'type': "double"});
+          } else if (caseType.element == compiler.functionClass) {
+            compiler.reportError(node, MessageKind.SWITCH_CASE_FORBIDDEN,
+                                 {'type': "Function"});
+          } else if (constant.isObject() && overridesEquals(caseType)) {
+            compiler.reportError(firstCase.expression,
+                MessageKind.SWITCH_CASE_VALUE_OVERRIDES_EQUALS,
+                {'type': caseType});
+          }
+        } else {
+          if (caseType != firstCaseType) {
+            if (!hasReportedProblem) {
+              compiler.reportError(
+                  node,
+                  MessageKind.SWITCH_CASE_TYPES_NOT_EQUAL,
+                  {'type': firstCaseType});
+              compiler.reportInfo(
+                  firstCase.expression,
+                  MessageKind.SWITCH_CASE_TYPES_NOT_EQUAL_CASE,
+                  {'type': firstCaseType});
+              hasReportedProblem = true;
+            }
+            compiler.reportInfo(
+                caseMatch.expression,
+                MessageKind.SWITCH_CASE_TYPES_NOT_EQUAL_CASE,
+                {'type': caseType});
+          }
+        }
+      }
+    }
+  }
+
   visitSwitchStatement(SwitchStatement node) {
     node.expression.accept(this);
 
@@ -3461,7 +3572,7 @@ class ResolverVisitor extends MappingVisitor<Element> {
           // It's an error if the same label occurs twice in the same switch.
           compiler.reportError(
               label,
-              MessageKind.DUPLICATE_LABEL.error, {'labelName': labelName});
+              MessageKind.DUPLICATE_LABEL, {'labelName': labelName});
           compiler.reportInfo(
               existingElement.label,
               MessageKind.EXISTING_LABEL, {'labelName': labelName});
@@ -3469,9 +3580,9 @@ class ResolverVisitor extends MappingVisitor<Element> {
           // It's only a warning if it shadows another label.
           existingElement = statementScope.lookupLabel(labelName);
           if (existingElement != null) {
-            compiler.reportWarningCode(
+            compiler.reportWarning(
                 label,
-                MessageKind.DUPLICATE_LABEL.warning, {'labelName': labelName});
+                MessageKind.DUPLICATE_LABEL, {'labelName': labelName});
             compiler.reportInfo(
                 existingElement.label,
                 MessageKind.EXISTING_LABEL, {'labelName': labelName});
@@ -3490,6 +3601,10 @@ class ResolverVisitor extends MappingVisitor<Element> {
       }
     }
 
+    addDeferredAction(enclosingElement, () {
+      checkCaseExpressions(node);
+    });
+
     statementScope.enterSwitch(breakElement, continueLabels);
     node.cases.accept(this);
     statementScope.exitSwitch();
@@ -3503,8 +3618,8 @@ class ResolverVisitor extends MappingVisitor<Element> {
         mapping.remove(label.label);
       }
     });
-    // TODO(ngeoffray): We should check here instead of the SSA backend if
-    // there might be an error.
+    // TODO(15575): We should warn if we can detect a fall through
+    // error.
     compiler.backend.registerFallThroughError(mapping);
   }
 
@@ -3520,9 +3635,7 @@ class ResolverVisitor extends MappingVisitor<Element> {
   visitTryStatement(TryStatement node) {
     visit(node.tryBlock);
     if (node.catchBlocks.isEmpty && node.finallyBlock == null) {
-      // TODO(ngeoffray): The precise location is
-      // node.getEndtoken.next. Adjust when issue #1581 is fixed.
-      error(node, MessageKind.NO_CATCH_NOR_FINALLY);
+      error(node.getEndToken().next, MessageKind.NO_CATCH_NOR_FINALLY);
     }
     visit(node.catchBlocks);
     visit(node.finallyBlock);
@@ -3599,7 +3712,7 @@ class ResolverVisitor extends MappingVisitor<Element> {
   }
 
   visitTypedef(Typedef node) {
-    unimplemented(node, 'typedef');
+    internalError(node, 'typedef');
   }
 }
 
@@ -3614,6 +3727,8 @@ class TypeDefinitionVisitor extends MappingVisitor<DartType> {
       : this.enclosingElement = element,
         scope = Scope.buildEnclosingScope(element),
         super(compiler, mapping);
+
+  DartType get objectType => compiler.objectClass.rawType;
 
   void resolveTypeVariableBounds(NodeList node) {
     if (node == null) return;
@@ -3660,7 +3775,7 @@ class TypeDefinitionVisitor extends MappingVisitor<DartType> {
         }
         addDeferredAction(element, checkTypeVariableBound);
       } else {
-        variableElement.bound = compiler.objectClass.computeType(compiler);
+        variableElement.bound = objectType;
       }
       nodeLink = nodeLink.tail;
       typeLink = typeLink.tail;
@@ -3683,7 +3798,7 @@ class TypedefResolverVisitor extends TypeDefinitionVisitor {
     resolveTypeVariableBounds(node.typeParameters);
 
     FunctionSignature signature = SignatureResolver.analyze(
-        compiler, node.formals, node.returnType, element,
+        compiler, node.formals, node.returnType, element, mapping,
         defaultValuesError: MessageKind.TYPEDEF_FORMAL_WITH_DEFAULT);
     element.functionSignature = signature;
 
@@ -3857,22 +3972,31 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
       }
     }
 
-    assert(element.interfaces == null);
-    element.interfaces = resolveInterfaces(node.interfaces, node.superclass);
+    if (element.interfaces == null) {
+      element.interfaces = resolveInterfaces(node.interfaces, node.superclass);
+    } else {
+      assert(invariant(element, element.hasIncompleteHierarchy));
+    }
     calculateAllSupertypes(element);
 
     if (!element.hasConstructor) {
-      Element superMember =
-          element.superclass.localLookup('');
+      Element superMember = element.superclass.localLookup('');
       if (superMember == null || !superMember.isGenerativeConstructor()) {
-        DualKind kind = MessageKind.CANNOT_FIND_CONSTRUCTOR;
+        MessageKind kind = MessageKind.CANNOT_FIND_CONSTRUCTOR;
         Map arguments = {'constructorName': ''};
         // TODO(ahe): Why is this a compile-time error? Or if it is an error,
         // why do we bother to registerThrowNoSuchMethod below?
-        compiler.reportError(node, kind.error, arguments);
+        compiler.reportError(node, kind, arguments);
         superMember = new ErroneousElementX(
-            kind.error, arguments, '', element);
+            kind, arguments, '', element);
         compiler.backend.registerThrowNoSuchMethod(mapping);
+      } else {
+        Selector callToMatch = new Selector.call("", element.getLibrary(), 0);
+        if (!callToMatch.applies(superMember, compiler)) {
+          MessageKind kind = MessageKind.NO_MATCHING_CONSTRUCTOR_FOR_IMPLICIT;
+          compiler.reportError(node, kind);
+          superMember = new ErroneousElementX(kind, {}, '', element);
+        }
       }
       FunctionElement constructor =
           new SynthesizedConstructorElementX.forDefault(superMember, element);
@@ -3904,7 +4028,7 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
     if (identical(node.classKeyword.stringValue, 'typedef')) {
       // TODO(aprelev@gmail.com): Remove this deprecation diagnostic
       // together with corresponding TODO in parser.dart.
-      compiler.reportWarningCode(node.classKeyword,
+      compiler.reportWarning(node.classKeyword,
           MessageKind.DEPRECATED_TYPEDEF_MIXIN_SYNTAX);
     }
 
@@ -3932,7 +4056,7 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
         element.getCompilationUnit(),
         compiler.getNextFreeClassId(),
         node,
-        Modifiers.EMPTY);  // TODO(kasperl): Should this be abstract?
+        new Modifiers.withFlags(new NodeList.empty(), Modifiers.FLAG_ABSTRACT));
     // Create synthetic type variables for the mixin application.
     LinkBuilder<DartType> typeVariablesBuilder = new LinkBuilder<DartType>();
     element.typeVariables.forEach((TypeVariableType type) {
@@ -4004,13 +4128,20 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
     // The class that is the result of a mixin application implements
     // the interface of the class that was mixed in so always prepend
     // that to the interface list.
-
-    interfaces = interfaces.prepend(mixinType);
-    assert(mixinApplication.interfaces == null);
-    mixinApplication.interfaces = interfaces;
+    if (mixinApplication.interfaces == null) {
+      if (mixinType.kind == TypeKind.INTERFACE) {
+        // Avoid malformed types in the interfaces.
+        interfaces = interfaces.prepend(mixinType);
+      }
+      mixinApplication.interfaces = interfaces;
+    } else {
+      assert(invariant(mixinApplication,
+          mixinApplication.hasIncompleteHierarchy));
+    }
 
     ClassElement superclass = supertype.element;
     if (mixinType.kind != TypeKind.INTERFACE) {
+      mixinApplication.hasIncompleteHierarchy = true;
       mixinApplication.allSupertypesAndSelf = superclass.allSupertypesAndSelf;
       return;
     }
@@ -4064,15 +4195,15 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
     if (supertype != null) {
       if (identical(supertype.kind, TypeKind.MALFORMED_TYPE)) {
         compiler.reportError(superclass, MessageKind.CANNOT_EXTEND_MALFORMED);
-        return null;
+        return objectType;
       } else if (!identical(supertype.kind, TypeKind.INTERFACE)) {
         compiler.reportError(superclass.typeName,
             MessageKind.CLASS_NAME_EXPECTED);
-        return null;
+        return objectType;
       } else if (isBlackListed(supertype)) {
         compiler.reportError(superclass, MessageKind.CANNOT_EXTEND,
             {'type': supertype});
-        return null;
+        return objectType;
       }
     }
     return supertype;
@@ -4170,17 +4301,14 @@ class ClassResolverVisitor extends TypeDefinitionVisitor {
    */
   void addAllSupertypes(OrderedTypeSetBuilder allSupertypes,
                         InterfaceType type) {
-    Link<DartType> typeArguments = type.typeArguments;
     ClassElement classElement = type.element;
-    Link<DartType> typeVariables = classElement.typeVariables;
     Link<DartType> supertypes = classElement.allSupertypes;
     assert(invariant(element, supertypes != null,
         message: "Supertypes not computed on $classElement "
                  "during resolution of $element"));
     while (!supertypes.isEmpty) {
       DartType supertype = supertypes.head;
-      allSupertypes.add(compiler,
-                        supertype.subst(typeArguments, typeVariables));
+      allSupertypes.add(compiler, supertype.substByContext(type));
       supertypes = supertypes.tail;
     }
   }
@@ -4271,7 +4399,7 @@ class ClassSupertypeResolver extends CommonResolverVisitor {
     Identifier selector = node.selector.asIdentifier();
     var e = prefixElement.lookupLocalMember(selector.source);
     if (e == null || !e.impliesType()) {
-      error(node.selector, MessageKind.CANNOT_RESOLVE_TYPE.error,
+      error(node.selector, MessageKind.CANNOT_RESOLVE_TYPE,
             {'typeName': node.selector});
       return;
     }
@@ -4335,271 +4463,6 @@ class VariableDefinitionsVisitor extends CommonResolverVisitor<String> {
   }
 }
 
-/**
- * [SignatureResolver] resolves function signatures.
- */
-class SignatureResolver extends CommonResolverVisitor<Element> {
-  final Element enclosingElement;
-  final MessageKind defaultValuesError;
-  Link<Element> optionalParameters = const Link<Element>();
-  int optionalParameterCount = 0;
-  bool isOptionalParameter = false;
-  bool optionalParametersAreNamed = false;
-  VariableDefinitions currentDefinitions;
-
-  SignatureResolver(Compiler compiler,
-                    this.enclosingElement,
-                    {this.defaultValuesError})
-      : super(compiler);
-
-  bool get defaultValuesAllowed => defaultValuesError == null;
-
-  Element visitNodeList(NodeList node) {
-    // This must be a list of optional arguments.
-    String value = node.beginToken.stringValue;
-    if ((!identical(value, '[')) && (!identical(value, '{'))) {
-      internalError(node, "expected optional parameters");
-    }
-    optionalParametersAreNamed = (identical(value, '{'));
-    isOptionalParameter = true;
-    LinkBuilder<Element> elements = analyzeNodes(node.nodes);
-    optionalParameterCount = elements.length;
-    optionalParameters = elements.toLink();
-    return null;
-  }
-
-  Element visitVariableDefinitions(VariableDefinitions node) {
-    Link<Node> definitions = node.definitions.nodes;
-    if (definitions.isEmpty) {
-      cancel(node, 'internal error: no parameter definition');
-      return null;
-    }
-    if (!definitions.tail.isEmpty) {
-      cancel(definitions.tail.head, 'internal error: extra definition');
-      return null;
-    }
-    Node definition = definitions.head;
-    if (definition is NodeList) {
-      cancel(node, 'optional parameters are not implemented');
-    }
-    if (node.modifiers.isConst()) {
-      error(node, MessageKind.FORMAL_DECLARED_CONST);
-    }
-    if (node.modifiers.isStatic()) {
-      error(node, MessageKind.FORMAL_DECLARED_STATIC);
-    }
-
-    if (currentDefinitions != null) {
-      cancel(node, 'function type parameters not supported');
-    }
-    currentDefinitions = node;
-    Element element = definition.accept(this);
-    currentDefinitions = null;
-    return element;
-  }
-
-  void validateName(Identifier node) {
-    String name = node.source;
-    if (isOptionalParameter &&
-        optionalParametersAreNamed &&
-        isPrivateName(node.source)) {
-      compiler.reportError(node, MessageKind.PRIVATE_NAMED_PARAMETER);
-    }
-  }
-
-  Element visitIdentifier(Identifier node) {
-    validateName(node);
-    Element variables = new VariableListElementX.node(currentDefinitions,
-        ElementKind.VARIABLE_LIST, enclosingElement);
-    // Ensure a parameter is not typed 'void'.
-    variables.computeType(compiler);
-    return new VariableElementX(node.source, variables,
-        ElementKind.PARAMETER, node);
-  }
-
-  String getParameterName(Send node) {
-    var identifier = node.selector.asIdentifier();
-    if (identifier != null) {
-      // Normal parameter: [:Type name:].
-      validateName(identifier);
-      return identifier.source;
-    } else {
-      // Function type parameter: [:void name(DartType arg):].
-      var functionExpression = node.selector.asFunctionExpression();
-      if (functionExpression != null &&
-          functionExpression.name.asIdentifier() != null) {
-        validateName(functionExpression.name);
-        return functionExpression.name.asIdentifier().source;
-      } else {
-        cancel(node,
-            'internal error: unimplemented receiver on parameter send');
-      }
-    }
-  }
-
-  // The only valid [Send] can be in constructors and must be of the form
-  // [:this.x:] (where [:x:] represents an instance field).
-  FieldParameterElement visitSend(Send node) {
-    FieldParameterElement element;
-    if (node.receiver.asIdentifier() == null ||
-        !node.receiver.asIdentifier().isThis()) {
-      error(node, MessageKind.INVALID_PARAMETER);
-    } else if (!identical(enclosingElement.kind,
-                          ElementKind.GENERATIVE_CONSTRUCTOR)) {
-      error(node, MessageKind.INITIALIZING_FORMAL_NOT_ALLOWED);
-    } else {
-      String name = getParameterName(node);
-      Element fieldElement = currentClass.lookupLocalMember(name);
-      if (fieldElement == null ||
-          !identical(fieldElement.kind, ElementKind.FIELD)) {
-        error(node, MessageKind.NOT_A_FIELD, {'fieldName': name});
-      } else if (!fieldElement.isInstanceMember()) {
-        error(node, MessageKind.NOT_INSTANCE_FIELD, {'fieldName': name});
-      }
-      Element variables = new VariableListElementX.node(currentDefinitions,
-          ElementKind.VARIABLE_LIST, enclosingElement);
-      element = new FieldParameterElementX(name, fieldElement, variables, node);
-    }
-    return element;
-  }
-
-  /// A [SendSet] node is an optional parameter with a default value.
-  Element visitSendSet(SendSet node) {
-    Element element;
-    if (node.receiver != null) {
-      element = visitSend(node);
-    } else if (node.selector.asIdentifier() != null ||
-               node.selector.asFunctionExpression() != null) {
-      Element variables = new VariableListElementX.node(currentDefinitions,
-          ElementKind.VARIABLE_LIST, enclosingElement);
-      Identifier identifier = node.selector.asIdentifier() != null ?
-          node.selector.asIdentifier() :
-          node.selector.asFunctionExpression().name.asIdentifier();
-      validateName(identifier);
-      String source = identifier.source;
-      element = new VariableElementX(source, variables,
-          ElementKind.PARAMETER, node);
-    }
-    Node defaultValue = node.arguments.head;
-    if (!defaultValuesAllowed) {
-      error(defaultValue, defaultValuesError);
-    }
-    // Visit the value. The compile time constant handler will
-    // make sure it's a compile time constant.
-    resolveExpression(defaultValue);
-    return element;
-  }
-
-  Element visitFunctionExpression(FunctionExpression node) {
-    // This is a function typed parameter.
-    Modifiers modifiers = currentDefinitions.modifiers;
-    if (modifiers.isFinal()) {
-      compiler.reportError(modifiers,
-          MessageKind.FINAL_FUNCTION_TYPE_PARAMETER);
-    }
-    if (modifiers.isVar()) {
-      compiler.reportError(modifiers, MessageKind.VAR_FUNCTION_TYPE_PARAMETER);
-    }
-
-    Element variable = visit(node.name);
-    SignatureResolver.analyze(compiler, node.parameters, node.returnType,
-        variable,
-        defaultValuesError: MessageKind.FUNCTION_TYPE_FORMAL_WITH_DEFAULT);
-    // TODO(ahe): Resolve and record the function type in the correct
-    // [TreeElements].
-    return variable;
-  }
-
-  LinkBuilder<Element> analyzeNodes(Link<Node> link) {
-    LinkBuilder<Element> elements = new LinkBuilder<Element>();
-    for (; !link.isEmpty; link = link.tail) {
-      Element element = link.head.accept(this);
-      if (element != null) {
-        elements.addLast(element);
-      } else {
-        // If parameter is null, the current node should be the last,
-        // and a list of optional named parameters.
-        if (!link.tail.isEmpty || (link.head is !NodeList)) {
-          internalError(link.head, "expected optional parameters");
-        }
-      }
-    }
-    return elements;
-  }
-
-  /**
-   * Resolves formal parameters and return type to a [FunctionSignature].
-   */
-  static FunctionSignature analyze(Compiler compiler,
-                                   NodeList formalParameters,
-                                   Node returnNode,
-                                   Element element,
-                                   {MessageKind defaultValuesError}) {
-    SignatureResolver visitor = new SignatureResolver(compiler, element,
-        defaultValuesError: defaultValuesError);
-    Link<Element> parameters = const Link<Element>();
-    int requiredParameterCount = 0;
-    if (formalParameters == null) {
-      if (!element.isGetter()) {
-        compiler.reportError(element, MessageKind.MISSING_FORMALS);
-      }
-    } else {
-      if (element.isGetter()) {
-        if (!identical(formalParameters.getEndToken().next.stringValue,
-                       // TODO(ahe): Remove the check for native keyword.
-                       'native')) {
-          compiler.reportError(formalParameters,
-                               MessageKind.EXTRA_FORMALS);
-        }
-      }
-      LinkBuilder<Element> parametersBuilder =
-        visitor.analyzeNodes(formalParameters.nodes);
-      requiredParameterCount  = parametersBuilder.length;
-      parameters = parametersBuilder.toLink();
-    }
-    DartType returnType;
-    if (element.isFactoryConstructor()) {
-      returnType = element.getEnclosingClass().computeType(compiler);
-      // Because there is no type annotation for the return type of
-      // this element, we explicitly add one.
-      if (compiler.enableTypeAssertions) {
-        compiler.enqueuer.resolution.registerIsCheck(
-            returnType, new TreeElementMapping(element));
-      }
-    } else {
-      returnType = compiler.resolveReturnType(element, returnNode);
-    }
-
-    if (element.isSetter() && (requiredParameterCount != 1 ||
-                               visitor.optionalParameterCount != 0)) {
-      // If there are no formal parameters, we already reported an error above.
-      if (formalParameters != null) {
-        compiler.reportError(formalParameters,
-                                 MessageKind.ILLEGAL_SETTER_FORMALS);
-      }
-    }
-    return new FunctionSignatureX(parameters,
-                                  visitor.optionalParameters,
-                                  requiredParameterCount,
-                                  visitor.optionalParameterCount,
-                                  visitor.optionalParametersAreNamed,
-                                  returnType);
-  }
-
-  // TODO(ahe): This is temporary.
-  void resolveExpression(Node node) {
-    if (node == null) return;
-    node.accept(new ResolverVisitor(compiler, enclosingElement,
-                                    new TreeElementMapping(enclosingElement)));
-  }
-
-  // TODO(ahe): This is temporary.
-  ClassElement get currentClass {
-    return enclosingElement.isMember()
-      ? enclosingElement.getEnclosingClass() : null;
-  }
-}
-
 class ConstructorResolver extends CommonResolverVisitor<Element> {
   final ResolverVisitor resolver;
   bool inConstContext;
@@ -4614,7 +4477,7 @@ class ConstructorResolver extends CommonResolverVisitor<Element> {
   }
 
   failOrReturnErroneousElement(Element enclosing, Node diagnosticNode,
-                               String targetName, DualKind kind,
+                               String targetName, MessageKind kind,
                                Map arguments) {
     if (kind == MessageKind.CANNOT_FIND_CONSTRUCTOR) {
       compiler.backend.registerThrowNoSuchMethod(resolver.mapping);
@@ -4622,15 +4485,11 @@ class ConstructorResolver extends CommonResolverVisitor<Element> {
       compiler.backend.registerThrowRuntimeError(resolver.mapping);
     }
     if (inConstContext) {
-      compiler.reportError(diagnosticNode, kind.error, arguments);
+      compiler.reportError(diagnosticNode, kind, arguments);
     } else {
-      ResolutionWarning warning  =
-          new ResolutionWarning(
-              kind.warning, arguments, compiler.terseDiagnostics);
-      compiler.reportWarning(diagnosticNode, warning);
+      compiler.reportWarning(diagnosticNode, kind, arguments);
     }
-    return new ErroneousElementX(
-        kind.error, arguments, targetName, enclosing);
+    return new ErroneousElementX(kind, arguments, targetName, enclosing);
   }
 
   Selector createConstructorSelector(String constructorName) {
@@ -4642,10 +4501,9 @@ class ConstructorResolver extends CommonResolverVisitor<Element> {
             resolver.enclosingElement.getLibrary());
   }
 
-  // TODO(ngeoffray): method named lookup should not report errors.
-  FunctionElement lookupConstructor(ClassElement cls,
-                                    Node diagnosticNode,
-                                    String constructorName) {
+  FunctionElement resolveConstructor(ClassElement cls,
+                                     Node diagnosticNode,
+                                     String constructorName) {
     cls.ensureResolved(compiler);
     Selector selector = createConstructorSelector(constructorName);
     Element result = cls.lookupConstructor(selector);
@@ -4689,7 +4547,7 @@ class ConstructorResolver extends CommonResolverVisitor<Element> {
         ClassElement cls = element;
         cls.ensureResolved(compiler);
         // The unnamed constructor may not exist, so [e] may become unresolved.
-        element = lookupConstructor(cls, diagnosticNode, '');
+        element = resolveConstructor(cls, diagnosticNode, '');
       } else {
         element = failOrReturnErroneousElement(
             element, diagnosticNode, element.name, MessageKind.NOT_A_TYPE,
@@ -4726,7 +4584,7 @@ class ConstructorResolver extends CommonResolverVisitor<Element> {
     if (element.isClass()) {
       ClassElement cls = element;
       cls.ensureResolved(compiler);
-      return lookupConstructor(cls, name, name.source);
+      return resolveConstructor(cls, name, name.source);
     } else if (element.isPrefix()) {
       PrefixElement prefix = element;
       element = prefix.lookupLocalMember(name.source);
@@ -4738,7 +4596,7 @@ class ConstructorResolver extends CommonResolverVisitor<Element> {
             MessageKind.CANNOT_RESOLVE,
             {'name': name});
       } else if (!element.isClass()) {
-        error(node, MessageKind.NOT_A_TYPE.error, {'node': name});
+        error(node, MessageKind.NOT_A_TYPE, {'node': name});
       }
     } else {
       internalError(node.receiver, 'unexpected element $element');
@@ -4764,7 +4622,7 @@ class ConstructorResolver extends CommonResolverVisitor<Element> {
       error(node, MessageKind.CANNOT_INSTANTIATE_TYPE_VARIABLE,
             {'typeVariableName': name});
     } else if (!element.isClass() && !element.isPrefix()) {
-      error(node, MessageKind.NOT_A_TYPE.error, {'node': name});
+      error(node, MessageKind.NOT_A_TYPE, {'node': name});
     }
     return element;
   }

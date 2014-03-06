@@ -16,9 +16,9 @@ package com.google.dart.tools.core.model;
 
 import com.google.dart.engine.context.AnalysisContext;
 import com.google.dart.engine.internal.context.AnalysisContextImpl;
+import com.google.dart.engine.internal.context.TimestampedData;
 import com.google.dart.engine.sdk.DirectoryBasedDartSdk;
 import com.google.dart.engine.sdk.SdkLibrary;
-import com.google.dart.engine.source.ContentCache;
 import com.google.dart.engine.source.DartUriResolver;
 import com.google.dart.engine.source.FileBasedSource;
 import com.google.dart.engine.source.Source;
@@ -73,6 +73,8 @@ public class DartSdkManager {
 
   private static final String DEFAULT_UPDATE_URL = "http://dartlang.org/editor/update/channels/dev/";
 
+  private static final String USER_DEFINED_SDK_KEY = "dart.sdk";
+
   /**
    * A special instance of {@link com.google.dart.engine.sdk.DartSdk} representing missing SDK.
    */
@@ -83,8 +85,8 @@ public class DartSdkManager {
     private FileBasedSource coreSource;
 
     @Override
-    public Source fromEncoding(ContentCache contentCache, UriKind kind, URI uri) {
-      return new FileBasedSource(contentCache, new File(uri), kind);
+    public Source fromEncoding(UriKind kind, URI uri) {
+      return new FileBasedSource(new File(uri), kind);
     }
 
     @Override
@@ -120,12 +122,14 @@ public class DartSdkManager {
     public Source mapDartUri(String dartUri) {
       if (DART_CORE.equals(dartUri)) {
         if (coreSource == null) {
-          coreSource = new FileBasedSource(
-              getContext().getSourceFactory().getContentCache(),
-              new File("core.dart"),
-              UriKind.DART_URI) {
+          coreSource = new FileBasedSource(new File("core.dart"), UriKind.DART_URI) {
             @Override
-            public void getContents(com.google.dart.engine.source.Source.ContentReceiver receiver)
+            public TimestampedData<CharSequence> getContents() throws Exception {
+              return new TimestampedData<CharSequence>(0L, "library dart.core;");
+            };
+
+            @Override
+            public void getContentsToReceiver(com.google.dart.engine.source.Source.ContentReceiver receiver)
                 throws Exception {
               receiver.accept("library dart.core;", 0L);
             };
@@ -402,8 +406,32 @@ public class DartSdkManager {
     return new File(fileUri);
   }
 
+  /**
+   * Return the user-defined SDK directory.
+   * 
+   * @return the directory or {@code null} if it is not defined
+   */
+  private File getUserDefinedSdkDirectory() {
+    String sdkPath = DartCore.getUserDefinedProperty(USER_DEFINED_SDK_KEY);
+    if (sdkPath != null) {
+      sdkPath = sdkPath.trim();
+      if (sdkPath.length() > 0) {
+        return new File(sdkPath);
+      }
+    }
+    return null;
+  }
+
   private void initSdk() {
-    if (getDefaultPluginsSdkDirectory().exists()) {
+    File sdkDir = getUserDefinedSdkDirectory();
+    if (sdkDir != null && !sdkDir.exists()) {
+      DartCore.logError(USER_DEFINED_SDK_KEY + " defined in " + DartCore.EDITOR_PROPERTIES
+          + " but does not exist: " + sdkDir);
+      sdkDir = null;
+    }
+    if (sdkDir != null) {
+      oldSdk = new DartSdk(sdkDir);
+    } else if (getDefaultPluginsSdkDirectory().exists()) {
       oldSdk = new DartSdk(getDefaultPluginsSdkDirectory());
     } else if (getDefaultEditorSdkDirectory().exists()) {
       oldSdk = new DartSdk(getDefaultEditorSdkDirectory());
@@ -489,6 +517,11 @@ public class DartSdkManager {
 
       // send upgrade notifications
       notifyListeners();
+
+      DartCore.getConsole().printSeparator("Dart SDK update");
+      DartCore.getConsole().println(
+          "Dart SDK updated to version " + getManager().getSdk().getSdkVersion());
+
     } finally {
       monitor.done();
     }

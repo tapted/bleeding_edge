@@ -7,8 +7,6 @@
 #include "platform/assert.h"
 #include "platform/utils.h"
 #include "vm/flags.h"
-#include "vm/heap_histogram.h"
-#include "vm/heap_profiler.h"
 #include "vm/isolate.h"
 #include "vm/object.h"
 #include "vm/object_set.h"
@@ -155,11 +153,17 @@ RawInstructions* Heap::FindObjectInCodeSpace(FindObjectVisitor* visitor) {
 }
 
 
+RawObject* Heap::FindOldObject(FindObjectVisitor* visitor) const {
+  return old_space_->FindObject(visitor, HeapPage::kData);
+}
+
+
 void Heap::CollectGarbage(Space space, ApiCallbacks api_callbacks) {
   bool invoke_api_callbacks = (api_callbacks == kInvokeApiCallbacks);
   switch (space) {
     case kNew: {
       RecordBeforeGC(kNew, kNewSpace);
+      UpdateClassHeapStatsBeforeGC(kNew);
       new_space_->Scavenge(invoke_api_callbacks);
       RecordAfterGC();
       PrintStats();
@@ -173,10 +177,10 @@ void Heap::CollectGarbage(Space space, ApiCallbacks api_callbacks) {
     case kCode: {
       bool promotion_failure = new_space_->HadPromotionFailure();
       RecordBeforeGC(kOld, promotion_failure ? kPromotionFailure : kOldSpace);
+      UpdateClassHeapStatsBeforeGC(kOld);
       old_space_->MarkSweep(invoke_api_callbacks);
       RecordAfterGC();
       PrintStats();
-      UpdateObjectHistogram();
       break;
     }
     default:
@@ -185,10 +189,14 @@ void Heap::CollectGarbage(Space space, ApiCallbacks api_callbacks) {
 }
 
 
-void Heap::UpdateObjectHistogram() {
+void Heap::UpdateClassHeapStatsBeforeGC(Heap::Space space) {
   Isolate* isolate = Isolate::Current();
-  if (isolate->object_histogram() == NULL) return;
-  isolate->object_histogram()->Collect();
+  ClassTable* class_table = isolate->class_table();
+  if (space == kNew) {
+    class_table->ResetCountersNew();
+  } else {
+    class_table->ResetCountersOld();
+  }
 }
 
 
@@ -205,14 +213,15 @@ void Heap::CollectGarbage(Space space) {
 
 void Heap::CollectAllGarbage() {
   RecordBeforeGC(kNew, kFull);
+  UpdateClassHeapStatsBeforeGC(kNew);
   new_space_->Scavenge(kInvokeApiCallbacks);
   RecordAfterGC();
   PrintStats();
   RecordBeforeGC(kOld, kFull);
+  UpdateClassHeapStatsBeforeGC(kOld);
   old_space_->MarkSweep(kInvokeApiCallbacks);
   RecordAfterGC();
   PrintStats();
-  UpdateObjectHistogram();
 }
 
 
@@ -316,42 +325,19 @@ intptr_t Heap::CapacityInWords(Space space) const {
 }
 
 
-void Heap::Profile(Dart_FileWriteCallback callback, void* stream) const {
-  HeapProfiler profiler(callback, stream);
-
-  // Dump the root set.
-  HeapProfilerRootVisitor root_visitor(&profiler);
-  Isolate* isolate = Isolate::Current();
-  Isolate* vm_isolate = Dart::vm_isolate();
-  isolate->VisitObjectPointers(&root_visitor, false,
-                               StackFrameIterator::kDontValidateFrames);
-  HeapProfilerWeakRootVisitor weak_root_visitor(&root_visitor);
-  isolate->VisitWeakPersistentHandles(&weak_root_visitor, true);
-
-  // Dump the current and VM isolate heaps.
-  HeapProfilerObjectVisitor object_visitor(isolate, &profiler);
-  isolate->heap()->IterateObjects(&object_visitor);
-  vm_isolate->heap()->IterateObjects(&object_visitor);
+int64_t Heap::GCTimeInMicros(Space space) const {
+  if (space == kNew) {
+    return new_space_->gc_time_micros();
+  }
+  return old_space_->gc_time_micros();
 }
 
 
-void Heap::ProfileToFile(const char* reason) const {
-  Dart_FileOpenCallback file_open = Isolate::file_open_callback();
-  ASSERT(file_open != NULL);
-  Dart_FileWriteCallback file_write = Isolate::file_write_callback();
-  ASSERT(file_write != NULL);
-  Dart_FileCloseCallback file_close = Isolate::file_close_callback();
-  ASSERT(file_close != NULL);
-  Isolate* isolate = Isolate::Current();
-  const char* format = "%s-%s.hprof";
-  intptr_t len = OS::SNPrint(NULL, 0, format, isolate->name(), reason);
-  char* filename = isolate->current_zone()->Alloc<char>(len + 1);
-  OS::SNPrint(filename, len + 1, format, isolate->name(), reason);
-  void* file = (*file_open)(filename, true);
-  if (file != NULL) {
-    Profile(file_write, file);
-    (*file_close)(file);
+intptr_t Heap::Collections(Space space) const {
+  if (space == kNew) {
+    return new_space_->collections();
   }
+  return old_space_->collections();
 }
 
 
@@ -406,6 +392,15 @@ void Heap::SetWeakEntry(RawObject* raw_obj, WeakSelector sel, intptr_t val) {
 }
 
 
+void Heap::PrintToJSONObject(Space space, JSONObject* object) const {
+  if (space == kNew) {
+    new_space_->PrintToJSONObject(object);
+  } else {
+    old_space_->PrintToJSONObject(object);
+  }
+}
+
+
 void Heap::RecordBeforeGC(Space space, GCReason reason) {
   ASSERT(!gc_in_progress_);
   gc_in_progress_ = true;
@@ -430,6 +425,14 @@ void Heap::RecordBeforeGC(Space space, GCReason reason) {
 
 void Heap::RecordAfterGC() {
   stats_.after_.micros_ = OS::GetCurrentTimeMicros();
+  int64_t delta = stats_.after_.micros_ - stats_.before_.micros_;
+  if (stats_.space_ == kNew) {
+    new_space_->AddGCTime(delta);
+    new_space_->IncrementCollections();
+  } else {
+    old_space_->AddGCTime(delta);
+    old_space_->IncrementCollections();
+  }
   stats_.after_.new_used_in_words_ = new_space_->UsedInWords();
   stats_.after_.new_capacity_in_words_ = new_space_->CapacityInWords();
   stats_.after_.old_used_in_words_ = old_space_->UsedInWords();

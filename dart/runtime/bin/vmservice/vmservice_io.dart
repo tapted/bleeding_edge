@@ -4,22 +4,24 @@
 
 library vmservice_io;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'vmservice.dart';
+import 'dart:isolate';
+import 'dart:vmservice';
 
+part 'resources.dart';
 part 'server.dart';
 
 // The TCP port that the HTTP server listens on.
 int _port;
 
-// The receive port that isolate startup / shutdown messages are delivered on.
-RawReceivePort _receivePort;
+// The VM service instance.
+VMService service;
 
 main() {
-  // Create VmService.
-  var service = new VMService();
-  _receivePort = service.receivePort;
+  // Get VMService.
+  service = new VMService();
   // Start HTTP server.
   var server = new Server(service, _port);
   server.startServer();

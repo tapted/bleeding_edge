@@ -9,7 +9,7 @@ import 'package:expect/expect.dart';
 
 class StacktraceTest extends VmServiceRequestHelper {
   StacktraceTest(port, id) :
-      super('http://127.0.0.1:$port/isolates/$id/stacktrace');
+      super('http://127.0.0.1:$port/$id/stacktrace');
 
   onRequestCompleted(Map reply) {
     Expect.equals('StackTrace', reply['type'], 'Not a StackTrace message.');
@@ -17,21 +17,22 @@ class StacktraceTest extends VmServiceRequestHelper {
     // The number of frames involved in isolate message dispatch is an
     // implementation detail. Only check that we got all the frames for user
     // code.
-    Expect.equals('a', reply['members'][0]['name']);
-    Expect.equals('b', reply['members'][1]['name']);
-    Expect.equals('c', reply['members'][2]['name']);
-    Expect.equals('myIsolateName', reply['members'][3]['name']);
+    Expect.equals('a', reply['members'][0]['function']['name']);
+    Expect.equals('b', reply['members'][1]['function']['name']);
+    Expect.equals('c', reply['members'][2]['function']['name']);
+    Expect.equals('myIsolateName', reply['members'][3]['function']['name']);
   }
 }
 
 class IsolateListTest extends VmServiceRequestHelper {
   IsolateListTest(port) : super('http://127.0.0.1:$port/isolates');
 
-  int _isolateId;
+  String _isolateId;
   onRequestCompleted(Map reply) {
     IsolateListTester tester = new IsolateListTester(reply);
     tester.checkIsolateCount(2);
-    _isolateId = tester.checkIsolateNameContains('myIsolateName');
+    // TODO(turnidge): Fragile.  Relies on isolate order in response.
+    _isolateId = tester.getIsolateId(1);
   }
 }
 

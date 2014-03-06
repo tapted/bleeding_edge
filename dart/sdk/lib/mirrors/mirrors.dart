@@ -573,18 +573,6 @@ abstract class LibraryMirror implements DeclarationMirror, ObjectMirror {
   Map<Symbol, DeclarationMirror> get declarations;
 
   /**
-   * Returns a map of the top-level methods, getters and setters of the library.
-   *
-   * The intent is to capture those members that constitute the API of a
-   * library. Hence fields are not included, but the getters and setters
-   * implicitly introduced by fields are included. Synthetic getters for the
-   * types exported by the library are also included.
-   *
-   * The map is keyed by the simple names of the members.
-   */
-  Map<Symbol, MethodMirror> get topLevelMembers;
-
-  /**
    * Returns [:true:] if this mirror is equal to [other].
    * Otherwise returns [:false:].
    *
@@ -626,6 +614,19 @@ abstract class LibraryMirror implements DeclarationMirror, ObjectMirror {
  * function type or type variable.
  */
 abstract class TypeMirror implements DeclarationMirror {
+  /**
+   * Returns true if this mirror reflects dynamic, a non-generic class or
+   * typedef, or an instantiated generic class or typedef in the current
+   * isolate. Otherwise, returns false.
+   */
+  bool get hasReflectedType;
+
+  /**
+   * If [:hasReflectedType:] returns true, returns the corresponding [Type].
+   * Otherwise, an [UnsupportedError] is thrown.
+   */
+  Type get reflectedType;
+
   /**
    * An immutable list with mirrors for all type variables for this type.
    *
@@ -674,24 +675,26 @@ abstract class TypeMirror implements DeclarationMirror {
    * variables.
    */
   TypeMirror get originalDeclaration;
+
+
+  /**
+   * Checks the subtype relationship, denoted by [:<::] in the language
+   * specification. This is the type relationship used in [:is:] test checks.
+   */
+  bool isSubtypeOf(TypeMirror other);
+
+  /**
+   * Checks the assignability relationship, denoted by [:<=>:] in the language
+   * specification. This is the type relationship tested on assignment in
+   * checked mode.
+   */
+  bool isAssignableTo(TypeMirror other);
 }
 
 /**
  * A [ClassMirror] reflects a Dart language class.
  */
 abstract class ClassMirror implements TypeMirror, ObjectMirror {
-  /**
-   * Returns true if this mirror reflects a non-generic class or an instantiated
-   * generic class in the current isolate. Otherwise, returns false.
-   */
-  bool get hasReflectedType;
-
-  /**
-   * If [:hasReflectedType:] returns true, returns the corresponding [Type].
-   * Otherwise, an [UnsupportedError] is thrown.
-   */
-  Type get reflectedType;
-
   /**
    * A mirror on the superclass on the reflectee.
    *
@@ -703,6 +706,11 @@ abstract class ClassMirror implements TypeMirror, ObjectMirror {
    * A list of mirrors on the superinterfaces of the reflectee.
    */
   List<ClassMirror> get superinterfaces;
+
+  /**
+   * Is the reflectee abstract?
+   */
+  bool get isAbstract;
 
   /**
    * Returns an immutable map of the declarations actually given in the class
@@ -824,6 +832,14 @@ abstract class ClassMirror implements TypeMirror, ObjectMirror {
    * [ArgumentError] is thrown.
    */
   Function operator [](Symbol name);
+
+  /**
+   * Returns whether the class denoted by the receiver is a subclass of the
+   * class denoted by the argument.
+   *
+   * Note that the subclass relationship is reflexive.
+   */
+  bool isSubclassOf(ClassMirror other);
 }
 
 /**
@@ -856,6 +872,14 @@ abstract class TypeVariableMirror extends TypeMirror {
    * A mirror on the type that is the upper bound of this type variable.
    */
   TypeMirror get upperBound;
+
+  /**
+   * Is the reflectee static?
+   *
+   * For the purposes of the mirrors library, type variables are considered
+   * non-static.
+   */
+  bool get isStatic;
 
   /**
    * Returns [:true:] if this mirror is equal to [other].

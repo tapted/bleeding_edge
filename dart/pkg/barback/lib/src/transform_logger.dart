@@ -8,7 +8,9 @@ import 'package:source_maps/span.dart';
 
 import 'asset_id.dart';
 import 'log.dart';
-import 'transform.dart';
+
+typedef void LogFunction(AssetId asset, LogLevel level, String message,
+                         Span span);
 
 /// Object used to report warnings and errors encountered while running a
 /// transformer.
@@ -25,6 +27,17 @@ class TransformLogger {
   /// caused the message.
   void info(String message, {AssetId asset, Span span}) {
     _logFunction(asset, LogLevel.INFO, message, span);
+  }
+
+  /// Logs a message that won't be displayed unless the user is running in
+  /// verbose mode.
+  ///
+  /// If [asset] is provided, the log entry is associated with that asset.
+  /// Otherwise it's associated with the primary input of [transformer].
+  /// If [span] is provided, indicates the location in the input asset that
+  /// caused the message.
+  void fine(String message, {AssetId asset, Span span}) {
+    _logFunction(asset, LogLevel.FINE, message, span);
   }
 
   /// Logs a warning message.

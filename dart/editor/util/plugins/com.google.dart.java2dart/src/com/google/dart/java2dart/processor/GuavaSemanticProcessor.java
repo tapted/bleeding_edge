@@ -14,17 +14,23 @@
 
 package com.google.dart.java2dart.processor;
 
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.ast.Expression;
 import com.google.dart.engine.ast.MethodInvocation;
-import com.google.dart.engine.ast.visitor.GeneralizingASTVisitor;
+import com.google.dart.engine.ast.PrefixExpression;
+import com.google.dart.engine.ast.visitor.GeneralizingAstVisitor;
 import com.google.dart.engine.scanner.Keyword;
 import com.google.dart.engine.scanner.TokenType;
 import com.google.dart.java2dart.Context;
 
-import static com.google.dart.java2dart.util.ASTFactory.binaryExpression;
-import static com.google.dart.java2dart.util.ASTFactory.instanceCreationExpression;
-import static com.google.dart.java2dart.util.ASTFactory.typeName;
+import static com.google.dart.java2dart.util.AstFactory.binaryExpression;
+import static com.google.dart.java2dart.util.AstFactory.identifier;
+import static com.google.dart.java2dart.util.AstFactory.instanceCreationExpression;
+import static com.google.dart.java2dart.util.AstFactory.listLiteral;
+import static com.google.dart.java2dart.util.AstFactory.mapLiteral;
+import static com.google.dart.java2dart.util.AstFactory.typeName;
+import static com.google.dart.java2dart.util.TokenFactory.token;
 
 import java.util.List;
 
@@ -32,23 +38,59 @@ import java.util.List;
  * {@link SemanticProcessor} for Google Guava.
  */
 public class GuavaSemanticProcessor extends SemanticProcessor {
+  private static boolean isNegationParent(AstNode node) {
+    if (node.getParent() instanceof PrefixExpression) {
+      PrefixExpression prefixExpression = (PrefixExpression) node.getParent();
+      return prefixExpression.getOperator().getType() == TokenType.BANG;
+    }
+    return false;
+  }
+
   public GuavaSemanticProcessor(Context context) {
     super(context);
   }
 
   @Override
   public void process(final CompilationUnit unit) {
-    unit.accept(new GeneralizingASTVisitor<Void>() {
+    unit.accept(new GeneralizingAstVisitor<Void>() {
       @Override
       public Void visitMethodInvocation(MethodInvocation node) {
         super.visitMethodInvocation(node);
         List<Expression> args = node.getArgumentList().getArguments();
         if (isMethodInClass(node, "equal", "com.google.common.base.Objects")) {
-          replaceNode(node, binaryExpression(args.get(0), TokenType.EQ_EQ, args.get(1)));
+          AstNode toReplace = node;
+          TokenType operator = TokenType.EQ_EQ;
+          if (isNegationParent(node)) {
+            operator = TokenType.BANG_EQ;
+            toReplace = node.getParent();
+          }
+          replaceNode(toReplace, binaryExpression(args.get(0), operator, args.get(1)));
+          return null;
+        }
+        if (isMethodInClass(node, "hashCode", "com.google.common.base.Objects")) {
+          replaceNode(node.getTarget(), identifier("JavaArrays"));
+          node.getMethodName().setToken(token("makeHashCode"));
           return null;
         }
         if (isMethodInClass(node, "of", "com.google.common.collect.ImmutableMap")) {
           replaceNode(node, instanceCreationExpression(Keyword.NEW, typeName("Map")));
+          return null;
+        }
+        if (isMethodInClass(node, "newArrayList", "com.google.common.collect.Lists")) {
+          replaceNode(node, listLiteral());
+          return null;
+        }
+        if (isMethodInClass(node, "newLinkedList", "com.google.common.collect.Lists")) {
+          replaceNode(node, instanceCreationExpression(Keyword.NEW, typeName("Queue")));
+          return null;
+        }
+        if (isMethodInClass(node, "newHashMap", "com.google.common.collect.Maps")) {
+          replaceNode(node, mapLiteral());
+          return null;
+        }
+        if (isMethodInClass(node, "difference", "com.google.common.collect.Sets")) {
+          node.setTarget(args.get(0));
+          args.remove(0);
           return null;
         }
         if (isMethodInClass(node, "newHashSet", "com.google.common.collect.Sets")) {

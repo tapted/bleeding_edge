@@ -18,6 +18,7 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.google.dart.engine.context.AnalysisContext;
 import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ExecutableElement;
 import com.google.dart.engine.search.MatchKind;
@@ -42,6 +43,7 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IMarker;
+import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.resources.IWorkspaceRunnable;
 import org.eclipse.core.resources.ResourcesPlugin;
@@ -81,7 +83,6 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.progress.UIJob;
 
-import java.nio.CharBuffer;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -117,7 +118,10 @@ public abstract class SearchMatchPage extends SearchPage {
     public void addMatch(SourceLineProvider lineProvider, SearchMatch match) {
       ReferenceKind referenceKind = ReferenceKind.of(match.getKind());
       Source source = element.getSource();
-      SourceLine sourceLine = lineProvider.getLine(source, match.getSourceRange().getOffset());
+      SourceLine sourceLine = lineProvider.getLine(
+          element.getContext(),
+          source,
+          match.getSourceRange().getOffset());
       // find target LineItem
       LineItem targetLineItem = null;
       for (LineItem lineItem : lines) {
@@ -507,32 +511,13 @@ public abstract class SearchMatchPage extends SearchPage {
    * Helper for transforming offsets in the some {@link Source} into {@link SourceLine} objects.
    */
   private static class SourceLineProvider {
-    /**
-     * @return the {@link String} content of the given {@link Source}.
-     */
-    private static String getSourceContent(Source source) throws Exception {
-      final String result[] = {null};
-      source.getContents(new Source.ContentReceiver() {
-        @Override
-        public void accept(CharBuffer contents, long modificationTime) {
-          result[0] = contents.toString();
-        }
-
-        @Override
-        public void accept(String contents, long modificationTime) {
-          result[0] = contents;
-        }
-      });
-      return result[0];
-    }
-
     private final Map<Source, String> sourceContentMap = Maps.newHashMap();
 
     /**
      * @return the {@link SourceLine} for the given {@link Source} and offset; may be {@code null}.
      */
-    public SourceLine getLine(Source source, int offset) {
-      String content = getContent(source);
+    public SourceLine getLine(AnalysisContext context, Source source, int offset) {
+      String content = getContent(context, source);
       // find start of line
       int start = offset;
       while (start > 0 && content.charAt(start - 1) != '\n') {
@@ -548,11 +533,11 @@ public abstract class SearchMatchPage extends SearchPage {
       return new SourceLine(source, start, text);
     }
 
-    private String getContent(Source source) {
+    private String getContent(AnalysisContext context, Source source) {
       String content = sourceContentMap.get(source);
       if (content == null) {
         try {
-          content = getSourceContent(source);
+          content = context.getContents(source).getData().toString();
           sourceContentMap.put(source, content);
         } catch (Throwable e) {
           return null;
@@ -563,10 +548,9 @@ public abstract class SearchMatchPage extends SearchPage {
   }
 
   private static final String SETTINGS_ID = "SearchMatchPage";
-
   private static final String FILTER_SDK_ID = "filter_SDK";
-
   private static final String FILTER_POTENTIAL_ID = "filter_potential";
+  private static final String FILTER_PROJECT_ID = "filter_project";
 
   private static final ITreeContentProvider CONTENT_PROVIDER = new SearchContentProvider();
   private static final IBaseLabelProvider LABEL_PROVIDER = new DelegatingStyledCellLabelProvider(
@@ -870,6 +854,21 @@ public abstract class SearchMatchPage extends SearchPage {
       refresh();
     }
   };
+
+  private IAction filterProjectAction = new Action(null, IAction.AS_CHECK_BOX) {
+    {
+      setToolTipText("Show only current project actions");
+      DartPluginImages.setLocalImageDescriptors(this, "search_filter_project.gif");
+    }
+
+    @Override
+    public void run() {
+      filterEnabledProject = isChecked();
+      getDialogSettings().put(FILTER_PROJECT_ID, filterEnabledProject);
+      refresh();
+    }
+  };
+
   private final SearchView searchView;
   private final String taskName;
 
@@ -890,8 +889,11 @@ public abstract class SearchMatchPage extends SearchPage {
   private PositionTracker positionTracker;
   private boolean filterEnabledSdk = false;
   private boolean filterEnabledPotential = false;
+  private boolean filterEnabledProject = false;
   private int filteredCountSdk = 0;
   private int filteredCountPotential = 0;
+  private int filteredCountProject = 0;
+
   private static final Predicate<SearchMatch> FILTER_SDK = new Predicate<SearchMatch>() {
     @Override
     public boolean apply(SearchMatch input) {
@@ -906,6 +908,16 @@ public abstract class SearchMatchPage extends SearchPage {
     public boolean apply(SearchMatch input) {
       return input.getKind() == MatchKind.NAME_REFERENCE_RESOLVED
           || input.getKind() == MatchKind.NAME_REFERENCE_UNRESOLVED;
+    }
+  };
+
+  private final Predicate<SearchMatch> FILTER_PROJECT = new Predicate<SearchMatch>() {
+    @Override
+    public boolean apply(SearchMatch input) {
+      IProject currentProject = getCurrentProject();
+      IFile resource = DartUI.getElementFile(input.getElement());
+      return resource != null && currentProject != null
+          && currentProject.equals(resource.getProject());
     }
   };
 
@@ -963,6 +975,7 @@ public abstract class SearchMatchPage extends SearchPage {
   @Override
   public void makeContributions(IMenuManager menuManager, IToolBarManager toolBarManager,
       IStatusLineManager statusLineManager) {
+    toolBarManager.add(filterProjectAction);
     toolBarManager.add(filterSdkAction);
     toolBarManager.add(filterPotentialAction);
     toolBarManager.add(new Separator());
@@ -989,10 +1002,23 @@ public abstract class SearchMatchPage extends SearchPage {
   }
 
   /**
+   * This is the first method called before performing refresh.
+   */
+  protected void beforeRefresh() {
+  }
+
+  /**
    * @return {@code true} if potential filter can be used.
    */
   protected boolean canUseFilterPotential() {
     return true;
+  }
+
+  /**
+   * Clients may implement this method to allow "Only current project" filter.
+   */
+  protected IProject getCurrentProject() {
+    return null;
   }
 
   /**
@@ -1066,28 +1092,38 @@ public abstract class SearchMatchPage extends SearchPage {
     }
   }
 
-  // TODO(scheglov)
   private List<SearchMatch> applyFilters(List<SearchMatch> matches) {
     filteredCountSdk = 0;
     filteredCountPotential = 0;
+    filteredCountProject = 0;
+    IProject currentProject = getCurrentProject();
     List<SearchMatch> filtered = Lists.newArrayList();
     for (SearchMatch match : matches) {
-      boolean filterOut = false;
+      // SDK filter
       if (FILTER_SDK.apply(match)) {
         filteredCountSdk++;
         if (filterEnabledSdk) {
-          filterOut = true;
+          continue;
         }
       }
-      if (canUseFilterPotential() && FILTER_POTENTIAL.apply(match)) {
-        filteredCountPotential++;
-        if (filterEnabledPotential) {
-          filterOut = true;
+      // potential filter
+      if (canUseFilterPotential()) {
+        if (FILTER_POTENTIAL.apply(match)) {
+          filteredCountPotential++;
+          if (filterEnabledPotential) {
+            continue;
+          }
         }
       }
-      if (filterOut) {
-        continue;
+      // project filter
+      if (currentProject != null) {
+        if (FILTER_PROJECT.apply(match)) {
+          filteredCountProject++;
+        } else if (filterEnabledProject) {
+          continue;
+        }
       }
+      // OK
       filtered.add(match);
     }
     return filtered;
@@ -1158,9 +1194,17 @@ public abstract class SearchMatchPage extends SearchPage {
       filterEnabledPotential = true;
       filterPotentialAction.setChecked(true);
     }
+    if (settings.getBoolean(FILTER_PROJECT_ID)) {
+      filterEnabledProject = true;
+      filterProjectAction.setChecked(true);
+    }
     if (!canUseFilterPotential()) {
       filterPotentialAction.setEnabled(false);
       filterPotentialAction.setChecked(false);
+    }
+    if (getCurrentProject() == null) {
+      filterProjectAction.setEnabled(false);
+      filterProjectAction.setChecked(false);
     }
   }
 
@@ -1232,6 +1276,7 @@ public abstract class SearchMatchPage extends SearchPage {
       new Job(taskName) {
         @Override
         protected IStatus run(IProgressMonitor monitor) {
+          beforeRefresh();
           // do query
           List<SearchMatch> matches = runQuery();
           int totalCount = matches.size();
@@ -1248,6 +1293,12 @@ public abstract class SearchMatchPage extends SearchPage {
               filtersDesc += ",   potential: " + filteredCountPotential;
               if (filterEnabledPotential) {
                 filtersDesc += " (filtered)";
+              }
+            }
+            if (getCurrentProject() != null) {
+              filtersDesc += ",   in project: " + filteredCountProject;
+              if (filterEnabledProject) {
+                filtersDesc += " (only)";
               }
             }
           }

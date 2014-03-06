@@ -52,6 +52,9 @@ _js_custom_members = monitored.Set('systemhtml._js_custom_members', [
     'ConsoleBase.warn',
     'WebKitCSSKeyframesRule.insertRule',
     'CSSStyleDeclaration.setProperty',
+    'Document.createNodeIterator',
+    'Document.createTreeWalker',
+    'DOMException.name',
     'Element.createShadowRoot',
     'Element.insertAdjacentElement',
     'Element.insertAdjacentHTML',
@@ -61,7 +64,7 @@ _js_custom_members = monitored.Set('systemhtml._js_custom_members', [
     'Element.webkitMatchesSelector',
     'ElementEvents.mouseWheel',
     'ElementEvents.transitionEnd',
-    'DOMException.name',
+    'FileReader.result',
     'HTMLTableElement.createTBody',
     'IDBCursor.next',
     'IDBDatabase.transaction',
@@ -510,10 +513,10 @@ class HtmlDartInterfaceGenerator(object):
 
     for info in infos:
       constructors.append(info.ConstructorInfo(self._interface.id))
-      if factory_provider:
-        assert factory_provider == info.factory_provider_name
-      else:
-        factory_provider = info.factory_provider_name
+      if factory_provider and factory_provider != info.factory_provider_name:
+        _logger.warn('Conflicting factory provider names: %s != %s' %
+          (factory_provider, info.factory_provider_name))
+      factory_provider = info.factory_provider_name
 
     implementation_emitter = self._ImplementationEmitter()
 
@@ -804,7 +807,7 @@ class Dart2JSBackend(HtmlDartGenerator):
       return
 
     if IsPureInterface(self._interface.id):
-      self._AddInterfaceAttribute(attribute, html_name)
+      self._AddInterfaceAttribute(attribute, html_name, read_only)
       return
 
     # If the attribute is shadowing, we can't generate a shadowing
@@ -870,10 +873,11 @@ class Dart2JSBackend(HtmlDartGenerator):
     if not read_only:
       self._AddRenamingSetter(attribute, html_name)
 
-  def _AddInterfaceAttribute(self, attribute, html_name):
+  def _AddInterfaceAttribute(self, attribute, html_name, read_only):
     self._members_emitter.Emit(
-        '\n  $TYPE $NAME;'
+        '\n  $QUALIFIER$TYPE $NAME;'
         '\n',
+        QUALIFIER='final ' if read_only else '',
         NAME=html_name,
         TYPE=self.SecureOutputType(attribute.type.id))
 

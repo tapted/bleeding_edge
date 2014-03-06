@@ -13,6 +13,9 @@
  */
 package com.google.dart.engine.internal.element;
 
+import com.google.dart.engine.ast.AstNode;
+import com.google.dart.engine.ast.CompilationUnit;
+import com.google.dart.engine.ast.Identifier;
 import com.google.dart.engine.context.AnalysisContext;
 import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.element.Element;
@@ -180,6 +183,11 @@ public class MultiplyDefinedElementImpl implements MultiplyDefinedElement {
   }
 
   @Override
+  public AstNode getNode() throws AnalysisException {
+    return null;
+  }
+
+  @Override
   public Source getSource() {
     return null;
   }
@@ -187,6 +195,11 @@ public class MultiplyDefinedElementImpl implements MultiplyDefinedElement {
   @Override
   public Type getType() {
     return DynamicTypeImpl.getInstance();
+  }
+
+  @Override
+  public CompilationUnit getUnit() throws AnalysisException {
+    return null;
   }
 
   @Override
@@ -202,6 +215,25 @@ public class MultiplyDefinedElementImpl implements MultiplyDefinedElement {
   @Override
   public boolean isDeprecated() {
     return false;
+  }
+
+  @Override
+  public boolean isOverride() {
+    return false;
+  }
+
+  @Override
+  public boolean isPrivate() {
+    String name = getDisplayName();
+    if (name == null) {
+      return false;
+    }
+    return Identifier.isPrivateName(name);
+  }
+
+  @Override
+  public boolean isPublic() {
+    return !isPrivate();
   }
 
   @Override

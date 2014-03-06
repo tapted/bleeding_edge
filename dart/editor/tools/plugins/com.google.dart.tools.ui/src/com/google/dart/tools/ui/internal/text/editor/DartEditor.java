@@ -17,8 +17,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.dart.compiler.ast.DartUnit;
-import com.google.dart.compiler.ast.DartVariable;
-import com.google.dart.engine.ast.ASTNode;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.ClassDeclaration;
 import com.google.dart.engine.ast.ClassMember;
 import com.google.dart.engine.ast.CompilationUnitMember;
@@ -31,7 +30,6 @@ import com.google.dart.engine.index.Index;
 import com.google.dart.engine.search.SearchEngine;
 import com.google.dart.engine.search.SearchEngineFactory;
 import com.google.dart.engine.services.assist.AssistContext;
-import com.google.dart.engine.source.ContentCache;
 import com.google.dart.engine.source.FileBasedSource;
 import com.google.dart.engine.source.Source;
 import com.google.dart.engine.utilities.source.SourceRange;
@@ -70,6 +68,7 @@ import com.google.dart.tools.ui.internal.formatter.DartFormatter.FormattedSource
 import com.google.dart.tools.ui.internal.text.DartHelpContextIds;
 import com.google.dart.tools.ui.internal.text.IProductConstants;
 import com.google.dart.tools.ui.internal.text.ProductProperties;
+import com.google.dart.tools.ui.internal.text.dart.DartPrioritySourceEditor;
 import com.google.dart.tools.ui.internal.text.dart.DartReconcilingEditor;
 import com.google.dart.tools.ui.internal.text.dart.DartReconcilingStrategy;
 import com.google.dart.tools.ui.internal.text.dart.hover.SourceViewerInformationControl;
@@ -238,7 +237,7 @@ import java.util.Map;
  */
 @SuppressWarnings({"unused", "deprecation"})
 public abstract class DartEditor extends AbstractDecoratedTextEditor implements
-    IViewPartInputProvider, DartReconcilingEditor {
+    IViewPartInputProvider, DartReconcilingEditor, DartPrioritySourceEditor {
 
   /**
    * Adapts an options {@link IEclipsePreferences} to
@@ -787,6 +786,9 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
             public void run() {
               if (!formatResult.source.equals(unformattedSource)) {
                 document.set(formatResult.source);
+                getSourceViewer().revealRange(
+                    formatResult.selectionOffset,
+                    formatResult.selectionLength);
                 getSourceViewer().setSelectedRange(
                     formatResult.selectionOffset,
                     formatResult.selectionLength);
@@ -829,7 +831,7 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
 
     FormatElementAction() {
       setEnabled(isEditorInputModifiable());
-      setText("Format (experimental)");
+      setText("Format");
     }
 
     @Override
@@ -2154,6 +2156,13 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
     resolvedUnit = null;
   }
 
+  /**
+   * Run the editor format action.
+   */
+  public void doFormat() {
+    getAction(DartEditorActionDefinitionIds.QUICK_FORMAT).run();
+  }
+
   @Override
   public void editorContextMenuAboutToShow(IMenuManager menu) {
     menu.add(new Separator(ITextEditorActionConstants.GROUP_OPEN));
@@ -2372,9 +2381,7 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
       return DartCore.getProjectManager().getContext(inputResourceFile);
     }
     if (inputJavaFile != null) {
-      if (getInputSource() != null) {
-        return DartCore.getProjectManager().getSdkContext();
-      }
+      return DartCore.getProjectManager().getSdkContext();
     }
     return null;
   }
@@ -2413,18 +2420,14 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
     }
     // may be SDK
     if (inputJavaFile != null) {
-      AnalysisContext context = projectManager.getSdkContext();
-      Source source = new FileBasedSource(
-          context.getSourceFactory().getContentCache(),
-          inputJavaFile);
-      Source[] librarySources = context.getLibrariesContaining(source);
-      if (librarySources.length == 1) {
-        return source;
+      AnalysisContext context = getInputAnalysisContext();
+      if (context == null) {
+        return null;
       }
-      return source;
+      return new FileBasedSource(inputJavaFile);
     }
     // some random external file
-    return new FileBasedSource(new ContentCache(), inputJavaFile);
+    return null;
   }
 
   public com.google.dart.engine.ast.CompilationUnit getInputUnit() {
@@ -2574,6 +2577,7 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
   /**
    * @return {@code true} if the editor's content is visible
    */
+  @Override
   public boolean isVisible() {
     ISourceViewer viewer = getViewer();
     if (viewer != null) {
@@ -2802,7 +2806,7 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
 //      caret = offset + styledText.getCaretOffset();
 //    }
 
-    ASTNode node = new NodeLocator(caret).searchWithin(unit);
+    AstNode node = new NodeLocator(caret).searchWithin(unit);
 
     // May be whitespace between class declaration {}, try to find class member.
     if (node instanceof ClassDeclaration) {
@@ -3723,6 +3727,12 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
   }
 
   @Override
+  protected void initializeDragAndDrop(ISourceViewer viewer) {
+    // Disabled in Dart Editor.
+//    super.initializeDragAndDrop(viewer);
+  }
+
+  @Override
   protected void initializeEditor() {
     IPreferenceStore store = createCombinedPreferenceStore(null);
     setPreferenceStore(store);
@@ -4015,15 +4025,7 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
       }
 
       try {
-        SourceRange range = null;
-        if (reference instanceof DartVariable) {
-          DartX.notYet();
-          // DartElement je = ((Variable) reference).getParent();
-          // if (je instanceof SourceReference)
-          // range = ((SourceReference) je).getSourceInfo().getSourceRange();
-        } else {
-          range = reference.getSourceRange();
-        }
+        SourceRange range = reference.getSourceRange();
 
         if (range == null) {
           return;
@@ -4261,11 +4263,11 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
     }
 
     DartX.todo("marking");
-    Collection<ASTNode> matches = null;
+    Collection<AstNode> matches = null;
 
     NodeLocator locator = new NodeLocator(selection.getOffset(), selection.getOffset()
         + selection.getLength());
-    ASTNode selectedNode = locator.searchWithin(unit);
+    AstNode selectedNode = locator.searchWithin(unit);
 
 //    try {
 //      if (astRoot.getLibrary() == null) {
@@ -4352,8 +4354,8 @@ public abstract class DartEditor extends AbstractDecoratedTextEditor implements
 
     Position[] positions = new Position[matches.size()];
     int i = 0;
-    for (Iterator<ASTNode> each = matches.iterator(); each.hasNext();) {
-      ASTNode currentNode = each.next();
+    for (Iterator<AstNode> each = matches.iterator(); each.hasNext();) {
+      AstNode currentNode = each.next();
       positions[i++] = new Position(currentNode.getOffset(), currentNode.getLength());
     }
 

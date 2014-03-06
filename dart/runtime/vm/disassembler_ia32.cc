@@ -251,6 +251,7 @@ static const char* F0Mnem(uint8_t f0byte) {
     case 0x57: return "xorps";
     case 0x58: return "addps";
     case 0x59: return "mulps";
+    case 0x5A: return "cvtps2pd";
     case 0x5C: return "subps";
     case 0x5D: return "minps";
     case 0x5E: return "divps";
@@ -262,6 +263,23 @@ static const char* F0Mnem(uint8_t f0byte) {
   }
 }
 
+static const char* PackedDoubleMnemonic(uint8_t data) {
+  const char* mnemonic = NULL;
+  if (data == 0xFE) mnemonic = "paddd ";
+  if (data == 0xFA) mnemonic = "psubd ";
+  if (data == 0x2F) mnemonic = "comisd ";
+  if (data == 0x58) mnemonic = "addpd ";
+  if (data == 0x5C) mnemonic = "subpd ";
+  if (data == 0x59) mnemonic = "mulpd ";
+  if (data == 0x5E) mnemonic = "divpd ";
+  if (data == 0x5D) mnemonic = "minpd ";
+  if (data == 0x5F) mnemonic = "maxpd ";
+  if (data == 0x51) mnemonic = "sqrtpd ";
+  if (data == 0x5A) mnemonic = "cvtpd2ps ";
+  ASSERT(mnemonic != NULL);
+  return mnemonic;
+}
+
 
 static bool IsTwoXmmRegInstruction(uint8_t f0byte) {
   return f0byte == 0x28 || f0byte == 0x11 || f0byte == 0x12 ||
@@ -269,7 +287,7 @@ static bool IsTwoXmmRegInstruction(uint8_t f0byte) {
          f0byte == 0x51 || f0byte == 0x52 || f0byte == 0x53 ||
          f0byte == 0x54 || f0byte == 0x56 || f0byte == 0x58 ||
          f0byte == 0x59 || f0byte == 0x5C || f0byte == 0x5D ||
-         f0byte == 0x5E || f0byte == 0x5F;
+         f0byte == 0x5E || f0byte == 0x5F || f0byte == 0x5A;
 }
 
 
@@ -338,6 +356,7 @@ class X86Decoder : public ValueObject {
   uint8_t* F3Instruction(uint8_t* data);
   int F7Instruction(uint8_t* data);
   int FPUInstruction(uint8_t* data);
+  uint8_t* SSEInstruction(uint8_t prefix, uint8_t primary, uint8_t* data);
   int BitwisePDInstruction(uint8_t* data);
   int Packed660F38Instruction(uint8_t* data);
   int DecodeEnter(uint8_t* data);
@@ -466,14 +485,15 @@ static const char* ObjectToCStringNoGC(const Object& obj) {
 
 
 void X86Decoder::PrintAddress(uword addr) {
-  NoGCScope no_gc;
   char addr_buffer[32];
   OS::SNPrint(addr_buffer, sizeof(addr_buffer), "%#" Px "", addr);
   Print(addr_buffer);
   // Try to print as heap object or stub name
   if (((addr & kSmiTagMask) == kHeapObjectTag) &&
+      reinterpret_cast<RawObject*>(addr)->IsOldObject() &&
       !Isolate::Current()->heap()->CodeContains(addr) &&
-      Isolate::Current()->heap()->Contains(addr - kHeapObjectTag)) {
+      Disassembler::CanFindOldObject(addr)) {
+    NoGCScope no_gc;
     const Object& obj = Object::Handle(reinterpret_cast<RawObject*>(addr));
     if (obj.IsArray()) {
       const Array& arr = Array::Cast(obj);
@@ -506,15 +526,11 @@ void X86Decoder::PrintAddress(uword addr) {
       // Print only if jumping to entry point.
       const Code& code = Code::Handle(Code::LookupCode(addr));
       if (!code.IsNull() && (code.EntryPoint() == addr)) {
-        const Function& function = Function::Handle(code.function());
-        if (function.IsNull()) {
-          Print(" [ stub ]");
-        } else {
-          const char* name_of_function = function.ToFullyQualifiedCString();
-          Print(" [");
-          Print(name_of_function);
-          Print("]");
-        }
+        const String& name = String::Handle(code.UserName());
+        const char* name_c = name.ToCString();
+        Print(" [");
+        Print(name_c);
+        Print("]");
       }
     }
   }
@@ -1109,6 +1125,37 @@ int X86Decoder::FPUInstruction(uint8_t* data) {
 }
 
 
+uint8_t* X86Decoder::SSEInstruction(uint8_t prefix, uint8_t primary,
+                                    uint8_t* data) {
+  ASSERT(prefix == 0x0F);
+  int mod, regop, rm;
+  if (primary == 0x10) {
+    GetModRm(*data, &mod, &regop, &rm);
+    Print("movups ");
+    PrintXmmRegister(regop);
+    Print(",");
+    data += PrintRightOperand(data);
+  } else if (primary == 0x11) {
+    int mod, regop, rm;
+    GetModRm(*data, &mod, &regop, &rm);
+    Print("movups ");
+    data += PrintRightXmmOperand(data);
+    Print(",");
+    PrintXmmRegister(regop);
+  } else if (IsTwoXmmRegInstruction(primary)) {
+    const char* f0mnem = F0Mnem(primary);
+    int mod, regop, rm;
+    GetModRm(*data, &mod, &regop, &rm);
+    Print(f0mnem);
+    Print(" ");
+    PrintXmmRegister(regop);
+    Print(",");
+    data += PrintRightXmmOperand(data);
+  }
+  return data;
+}
+
+
 int X86Decoder::BitwisePDInstruction(uint8_t* data) {
   const char* mnem = (*data == 0x57)
       ? "xorpd"
@@ -1377,21 +1424,9 @@ int X86Decoder::InstructionDecode(uword pc) {
               PrintCPURegister(regop);
               Print(",cl");
             }
-          } else if (f0byte == 0x10) {
-            int mod, regop, rm;
-            GetModRm(*data, &mod, &regop, &rm);
-            Print("movups ");
-            PrintXmmRegister(regop);
-            Print(",");
-            data += PrintRightOperand(data);
-          } else if (IsTwoXmmRegInstruction(f0byte)) {
-            int mod, regop, rm;
-            GetModRm(*data, &mod, &regop, &rm);
-            Print(f0mnem);
-            Print(" ");
-            PrintXmmRegister(regop);
-            Print(",");
-            data += PrintRightXmmOperand(data);
+          } else if ((f0byte == 0x10) || (f0byte == 0x11) ||
+                     IsTwoXmmRegInstruction(f0byte)) {
+            data = SSEInstruction(0x0F, f0byte, data);
           } else if (f0byte == 0x50) {
             Print("movmskps ");
             int mod, regop, rm;
@@ -1601,11 +1636,11 @@ int X86Decoder::InstructionDecode(uword pc) {
             Print(",");
             PrintXmmRegister(rm);
             data += 2;
-          } else if ((*data == 0xFE) || (*data == 0xFA) || (*data == 0x2F)) {
-            const char* mnemonic = NULL;
-            if (*data == 0xFE) mnemonic = "paddd ";
-            if (*data == 0xFA) mnemonic = "psubd ";
-            if (*data == 0x2F) mnemonic = "comisd ";
+          } else if ((*data == 0xFE) || (*data == 0xFA) || (*data == 0x2F) ||
+                     (*data == 0x58) || (*data == 0x5C) || (*data == 0x59) ||
+                     (*data == 0x5E) || (*data == 0x5D) || (*data == 0x5F) ||
+                     (*data == 0x51) || (*data == 0x5A)) {
+            const char* mnemonic = PackedDoubleMnemonic(*data);
             int mod, regop, rm;
             GetModRm(*(data+1), &mod, &regop, &rm);
             Print(mnemonic);

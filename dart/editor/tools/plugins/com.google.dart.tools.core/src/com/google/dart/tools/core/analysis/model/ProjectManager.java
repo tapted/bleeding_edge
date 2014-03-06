@@ -109,6 +109,11 @@ public interface ProjectManager extends ContextManager {
   IWorkspaceRoot getResource();
 
   /**
+   * Attach listeners for resource changes, files to be ignored, and the like.
+   */
+  void hookListeners();
+
+  /**
    * Answer if the given source is known to be the defining compilation unit of a library that can
    * be run on a client
    * 
@@ -159,9 +164,18 @@ public interface ProjectManager extends ContextManager {
    * 
    * @param relativeTo the resource to use to locate an analysis context
    * @param uri a package: uri
-   * @return
+   * @return a workspace resource or {@code null}
    */
   IFile resolvePackageUri(IResource relativeTo, String uri);
+
+  /**
+   * Resolve the given file path to a package uri path, if any
+   * 
+   * @param resource the given resource
+   * @param path the file path for the resource wrt to package structure
+   * @return the package name or {@code null} if resource is not in a package
+   */
+  String resolvePathToPackage(IResource resource, String path);
 
   /**
    * Start background analysis such as updating the index.

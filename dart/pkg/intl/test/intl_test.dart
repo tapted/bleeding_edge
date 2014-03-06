@@ -10,11 +10,11 @@ import 'package:intl/date_symbol_data_local.dart';
 
 main() {
   test("Locale setting doesn't verify the core locale", () {
-      var de = new Intl('de_DE');
-      expect(de.locale, equals('de_DE'));
+    var de = new Intl('de_DE');
+    expect(de.locale, equals('de_DE'));
   });
 
-  test('DateFormat creation does verify the locale', (){
+  test('DateFormat creation does verify the locale', () {
     // TODO(alanknight): We need to make the locale verification be on a per
     // usage basis rather than once for the entire Intl object. The set of
     // locales covered for messages may be different from that for date
@@ -23,7 +23,7 @@ main() {
       var de = new Intl('de_DE');
       var format = de.date().add_d();
       expect(format.locale, equals('de'));
-     });
+    });
   });
 
   test("Canonicalizing locales", () {
@@ -33,5 +33,49 @@ main() {
     expect(Intl.canonicalizedLocale('xx-yyy'), 'xx_YYY');
     expect(Intl.canonicalizedLocale('xx_YYY'), 'xx_YYY');
     expect(Intl.canonicalizedLocale('C'), 'en_ISO');
+  });
+
+  test("Verifying locale fallback for numbers", () {
+    expect(Intl.verifiedLocale('en-us', NumberFormat.localeExists), 'en_US');
+    expect(Intl.verifiedLocale('en_us', NumberFormat.localeExists), 'en_US');
+    expect(Intl.verifiedLocale('es-419', NumberFormat.localeExists), 'es_419');
+    expect(Intl.verifiedLocale('en-ZZ', NumberFormat.localeExists), 'en');
+    expect(Intl.verifiedLocale('es-999', NumberFormat.localeExists), 'es');
+
+    void checkAsNumberDefault(String locale, String expected) {
+      var oldDefault = Intl.defaultLocale;
+      Intl.defaultLocale = locale;
+      var format = new NumberFormat();
+      expect(format.locale, expected);
+      Intl.defaultLocale = oldDefault;
+    }
+
+    checkAsNumberDefault('en-us', 'en_US');
+    checkAsNumberDefault('en_us', 'en_US');
+    checkAsNumberDefault('es-419', 'es_419');
+    checkAsNumberDefault('en-ZZ', 'en');
+    checkAsNumberDefault('es-999', 'es');
+  });
+
+  test("Verifying locale fallback for dates", () {
+    expect(Intl.verifiedLocale('en-us', DateFormat.localeExists), 'en_US');
+    expect(Intl.verifiedLocale('en_us', DateFormat.localeExists), 'en_US');
+    expect(Intl.verifiedLocale('es-419', DateFormat.localeExists), 'es_419');
+    expect(Intl.verifiedLocale('en-ZZ', DateFormat.localeExists), 'en');
+    expect(Intl.verifiedLocale('es-999', DateFormat.localeExists), 'es');
+
+    void checkAsDateDefault(String locale, String expected) {
+      var oldDefault = Intl.defaultLocale;
+      Intl.defaultLocale = locale;
+      var format = new DateFormat();
+      expect(format.locale, expected);
+      Intl.defaultLocale = oldDefault;
+    }
+
+    checkAsDateDefault('en-us', 'en_US');
+    checkAsDateDefault('en_us', 'en_US');
+    checkAsDateDefault('es-419', 'es_419');
+    checkAsDateDefault('en-ZZ', 'en');
+    checkAsDateDefault('es-999', 'es');
   });
 }

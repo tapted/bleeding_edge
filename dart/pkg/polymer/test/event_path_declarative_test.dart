@@ -9,13 +9,11 @@
 library polymer.test.event_path_declarative_test;
 
 import 'dart:async';
-import 'dart:collection';
 import 'dart:html';
 
 import 'package:unittest/unittest.dart';
 import 'package:unittest/html_config.dart';
 import 'package:polymer/polymer.dart';
-import 'package:template_binding/template_binding.dart';
 
 var _observedEvents = [];
 var _testFired;
@@ -81,7 +79,7 @@ class XBar extends PolymerElement {
   }
 }
 
-@initMethod _init() {
+@initMethod init() {
   useHtmlConfiguration();
   // TODO(sigmund): switch back to use @CustomTag. We seem to be running into a
   // problem where using @CustomTag doesn't guarantee that we register the tags

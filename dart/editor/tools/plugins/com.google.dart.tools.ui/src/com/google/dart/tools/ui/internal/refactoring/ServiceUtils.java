@@ -23,6 +23,7 @@ import com.google.dart.engine.services.change.CreateFileChange;
 import com.google.dart.engine.services.change.Edit;
 import com.google.dart.engine.services.change.MergeCompositeChange;
 import com.google.dart.engine.services.change.SourceChange;
+import com.google.dart.engine.services.correction.AddDependencyCorrectionProposal;
 import com.google.dart.engine.services.correction.ChangeCorrectionProposal;
 import com.google.dart.engine.services.correction.CorrectionImage;
 import com.google.dart.engine.services.correction.CorrectionKind;
@@ -197,7 +198,7 @@ public class ServiceUtils {
     if (context == null) {
       return null;
     }
-    return new DartStatusContext(context.getSource(), context.getRange());
+    return new DartStatusContext(context.getContext(), context.getSource(), context.getRange());
   }
 
   /**
@@ -243,12 +244,26 @@ public class ServiceUtils {
   }
 
   /**
+   * @return the {@link IDartCompletionProposal} for the given {@link CreateFileCorrectionProposal}.
+   */
+  public static IDartCompletionProposal toUI(AddDependencyCorrectionProposal proposal) {
+    return new com.google.dart.tools.ui.internal.text.correction.proposals.AddDependencyCorrectionProposal(
+        proposal.getKind().getRelevance(),
+        proposal.getName(),
+        proposal.getFile(),
+        proposal.getPackageName());
+  }
+
+  /**
    * @return the Eclipse {@link ICompletionProposal} for the given {@link CorrectionProposal}.
    */
   public static ICompletionProposal toUI(CorrectionProposal serviceProposal) {
     if (serviceProposal instanceof ChangeCorrectionProposal) {
       ChangeCorrectionProposal changeProposal = (ChangeCorrectionProposal) serviceProposal;
       org.eclipse.ltk.core.refactoring.Change ltkChange = toLTK(changeProposal.getChange());
+      if (ltkChange == null) {
+        return null;
+      }
       return new com.google.dart.tools.ui.internal.text.correction.proposals.ChangeCorrectionProposal(
           changeProposal.getName(),
           ltkChange,
@@ -258,6 +273,10 @@ public class ServiceUtils {
     if (serviceProposal instanceof CreateFileCorrectionProposal) {
       CreateFileCorrectionProposal fileProposal = (CreateFileCorrectionProposal) serviceProposal;
       return toUI(fileProposal);
+    }
+    if (serviceProposal instanceof AddDependencyCorrectionProposal) {
+      AddDependencyCorrectionProposal proposal = (AddDependencyCorrectionProposal) serviceProposal;
+      return toUI(proposal);
     }
     if (serviceProposal instanceof SourceCorrectionProposal) {
       SourceCorrectionProposal sourceProposal = (SourceCorrectionProposal) serviceProposal;
@@ -281,10 +300,15 @@ public class ServiceUtils {
    * @return the {@link LinkedCorrectionProposal} for the given {@link SourceCorrectionProposal}.
    */
   public static LinkedCorrectionProposal toUI(SourceCorrectionProposal sourceProposal) {
-    CorrectionKind kind = sourceProposal.getKind();
-    Image image = ServiceUtils.toLTK(kind.getImage());
+    // prepare TextChange
     SourceChange sourceChange = sourceProposal.getChange();
     TextChange textChange = ServiceUtils.toLTK(sourceChange);
+    if (textChange == null) {
+      return null;
+    }
+    // prepare UI proposal
+    CorrectionKind kind = sourceProposal.getKind();
+    Image image = ServiceUtils.toLTK(kind.getImage());
     LinkedCorrectionProposal uiProposal = new LinkedCorrectionProposal(
         sourceProposal.getName(),
         sourceChange.getSource(),
@@ -303,6 +327,13 @@ public class ServiceUtils {
       String group = entry.getKey();
       for (LinkedPositionProposal proposal : entry.getValue()) {
         uiProposal.addLinkedPositionProposal(group, proposal.getText(), toLTK(proposal.getIcon()));
+      }
+    }
+    // set end position
+    {
+      SourceRange endRange = sourceProposal.getEndRange();
+      if (endRange != null) {
+        uiProposal.setEndPosition(TrackedPositions.forRange(endRange));
       }
     }
     // done

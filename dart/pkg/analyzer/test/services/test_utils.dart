@@ -6,8 +6,7 @@ library test_utils;
 
 import 'package:unittest/unittest.dart';
 
-import 'package:analyzer/src/generated/java_core.dart' show CharSequence;
-import 'package:analyzer/src/generated/engine.dart' show AnalysisContext, AnalysisContextImpl;
+import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/error.dart';
 import 'package:analyzer/src/generated/scanner.dart';
@@ -163,7 +162,7 @@ class _TestSource implements Source {
 
   AnalysisContext get context => _unsupported();
 
-  void getContents(Source_ContentReceiver receiver) => _unsupported();
+  void getContentsToReceiver(Source_ContentReceiver receiver) => _unsupported();
 
   String get fullName => _unsupported();
 
@@ -183,6 +182,7 @@ class _TestSource implements Source {
 
   Source resolveRelative(Uri uri) => _unsupported();
 
+  TimestampedData<String> get contents => _unsupported();
 }
 
 
@@ -198,7 +198,7 @@ class _UnsupportedOperationException implements Exception {
 Statement parseStatement(String source, [List<ErrorCode> expectedErrorCodes]) {
 
   var listener = new _GatheringErrorListener();
-  var reader = new CharSequenceReader(new CharSequence(source));
+  var reader = new CharSequenceReader(source);
   var scanner = new Scanner(null, reader, listener);
   listener.setLineInfo(new _TestSource(), scanner.lineStarts);
 

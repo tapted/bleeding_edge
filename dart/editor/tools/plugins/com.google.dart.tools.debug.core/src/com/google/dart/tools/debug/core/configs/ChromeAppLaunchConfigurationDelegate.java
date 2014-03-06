@@ -212,14 +212,12 @@ public class ChromeAppLaunchConfigurationDelegate extends DartLaunchConfiguratio
     List<String> commandsList = new ArrayList<String>();
 
     commandsList.add(dartium.getAbsolutePath());
-    commandsList.add("--enable-udd-profiles");
     commandsList.add("--user-data-dir="
         + BrowserManager.getCreateUserDataDirectoryPath("chrome-apps"));
-    commandsList.add("--profile-directory=editor");
     commandsList.add("--no-first-run");
     commandsList.add("--no-default-browser-check");
 
-    // This is currently only supported on the mac.
+    // This is currently only supported on the mac. 
     if (DartCore.isMac()) {
       commandsList.add("--no-startup-window");
     }
@@ -254,6 +252,13 @@ public class ChromeAppLaunchConfigurationDelegate extends DartLaunchConfiguratio
       for (String key : wrapperEnv.keySet()) {
         env.put(key, wrapperEnv.get(key));
       }
+    }
+
+    // Add the environment variable DART_FLAGS="--enable-checked-mode" to enable asserts and type
+    // checks. Default to false for Chrome apps.
+    if (wrapper.getCheckedMode(false)) {
+      Map<String, String> env = processBuilder.environment();
+      env.put("DART_FLAGS", "--enable-checked-mode");
     }
 
     Process runtimeProcess = null;
@@ -341,6 +346,12 @@ public class ChromeAppLaunchConfigurationDelegate extends DartLaunchConfiguratio
         continue;
       }
 
+      // chrome-extension://nkeimhogjdpnpccoofpliimaahmaaome/background.html
+      if (tab.getUrl().endsWith("_generated_background_page.html")
+          || tab.getUrl().endsWith("/background.html")) {
+        continue;
+      }
+
       if (tab.getUrl().startsWith("chrome-extension://") && tab.getTitle().length() > 0) {
         return tab;
       }
@@ -370,6 +381,12 @@ public class ChromeAppLaunchConfigurationDelegate extends DartLaunchConfiguratio
         ChromiumTabInfo targetTab = findTargetTab(tabs);
 
         if (targetTab != null) {
+          for (ChromiumTabInfo tab : tabs) {
+            DartDebugCorePlugin.log("Found: " + tab.toString());
+          }
+
+          DartDebugCorePlugin.log("Choosing: " + targetTab);
+
           return targetTab;
         }
       } catch (IOException exception) {

@@ -91,12 +91,11 @@ static const char* GetStringChars(Dart_Handle str) {
 }
 
 
-static int GetIntValue(Dart_Handle int_handle) {
+static int64_t GetIntValue(Dart_Handle int_handle) {
   int64_t int64_val = -1;
   ASSERT(Dart_IsInteger(int_handle));
   Dart_Handle res = Dart_IntegerToInt64(int_handle, &int64_val);
   ASSERT_NOT_ERROR(res);
-  // TODO(hausner): Range check.
   return int64_val;
 }
 
@@ -201,6 +200,7 @@ static void FormatTextualValue(dart::TextBuffer* buf,
                                Dart_Handle object,
                                intptr_t max_chars,
                                bool expand_list) {
+  ASSERT(!Dart_IsError(object));
   if (Dart_IsList(object)) {
     if (expand_list) {
       FormatTextualListValue(buf, object, max_chars);
@@ -213,15 +213,17 @@ static void FormatTextualValue(dart::TextBuffer* buf,
     buf->Printf("\\\"");
     FormatEncodedCharsTrunc(buf, object, max_chars);
     buf->Printf("\\\"");
-  } else {
+  } else if (Dart_IsNumber(object) || Dart_IsBoolean(object)) {
     Dart_Handle text = Dart_ToString(object);
-    if (Dart_IsNull(text)) {
-      buf->Printf("null");
-    } else if (Dart_IsError(text)) {
-      buf->Printf("#ERROR");
-    } else {
-      FormatEncodedCharsTrunc(buf, text, max_chars);
-    }
+    ASSERT(!Dart_IsNull(text) && !Dart_IsError(text));
+    FormatEncodedCharsTrunc(buf, text, max_chars);
+  } else {
+    Dart_Handle type = Dart_InstanceGetType(object);
+    ASSERT_NOT_ERROR(type);
+    type = Dart_ToString(type);
+    ASSERT_NOT_ERROR(type);
+    buf->Printf("object of type ");
+    FormatEncodedCharsTrunc(buf, type, max_chars);
   }
 }
 
@@ -264,7 +266,7 @@ static void FormatValue(dart::TextBuffer* buf, Dart_Handle object) {
   }
   if (print_text_field) {
     buf->Printf(",\"text\":\"");
-    const intptr_t max_chars = 250;
+    const intptr_t max_chars = 1024;
     FormatTextualValue(buf, object, max_chars, true);
     buf->Printf("\"");
   }
@@ -364,10 +366,10 @@ static const char* FormatLibraryProps(dart::TextBuffer* buf,
   res = Dart_ListLength(import_list, &list_length);
   RETURN_IF_ERROR(res);
   buf->Printf(",\"imports\":[");
-  for (int i = 0; i + 1 < list_length; i += 2) {
+  for (intptr_t i = 0; i + 1 < list_length; i += 2) {
     Dart_Handle lib_id = Dart_ListGetAt(import_list, i + 1);
     ASSERT_NOT_ERROR(lib_id);
-    buf->Printf("%s{\"libraryId\":%d,",
+    buf->Printf("%s{\"libraryId\":%" Pd64 ",",
                 (i > 0) ? ",": "",
                 GetIntValue(lib_id));
 
@@ -577,14 +579,15 @@ bool DbgMessage::HandleGetLibrariesCmd(DbgMessage* in_msg) {
   intptr_t num_libs;
   Dart_Handle res = Dart_ListLength(lib_ids, &num_libs);
   ASSERT_NOT_ERROR(res);
-  for (int i = 0; i < num_libs; i++) {
+  for (intptr_t i = 0; i < num_libs; i++) {
     Dart_Handle lib_id_handle = Dart_ListGetAt(lib_ids, i);
     ASSERT(Dart_IsInteger(lib_id_handle));
-    int lib_id = GetIntValue(lib_id_handle);
-    Dart_Handle lib_url = Dart_GetLibraryURL(lib_id);
+    int64_t lib_id = GetIntValue(lib_id_handle);
+    ASSERT((lib_id >= kIntptrMin) && (lib_id <= kIntptrMax));
+    Dart_Handle lib_url = Dart_GetLibraryURL(static_cast<intptr_t>(lib_id));
     ASSERT_NOT_ERROR(lib_url);
     ASSERT(Dart_IsString(lib_url));
-    msg.Printf("%s{\"id\":%d,\"url\":", (i == 0) ? "" : ", ", lib_id);
+    msg.Printf("%s{\"id\":%" Pd64 ",\"url\":", (i == 0) ? "" : ", ", lib_id);
     FormatEncodedString(&msg, lib_url);
     msg.Printf("}");
   }
@@ -895,11 +898,11 @@ bool DbgMessage::HandleGetLineNumbersCmd(DbgMessage* in_msg) {
       num_elems = 0;
     } else {
       ASSERT(Dart_IsInteger(elem));
-      int value = GetIntValue(elem);
+      int64_t value = GetIntValue(elem);
       if (num_elems == 0) {
-        msg.Printf("%d", value);
+        msg.Printf("%" Pd64 "", value);
       } else {
-        msg.Printf(",%d", value);
+        msg.Printf(",%" Pd64 "", value);
       }
       num_elems++;
     }
@@ -1017,27 +1020,54 @@ void DbgMsgQueue::AddMessage(int32_t cmd_idx,
 }
 
 
-void DbgMsgQueue::HandleMessages() {
-  bool resume_requested = false;
+void DbgMsgQueue::Notify() {
   MonitorLocker ml(&msg_queue_lock_);
-  is_running_ = false;
-  while (!resume_requested) {
-    while (msglist_head_ == NULL) {
-      ASSERT(msglist_tail_ == NULL);
-      dart::Monitor::WaitResult res = ml.Wait();  // Wait for debugger commands.
-      ASSERT(res == dart::Monitor::kNotified);
-    }
-    while (msglist_head_ != NULL && !resume_requested) {
-      ASSERT(msglist_tail_ != NULL);
-      DbgMessage* msg = msglist_head_;
-      msglist_head_ = msglist_head_->next();
-      resume_requested = msg->HandleMessage();
-      delete msg;
-    }
+  ml.Notify();
+}
+
+
+bool DbgMsgQueue::HandlePendingMessages() {
+  // Handle all available debug messages, up to a resume request.
+  bool resume_requested = false;
+  while (msglist_head_ != NULL && !resume_requested) {
+    ASSERT(msglist_tail_ != NULL);
+    DbgMessage* msg = msglist_head_;
+    msglist_head_ = msglist_head_->next();
     if (msglist_head_ == NULL) {
       msglist_tail_ = NULL;
     }
+    resume_requested = msg->HandleMessage();
+    delete msg;
   }
+  return resume_requested;
+}
+
+
+void DbgMsgQueue::MessageLoop() {
+  MonitorLocker ml(&msg_queue_lock_);
+  is_running_ = false;
+
+  // Request notification on isolate messages.  This allows us to
+  // respond to vm service messages while at breakpoint.
+  Dart_SetMessageNotifyCallback(DbgMsgQueueList::NotifyIsolate);
+
+  while (true) {
+    // Handle all available vm service messages, up to a resume
+    // request.
+    if (Dart_HandleServiceMessages()) {
+      break;
+    }
+
+    // Handle all available debug messages, up to a resume request.
+    if (HandlePendingMessages()) {
+      break;
+    }
+
+    // Wait for more debug or vm service messages.
+    dart::Monitor::WaitResult res = ml.Wait();
+    ASSERT(res == dart::Monitor::kNotified);
+  }
+  Dart_SetMessageNotifyCallback(NULL);
   is_interrupted_ = false;
   is_running_ = true;
 }
@@ -1177,6 +1207,16 @@ bool DbgMsgQueueList::AddIsolateMessage(Dart_IsolateId isolate_id,
 }
 
 
+void DbgMsgQueueList::NotifyIsolate(Dart_Isolate isolate) {
+  MutexLocker ml(msg_queue_list_lock_);
+  Dart_IsolateId isolate_id = Dart_GetIsolateId(isolate);
+  DbgMsgQueue* queue = DbgMsgQueueList::GetIsolateMsgQueueLocked(isolate_id);
+  if (queue != NULL) {
+    queue->Notify();
+  }
+}
+
+
 bool DbgMsgQueueList::InterruptIsolate(Dart_IsolateId isolate_id) {
   MutexLocker ml(msg_queue_list_lock_);
   DbgMsgQueue* queue = DbgMsgQueueList::GetIsolateMsgQueueLocked(isolate_id);
@@ -1293,7 +1333,7 @@ void DbgMsgQueueList::PausedEventHandler(Dart_IsolateId isolate_id,
   ASSERT(msg_queue != NULL);
   msg_queue->SendQueuedMsgs();
   msg_queue->SendBreakpointEvent(bp_id, loc);
-  msg_queue->HandleMessages();
+  msg_queue->MessageLoop();
   Dart_ExitScope();
 }
 
@@ -1307,7 +1347,7 @@ void DbgMsgQueueList::ExceptionThrownHandler(Dart_IsolateId isolate_id,
   ASSERT(msg_queue != NULL);
   msg_queue->SendQueuedMsgs();
   msg_queue->SendExceptionEvent(exception, stack_trace);
-  msg_queue->HandleMessages();
+  msg_queue->MessageLoop();
   Dart_ExitScope();
 }
 
@@ -1325,7 +1365,7 @@ void DbgMsgQueueList::IsolateEventHandler(Dart_IsolateId isolate_id,
     msg_queue->SendQueuedMsgs();
     msg_queue->SendIsolateEvent(isolate_id, kind);
     if (kind == kInterrupted) {
-      msg_queue->HandleMessages();
+      msg_queue->MessageLoop();
     } else {
       ASSERT(kind == kShutdown);
       RemoveIsolateMsgQueue(isolate_id);

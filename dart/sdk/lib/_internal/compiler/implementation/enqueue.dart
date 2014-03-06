@@ -85,7 +85,7 @@ abstract class Enqueuer {
   EnqueueTask task;
   native.NativeEnqueuer nativeEnqueuer;  // Set by EnqueueTask
 
-  bool hasEnqueuedEverything = false;
+  bool hasEnqueuedReflectiveElements = false;
 
   Enqueuer(this.name, this.compiler, this.itemCompilationContextCreator);
 
@@ -359,7 +359,7 @@ abstract class Enqueuer {
   }
 
   void enqueueEverything() {
-    if (hasEnqueuedEverything) return;
+    if (hasEnqueuedReflectiveElements) return;
     compiler.log('Enqueuing everything');
     task.ensureAllElementsByName();
     for (Link link in task.allElementsByName.values) {
@@ -367,7 +367,17 @@ abstract class Enqueuer {
         pretendElementWasUsed(element, compiler.globalDependencies);
       }
     }
-    hasEnqueuedEverything = true;
+    hasEnqueuedReflectiveElements = true;
+  }
+
+  /// Enqueue the static fields that have been marked as used by reflective
+  /// usage through `MirrorsUsed`.
+  void enqueueReflectiveStaticFields(Iterable<Element> elements) {
+    if (hasEnqueuedReflectiveElements) return;
+    hasEnqueuedReflectiveElements = true;
+    for (Element element in elements) {
+      pretendElementWasUsed(element, compiler.globalDependencies);
+    }
   }
 
   processLink(Map<String, Link<Element>> map,
@@ -475,6 +485,10 @@ abstract class Enqueuer {
 
   void registerDynamicSetter(Selector selector) {
     registerInvokedSetter(selector);
+  }
+
+  void registerGetterForSuperMethod(Element element) {
+    universe.methodsNeedingSuperGetter.add(element);
   }
 
   void registerFieldGetter(Element element) {
@@ -622,6 +636,7 @@ class ResolutionEnqueuer extends Enqueuer {
       throw new SpannableAssertionFailure(element,
           "Resolution work list is closed. Trying to add $element.");
     }
+
     compiler.world.registerUsedElement(element);
 
     queue.add(new ResolutionWorkItem(element, itemCompilationContextCreator()));
@@ -662,12 +677,13 @@ class ResolutionEnqueuer extends Enqueuer {
 
   void enableIsolateSupport(LibraryElement element) {
     compiler.isolateLibrary = element.patch;
-    var startRootIsolate =
-        compiler.isolateHelperLibrary.find(Compiler.START_ROOT_ISOLATE);
-    addToWorkList(startRootIsolate);
-    compiler.globalDependencies.registerDependency(startRootIsolate);
-    addToWorkList(compiler.isolateHelperLibrary.find('_currentIsolate'));
-    addToWorkList(compiler.isolateHelperLibrary.find('_callInIsolate'));
+    for (String name in const [Compiler.START_ROOT_ISOLATE,
+                               '_currentIsolate',
+                               '_callInIsolate']) {
+      Element element = compiler.isolateHelperLibrary.find(name);
+      addToWorkList(element);
+      compiler.globalDependencies.registerDependency(element);
+    }
   }
 
   void enableNoSuchMethod(Element element) {

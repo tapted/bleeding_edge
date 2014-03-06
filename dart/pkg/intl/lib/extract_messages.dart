@@ -73,7 +73,7 @@ CompilationUnit _root;
  */
 String _origin;
 
-String _reportErrorLocation(ASTNode node) {
+String _reportErrorLocation(AstNode node) {
   var result = new StringBuffer();
   if (_origin != null) result.write("    from $_origin");
   var info = _root.lineInfo;
@@ -90,7 +90,7 @@ String _reportErrorLocation(ASTNode node) {
  * IntlMessage objects. We have to find both the enclosing function, and
  * the Intl.message invocation.
  */
-class MessageFindingVisitor extends GeneralizingASTVisitor {
+class MessageFindingVisitor extends GeneralizingAstVisitor {
 
   MessageFindingVisitor();
 
@@ -113,8 +113,7 @@ class MessageFindingVisitor extends GeneralizingASTVisitor {
     if (!validNames.contains(node.methodName.name)) return false;
     if (!(node.target is SimpleIdentifier)) return false;
     SimpleIdentifier target = node.target;
-    if (target.token.toString() != "Intl") return false;
-    return true;
+    return target.token.toString() == "Intl";
   }
 
   Message _expectedInstance(String type) {
@@ -147,7 +146,9 @@ class MessageFindingVisitor extends GeneralizingASTVisitor {
    */
   void visitMethodDeclaration(MethodDeclaration node) {
     parameters = node.parameters;
-    if (parameters == null) parameters = new FormalParameterList(null, [], null, null, null);
+    if (parameters == null) {
+      parameters = new FormalParameterList(null, [], null, null, null);
+    }
     name = node.name.name;
     super.visitMethodDeclaration(node);
   }
@@ -158,7 +159,9 @@ class MessageFindingVisitor extends GeneralizingASTVisitor {
    */
   void visitFunctionDeclaration(FunctionDeclaration node) {
     parameters = node.functionExpression.parameters;
-    if (parameters == null) parameters = new FormalParameterList(null, [], null, null, null);
+    if (parameters == null) {
+      parameters = new FormalParameterList(null, [], null, null, null);
+    }
     name = node.name.name;
     super.visitFunctionDeclaration(node);
   }
@@ -171,7 +174,7 @@ class MessageFindingVisitor extends GeneralizingASTVisitor {
    */
   void visitMethodInvocation(MethodInvocation node) {
     if (!addIntlMessage(node)) {
-      return super.visitMethodInvocation(node);
+      super.visitMethodInvocation(node);
     }
   }
 
@@ -186,10 +189,9 @@ class MessageFindingVisitor extends GeneralizingASTVisitor {
     var reason = checkValidity(node);
     if (reason != null) {
       if (!suppressWarnings) {
-        var err = new StringBuffer();
-        err.write("Skipping invalid Intl.message invocation\n    <$node>\n");
-        err.write("    reason: $reason\n");
-        err.write(_reportErrorLocation(node));
+        var err = new StringBuffer()
+            ..write("Skipping invalid Intl.message invocation\n    <$node>\n")
+            ..writeAll(["    reason: $reason\n", _reportErrorLocation(node)]);
         warnings.add(err.toString());
         print(err);
       }
@@ -225,8 +227,11 @@ class MessageFindingVisitor extends GeneralizingASTVisitor {
     for (var namedArgument in arguments.where((x) => x is NamedExpression)) {
       var name = namedArgument.name.label.name;
       var exp = namedArgument.expression;
-      var string = exp is SimpleStringLiteral ? exp.value : exp.toString();
-      setAttribute(message, name, string);
+      var evaluator = new ConstantEvaluator();
+      var basicValue = exp.accept(evaluator);
+      var value = basicValue == ConstantEvaluator.NOT_A_CONSTANT ?
+          exp.toString() : basicValue;
+      setAttribute(message, name, value);
     }
     return message;
   }
@@ -245,16 +250,15 @@ class MessageFindingVisitor extends GeneralizingASTVisitor {
         message.messagePieces.addAll(interpolation.pieces);
       } on IntlMessageExtractionException catch (e) {
         message = null;
-        var err = new StringBuffer();
-        err.write("Error $e\n");
-        err.write("Processing <$node>\n");
-        err.write(_reportErrorLocation(node));
+        var err = new StringBuffer()
+            ..writeAll(["Error ", e, "\nProcessing <", node, ">\n"])
+            ..write(_reportErrorLocation(node));
         print(err);
         warnings.add(err);
       }
     }
 
-    void setValue(MainMessage message, String fieldName, String fieldValue) {
+    void setValue(MainMessage message, String fieldName, Object fieldValue) {
       message[fieldName] = fieldValue;
     }
 
@@ -276,10 +280,8 @@ class MessageFindingVisitor extends GeneralizingASTVisitor {
     }
 
     void setAttribute(MainMessage msg, String fieldName, String fieldValue) {
-      if (["name", "desc", "examples", "args"].contains(fieldName)) {
+      if (msg.attributeNames.contains(fieldName)) {
         msg[fieldName] = fieldValue;
-      } else {
-        pluralOrGender[fieldName] = fieldValue;
       }
     }
     return _messageFromNode(node, extractFromPluralOrGender, setAttribute);
@@ -291,13 +293,13 @@ class MessageFindingVisitor extends GeneralizingASTVisitor {
  * simple variable substitutions or else Intl.plural/gender calls,
  * and keep track of the pieces of text so that other parts
  * of the program can deal with the simple string sections and the generated
- * parts separately. Note that this is a SimpleASTVisitor, so it only
+ * parts separately. Note that this is a SimpleAstVisitor, so it only
  * traverses one level of children rather than automatically recursing. If we
  * find a plural or gender, which requires recursion, we do it with a separate
  * special-purpose visitor.
  */
-class InterpolationVisitor extends SimpleASTVisitor {
-  Message message;
+class InterpolationVisitor extends SimpleAstVisitor {
+  final Message message;
 
   InterpolationVisitor(this.message);
 
@@ -358,15 +360,15 @@ class InterpolationVisitor extends SimpleASTVisitor {
 
 /**
  * A visitor to extract information from Intl.plural/gender sends. Note that
- * this is a SimpleASTVisitor, so it doesn't automatically recurse. So this
+ * this is a SimpleAstVisitor, so it doesn't automatically recurse. So this
  * needs to be called where we expect a plural or gender immediately below.
  */
-class PluralAndGenderVisitor extends SimpleASTVisitor {
+class PluralAndGenderVisitor extends SimpleAstVisitor {
   /**
    * A plural or gender always exists in the context of a parent message,
    * which could in turn also be a plural or gender.
    */
-  ComplexMessage parent;
+  final ComplexMessage parent;
 
   /**
    * The pieces of the message. We are given an initial version of this
@@ -374,10 +376,10 @@ class PluralAndGenderVisitor extends SimpleASTVisitor {
    */
   List pieces;
 
-  PluralAndGenderVisitor(this.pieces, this.parent) : super() {}
-
   /** This will be set to true if we find a plural or gender. */
   bool foundPluralOrGender = false;
+
+  PluralAndGenderVisitor(this.pieces, this.parent) : super();
 
   visitInterpolationExpression(InterpolationExpression node) {
     // TODO(alanknight): Provide better errors for malformed expressions.
@@ -402,8 +404,7 @@ class PluralAndGenderVisitor extends SimpleASTVisitor {
     }
     if (!(node.target is SimpleIdentifier)) return false;
     SimpleIdentifier target = node.target;
-    if (target.token.toString() != "Intl") return false;
-    return true;
+    return target.token.toString() == "Intl";
   }
 
   /**
@@ -412,11 +413,12 @@ class PluralAndGenderVisitor extends SimpleASTVisitor {
    */
   String checkValidity(MethodInvocation node) {
     // TODO(alanknight): Add reasonable validity checks.
+    return null;
   }
 
   /**
    * Create a MainMessage from [node] using the name and
-   * parameters of the last function/method declaration we encountered
+   * parameters of the last function/method declaration we encountered            e
    * and the parameters to the Intl.message call.
    */
   Message messageFromMethodInvocation(MethodInvocation node) {
@@ -438,10 +440,9 @@ class PluralAndGenderVisitor extends SimpleASTVisitor {
         message[key] = interpolation.pieces;
       } on IntlMessageExtractionException catch (e) {
         message = null;
-        var err = new StringBuffer();
-        err.write("Error $e");
-        err.write("Processing <$node>");
-        err.write(_reportErrorLocation(node));
+        var err = new StringBuffer()
+            ..writeAll(["Error ", e, "\nProcessing <", node, ">"])
+            ..write(_reportErrorLocation(node));
         print(err);
         warnings.add(err);
       }

@@ -16,6 +16,8 @@ class MessageLookup extends MessageLookupByLibrary {
   get localeName => 'de_DE';
   static alwaysTranslated() => "Diese Zeichenkette wird immer übersetzt";
 
+  static differentNameSameContents() => "Hallo Welt";
+
   static escapable() => "Escapes: \n\r\f\b\t\v.";
 
   static leadingQuotes() => "\"Sogenannt\"";
@@ -46,7 +48,15 @@ class MessageLookup extends MessageLookupByLibrary {
 
   static outerSelect(currency, amount) => "${Intl.select(currency, {'CDN': '$amount Kanadischen dollar', 'other': '$amount einige Währung oder anderen.', })}";
 
+  static pluralThatFailsParsing(noOfThings) => "${Intl.plural(noOfThings, one: 'eins:', other: '$noOfThings Dinge:')}";
+
   static plurals(num) => "${Intl.plural(num, zero: 'Ist Null Plural?', one: 'Dies ist einmalig', other: 'Dies ist Plural ($num).')}";
+
+  static sameContentsDifferentName() => "Hallo Welt";
+
+  static rentAsVerb() => "mieten";
+
+  static rentToBePaid() => "Miete";
 
   static staticMessage() => "Dies ergibt sich aus einer statischen Methode";
 
@@ -59,6 +69,7 @@ class MessageLookup extends MessageLookupByLibrary {
 
   final messages = const {
     "alwaysTranslated" : alwaysTranslated,
+    "differentNameSameContents" : differentNameSameContents,
     "escapable" : escapable,
     "leadingQuotes" : leadingQuotes,
     "message1" : message1,
@@ -74,7 +85,11 @@ class MessageLookup extends MessageLookupByLibrary {
     "outerGender" : outerGender,
     "outerPlural" : outerPlural,
     "outerSelect" : outerSelect,
+    "pluralThatFailsParsing" : pluralThatFailsParsing,
     "plurals" : plurals,
+    "sameContentsDifferentName" : sameContentsDifferentName,
+    "rentAsVerb" : rentAsVerb,
+    "rentToBePaid" : rentToBePaid,
     "staticMessage" : staticMessage,
     "trickyInterpolation" : trickyInterpolation,
     "types" : types,

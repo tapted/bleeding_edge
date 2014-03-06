@@ -15,7 +15,7 @@ package com.google.dart.tools.search.internal.ui;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import com.google.dart.engine.ast.ASTNode;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.MethodInvocation;
 import com.google.dart.engine.ast.PrefixedIdentifier;
 import com.google.dart.engine.ast.PropertyAccess;
@@ -40,6 +40,7 @@ import com.google.dart.tools.ui.internal.text.editor.DartEditor;
 import com.google.dart.tools.ui.internal.text.editor.DartSelection;
 import com.google.dart.tools.ui.internal.util.ExceptionHandler;
 
+import org.eclipse.core.resources.IProject;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.swt.widgets.Event;
 import org.eclipse.ui.IWorkbenchSite;
@@ -66,6 +67,11 @@ public class FindDeclarationsAction extends AbstractDartSelectionAction {
         @Override
         protected boolean canUseFilterPotential() {
           return false;
+        }
+
+        @Override
+        protected IProject getCurrentProject() {
+          return FindReferencesAction.findCurrentProject();
         }
 
         @Override
@@ -116,12 +122,12 @@ public class FindDeclarationsAction extends AbstractDartSelectionAction {
   }
 
   static boolean isInvocationNameOrPropertyAccessSelected(DartSelection selection) {
-    ASTNode node = getSelectionNode(selection);
+    AstNode node = getSelectionNode(selection);
     if (!(node instanceof SimpleIdentifier)) {
       return false;
     }
     SimpleIdentifier name = (SimpleIdentifier) node;
-    ASTNode parent = name.getParent();
+    AstNode parent = name.getParent();
     // method name
     if (parent instanceof MethodInvocation) {
       MethodInvocation invocation = (MethodInvocation) parent;
@@ -184,7 +190,7 @@ public class FindDeclarationsAction extends AbstractDartSelectionAction {
       doSearch(name);
     }
     // may be identifier
-    ASTNode node = getSelectionNode(selection);
+    AstNode node = getSelectionNode(selection);
     if (node instanceof SimpleIdentifier) {
       String name = ((SimpleIdentifier) node).getName();
       doSearch(name);

@@ -42,6 +42,12 @@ public class AnalysisOptionsImpl implements AnalysisOptions {
   private boolean dart2jsHint = true;
 
   /**
+   * A flag indicating whether errors, warnings and hints should be generated for sources in the
+   * SDK.
+   */
+  private boolean generateSdkErrors = false;
+
+  /**
    * A flag indicating whether analysis is to generate hint results (e.g. type inference based
    * information and pub best practices).
    */
@@ -53,9 +59,14 @@ public class AnalysisOptionsImpl implements AnalysisOptions {
   private boolean incremental = false;
 
   /**
-   * flag indicating whether analysis is to parse comments.
+   * A flag indicating whether analysis is to parse comments.
    */
   private boolean preserveComments = true;
+
+  /**
+   * A flag indicating whether analysis is to analyze Angular.
+   */
+  private boolean analyzeAngular = true;
 
   /**
    * Initialize a newly created set of analysis options to have their default values.
@@ -77,6 +88,11 @@ public class AnalysisOptionsImpl implements AnalysisOptions {
   }
 
   @Override
+  public boolean getAnalyzeAngular() {
+    return analyzeAngular;
+  }
+
+  @Override
   public boolean getAnalyzeFunctionBodies() {
     return analyzeFunctionBodies;
   }
@@ -92,6 +108,11 @@ public class AnalysisOptionsImpl implements AnalysisOptions {
   }
 
   @Override
+  public boolean getGenerateSdkErrors() {
+    return generateSdkErrors;
+  }
+
+  @Override
   public boolean getHint() {
     return hint;
   }
@@ -104,6 +125,15 @@ public class AnalysisOptionsImpl implements AnalysisOptions {
   @Override
   public boolean getPreserveComments() {
     return preserveComments;
+  }
+
+  /**
+   * Set whether analysis is to analyze Angular.
+   * 
+   * @param analyzeAngular {@code true} if analysis is to analyze Angular
+   */
+  public void setAnalyzeAngular(boolean analyzeAngular) {
+    this.analyzeAngular = analyzeAngular;
   }
 
   /**
@@ -133,6 +163,17 @@ public class AnalysisOptionsImpl implements AnalysisOptions {
    */
   public void setDart2jsHint(boolean dart2jsHints) {
     this.dart2jsHint = dart2jsHints;
+  }
+
+  /**
+   * Set whether errors, warnings and hints should be generated for sources in the SDK to match the
+   * given value.
+   * 
+   * @param generate {@code true} if errors, warnings and hints should be generated for sources in
+   *          the SDK
+   */
+  public void setGenerateSdkErrors(boolean generate) {
+    generateSdkErrors = generate;
   }
 
   /**

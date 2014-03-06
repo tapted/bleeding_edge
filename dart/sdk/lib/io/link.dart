@@ -8,7 +8,7 @@ part of dart.io;
  * [Link] objects are references to filesystem links.
  *
  */
-abstract class Link implements FileSystemEntity {
+abstract class Link extends FileSystemEntity {
   /**
    * Creates a Link object.
    */
@@ -143,7 +143,7 @@ abstract class Link implements FileSystemEntity {
 class _Link extends FileSystemEntity implements Link {
   final String path;
 
-  _Link(String this.path) {
+  _Link(this.path) {
     if (path is! String) {
       throw new ArgumentError('${Error.safeToString(path)} '
                               'is not a String');

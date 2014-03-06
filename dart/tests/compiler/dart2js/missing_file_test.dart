@@ -18,9 +18,6 @@ import '../../../sdk/lib/_internal/compiler/compiler.dart'
 
 import 'dart:async';
 
-import '../../../sdk/lib/_internal/compiler/implementation/mirrors/mirrors.dart';
-import '../../../sdk/lib/_internal/compiler/implementation/mirrors/dart2js_mirror.dart';
-
 const MEMORY_SOURCE_FILES = const {
   'main.dart': '''
 
@@ -69,11 +66,11 @@ void runCompiler(Uri main, String expectedMessage) {
 
 void main() {
   runCompiler(Uri.parse('memory:main.dart'),
-              "Error: Can't read 'memory:foo.dart' "
+              "Can't read 'memory:foo.dart' "
               "(Exception: No such file memory:foo.dart).");
   runCompiler(Uri.parse('memory:foo.dart'),
-              "Error: Can't read 'memory:foo.dart' "
+              "Can't read 'memory:foo.dart' "
               "(Exception: No such file memory:foo.dart).");
   runCompiler(Uri.parse('dart:foo'),
-              "Error: Library not found 'dart:foo'.");
+              "Library not found 'dart:foo'.");
 }

@@ -82,7 +82,7 @@ static void ThrowNoSuchMethod(const Instance& receiver,
   // Parameter 4 (named arguments): We omit this parameters since we cannot
   // invoke functions with named parameters reflectively (using mirrors).
   if (!function.IsNull()) {
-    const int total_num_parameters = function.NumParameters();
+    const intptr_t total_num_parameters = function.NumParameters();
     const Array& array = Array::Handle(Array::New(total_num_parameters));
     String& param_name = String::Handle();
     for (int i = 0; i < total_num_parameters; i++) {
@@ -96,22 +96,6 @@ static void ThrowNoSuchMethod(const Instance& receiver,
   UNREACHABLE();
 }
 
-
-DEFINE_NATIVE_ENTRY(Mirrors_isLocalPort, 1) {
-  GET_NON_NULL_NATIVE_ARGUMENT(Instance, port, arguments->NativeArgAt(0));
-
-  // Get the port id from the SendPort instance.
-  const Object& id_obj = Object::Handle(DartLibraryCalls::PortGetId(port));
-  if (id_obj.IsError()) {
-    Exceptions::PropagateError(Error::Cast(id_obj));
-    UNREACHABLE();
-  }
-  ASSERT(id_obj.IsSmi() || id_obj.IsMint());
-  Integer& id = Integer::Handle();
-  id ^= id_obj.raw();
-  Dart_Port port_id = static_cast<Dart_Port>(id.AsInt64Value());
-  return Bool::Get(PortMap::IsLocalPort(port_id)).raw();
-}
 
 static void EnsureConstructorsAreCompiled(const Function& func) {
   // Only generative constructors can have initializing formals.
@@ -333,10 +317,15 @@ static RawInstance* CreateClassMirror(const Class& cls,
                                       const AbstractType& type,
                                       const Bool& is_declaration,
                                       const Instance& owner_mirror) {
+  if (type.IsTypeRef()) {
+    AbstractType& ref_type = AbstractType::Handle(TypeRef::Cast(type).type());
+    ASSERT(!ref_type.IsTypeRef());
+    ASSERT(ref_type.IsCanonical());
+    return CreateClassMirror(cls, ref_type, is_declaration, owner_mirror);
+  }
   ASSERT(!cls.IsDynamicClass() && !cls.IsVoidClass());
   ASSERT(!type.IsNull());
   ASSERT(type.IsFinalized());
-  ASSERT(!type.IsTypeRef());
 
   if (cls.IsSignatureClass()) {
     if (cls.IsCanonicalSignatureClass()) {
@@ -348,10 +337,16 @@ static RawInstance* CreateClassMirror(const Class& cls,
     }
   }
 
+  const Error& error = Error::Handle(cls.EnsureIsFinalized(Isolate::Current()));
+  if (!error.IsNull()) {
+    ThrowInvokeError(error);
+    UNREACHABLE();
+  }
+
   const Bool& is_generic = Bool::Get(cls.NumTypeParameters() != 0);
   const Bool& is_mixin_app_alias = Bool::Get(cls.is_mixin_app_alias());
 
-  const Array& args = Array::Handle(Array::New(7));
+  const Array& args = Array::Handle(Array::New(8));
   args.SetAt(0, MirrorReference::Handle(MirrorReference::New(cls)));
   args.SetAt(1, type);
   // We do not set the names of anonymous mixin applications because the mirrors
@@ -361,9 +356,10 @@ static RawInstance* CreateClassMirror(const Class& cls,
     args.SetAt(2, String::Handle(cls.Name()));
   }
   args.SetAt(3, owner_mirror);
-  args.SetAt(4, is_generic);
-  args.SetAt(5, is_mixin_app_alias);
-  args.SetAt(6, cls.NumTypeParameters() == 0 ? Bool::False() : is_declaration);
+  args.SetAt(4, Bool::Get(cls.is_abstract()));
+  args.SetAt(5, is_generic);
+  args.SetAt(6, is_mixin_app_alias);
+  args.SetAt(7, cls.NumTypeParameters() == 0 ? Bool::False() : is_declaration);
   return CreateMirror(Symbols::_LocalClassMirror(), args);
 }
 
@@ -381,9 +377,14 @@ static RawInstance* CreateLibraryMirror(const Library& lib) {
 
 
 static RawInstance* CreateTypeMirror(const AbstractType& type) {
+  if (type.IsTypeRef()) {
+    AbstractType& ref_type = AbstractType::Handle(TypeRef::Cast(type).type());
+    ASSERT(!ref_type.IsTypeRef());
+    ASSERT(ref_type.IsCanonical());
+    return CreateTypeMirror(ref_type);
+  }
   ASSERT(type.IsFinalized());
   ASSERT(!type.IsMalformed());
-  ASSERT(!type.IsTypeRef());
   if (type.HasResolvedTypeClass()) {
     const Class& cls = Class::Handle(type.type_class());
     // Handle void and dynamic types.
@@ -432,7 +433,7 @@ static RawInstance* CreateMirrorSystem() {
   const GrowableObjectArray& libraries =
       GrowableObjectArray::Handle(isolate->object_store()->libraries());
 
-  const int num_libraries = libraries.Length();
+  const intptr_t num_libraries = libraries.Length();
   const Array& library_mirrors = Array::Handle(Array::New(num_libraries));
   Library& library = Library::Handle();
   Instance& library_mirror = Instance::Handle();
@@ -855,8 +856,8 @@ static RawAbstractType* InstantiateType(const AbstractType& type,
   ASSERT(instantiator.IsFinalized());
   ASSERT(!instantiator.IsMalformed());
 
-  const AbstractTypeArguments& type_args =
-      AbstractTypeArguments::Handle(instantiator.arguments());
+  const TypeArguments& type_args =
+      TypeArguments::Handle(instantiator.arguments());
   Error& bound_error = Error::Handle();
   AbstractType& result =
       AbstractType::Handle(type.InstantiateFrom(type_args, &bound_error));
@@ -1257,8 +1258,7 @@ DEFINE_NATIVE_ENTRY(ClassMirror_type_arguments, 1) {
   const Array& result = Array::Handle(Array::New(num_params));
   AbstractType& arg_type = AbstractType::Handle();
   Instance& type_mirror = Instance::Handle();
-  const AbstractTypeArguments& args =
-      AbstractTypeArguments::Handle(type.arguments());
+  const TypeArguments& args = TypeArguments::Handle(type.arguments());
 
   // Handle argument lists that have been optimized away, because either no
   // arguments have been provided, or all arguments are dynamic. Return a list
@@ -1276,7 +1276,6 @@ DEFINE_NATIVE_ENTRY(ClassMirror_type_arguments, 1) {
   const intptr_t num_inherited_args = args.Length() - num_params;
   for (intptr_t i = 0; i < num_params; i++) {
     arg_type ^= args.TypeAt(i + num_inherited_args);
-    arg_type = arg_type.Canonicalize();  // Necessary for recursive types.
     type_mirror = CreateTypeMirror(arg_type);
     result.SetAt(i, type_mirror);
   }
@@ -1300,6 +1299,33 @@ DEFINE_NATIVE_ENTRY(TypeVariableMirror_upper_bound, 1) {
   return param.bound();
 }
 
+
+DEFINE_NATIVE_ENTRY(Mirrors_evalInLibraryWithPrivateKey, 2) {
+  GET_NON_NULL_NATIVE_ARGUMENT(String, expression, arguments->NativeArgAt(0));
+  GET_NATIVE_ARGUMENT(String, private_key, arguments->NativeArgAt(1));
+
+  const GrowableObjectArray& libraries =
+      GrowableObjectArray::Handle(isolate->object_store()->libraries());
+  const int num_libraries = libraries.Length();
+  Library& each_library = Library::Handle();
+  Library& ctxt_library = Library::Handle();
+  String& library_key = String::Handle();
+
+  if (private_key.IsNull()) {
+    ctxt_library = Library::CoreLibrary();
+  } else {
+    for (int i = 0; i < num_libraries; i++) {
+      each_library ^= libraries.At(i);
+      library_key = each_library.private_key();
+      if (library_key.Equals(private_key)) {
+        ctxt_library = each_library.raw();
+        break;
+      }
+    }
+  }
+  ASSERT(!ctxt_library.IsNull());
+  return ctxt_library.Evaluate(expression);
+}
 
 DEFINE_NATIVE_ENTRY(TypedefMirror_declaration, 1) {
   GET_NON_NULL_NATIVE_ARGUMENT(Type, type, arguments->NativeArgAt(0));
@@ -1455,7 +1481,7 @@ DEFINE_NATIVE_ENTRY(ClosureMirror_find_in_context, 2) {
   const bool callable = closure.IsCallable(&function, NULL);
   ASSERT(callable);
 
-  const int parts_len = lookup_parts.Length();
+  const intptr_t parts_len = lookup_parts.Length();
   // Lookup name is always the last part.
   const String& lookup_name = String::Handle(String::RawCast(
       lookup_parts.At(parts_len - 1)));
@@ -1561,7 +1587,7 @@ DEFINE_NATIVE_ENTRY(ClassMirror_invoke, 5) {
         UNREACHABLE();
       }
       // Make room for the closure (receiver) in the argument list.
-      int numArgs = args.Length();
+      intptr_t numArgs = args.Length();
       const Array& call_args = Array::Handle(Array::New(numArgs + 1));
       Object& temp = Object::Handle();
       for (int i = 0; i < numArgs; i++) {
@@ -1723,8 +1749,7 @@ DEFINE_NATIVE_ENTRY(ClassMirror_invokeConstructor, 5) {
   }
 
   ASSERT(!type.IsNull());
-  AbstractTypeArguments& type_arguments =
-      AbstractTypeArguments::Handle(type.arguments());
+  TypeArguments& type_arguments = TypeArguments::Handle(type.arguments());
   if (!type.IsInstantiated()) {
     // Must have been a declaration type.
     AbstractType& rare_type = AbstractType::Handle(klass.RareType());
@@ -1748,6 +1773,7 @@ DEFINE_NATIVE_ENTRY(ClassMirror_invokeConstructor, 5) {
         ThrowInvokeError(bound_error);
         UNREACHABLE();
       }
+      redirect_type ^= redirect_type.Canonicalize();
     }
 
     type = redirect_type.raw();
@@ -1857,7 +1883,7 @@ DEFINE_NATIVE_ENTRY(LibraryMirror_invoke, 5) {
         UNREACHABLE();
       }
       // Make room for the closure (receiver) in arguments.
-      int numArgs = args.Length();
+      intptr_t numArgs = args.Length();
       const Array& call_args = Array::Handle(Array::New(numArgs + 1));
       Object& temp = Object::Handle();
       for (int i = 0; i < numArgs; i++) {
@@ -2010,8 +2036,21 @@ DEFINE_NATIVE_ENTRY(MethodMirror_return_type, 2) {
 DEFINE_NATIVE_ENTRY(MethodMirror_source, 1) {
   GET_NON_NULL_NATIVE_ARGUMENT(MirrorReference, ref, arguments->NativeArgAt(0));
   const Function& func = Function::Handle(ref.GetFunctionReferent());
+  if (func.IsImplicitConstructor() || func.IsSignatureFunction()) {
+    // We may need to handle more cases when the restrictions on mixins are
+    // relaxed. In particular we might start associating some source with the
+    // forwarding constructors when it becomes possible to specify a particular
+    // constructor from the mixin to use.
+    return Instance::null();
+  }
   const Script& script = Script::Handle(func.script());
   const TokenStream& stream = TokenStream::Handle(script.tokens());
+  if (!script.HasSource()) {
+    // When source is not available, avoid printing the whole token stream and
+    // doing expensive position calculations.
+    return stream.GenerateSource(func.token_pos(), func.end_token_pos() + 1);
+  }
+
   const TokenStream::Iterator tkit(stream, func.end_token_pos());
   intptr_t from_line;
   intptr_t from_col;
@@ -2032,7 +2071,10 @@ DEFINE_NATIVE_ENTRY(MethodMirror_source, 1) {
        String::Handle(func.name()).Equals("<anonymous closure>"))) {  // Case 3.
     last_tok_len = 0;
   }
-  return script.GetSnippet(from_line, from_col, to_line, to_col + last_tok_len);
+  const Instance& result = Instance::Handle(
+      script.GetSnippet(from_line, from_col, to_line, to_col + last_tok_len));
+  ASSERT(!result.IsNull());
+  return result.raw();
 }
 
 
@@ -2067,5 +2109,18 @@ DEFINE_NATIVE_ENTRY(VariableMirror_type, 2) {
   const AbstractType& type = AbstractType::Handle(field.type());
   return InstantiateType(type, instantiator);
 }
+
+DEFINE_NATIVE_ENTRY(TypeMirror_subtypeTest, 2) {
+  GET_NON_NULL_NATIVE_ARGUMENT(AbstractType, a, arguments->NativeArgAt(0));
+  GET_NON_NULL_NATIVE_ARGUMENT(AbstractType, b, arguments->NativeArgAt(1));
+  return Bool::Get(a.IsSubtypeOf(b, NULL)).raw();
+}
+
+DEFINE_NATIVE_ENTRY(TypeMirror_moreSpecificTest, 2) {
+  GET_NON_NULL_NATIVE_ARGUMENT(AbstractType, a, arguments->NativeArgAt(0));
+  GET_NON_NULL_NATIVE_ARGUMENT(AbstractType, b, arguments->NativeArgAt(1));
+  return Bool::Get(a.IsMoreSpecificThan(b, NULL)).raw();
+}
+
 
 }  // namespace dart

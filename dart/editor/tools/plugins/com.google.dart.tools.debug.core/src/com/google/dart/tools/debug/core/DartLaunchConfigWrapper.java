@@ -27,6 +27,7 @@ import org.eclipse.debug.core.ILaunchConfigurationWorkingCopy;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +62,7 @@ public class DartLaunchConfigWrapper {
   private static final String WORKING_DIRECTORY = "workingDirectory";
 
   private static final String LAST_LAUNCH_TIME = "launchTime";
+  private static final String VM_ARGUMENTS = "vmArguments";
 
   private ILaunchConfiguration launchConfig;
 
@@ -136,8 +138,12 @@ public class DartLaunchConfigWrapper {
   }
 
   public boolean getCheckedMode() {
+    return getCheckedMode(true);
+  }
+
+  public boolean getCheckedMode(boolean defaultValue) {
     try {
-      return launchConfig.getAttribute(VM_CHECKED_MODE, true);
+      return launchConfig.getAttribute(VM_CHECKED_MODE, defaultValue);
     } catch (CoreException e) {
       DartDebugCorePlugin.logError(e);
 
@@ -359,10 +365,25 @@ public class DartLaunchConfigWrapper {
   }
 
   /**
+   * @return the arguments string for the Dart VM
+   */
+  public String getVmArguments() {
+    try {
+      return launchConfig.getAttribute(VM_ARGUMENTS, "");
+    } catch (CoreException e) {
+      DartDebugCorePlugin.logError(e);
+
+      return "";
+    }
+  }
+
+  /**
    * @return the arguments for the Dart VM
    */
   public String[] getVmArgumentsAsArray() {
+
     List<String> args = new ArrayList<String>();
+    args.addAll(Arrays.asList(StringUtilities.parseArgumentString(getVmArguments())));
 
     if (getCheckedMode()) {
       args.add("--enable-checked-mode");
@@ -492,6 +513,13 @@ public class DartLaunchConfigWrapper {
 
   public void setUseWebComponents(boolean value) {
     getWorkingCopy().setAttribute(DARTIUM_USE_WEB_COMPONENTS, value);
+  }
+
+  /**
+   * @see #getVmArguments()
+   */
+  public void setVmArguments(String value) {
+    getWorkingCopy().setAttribute(VM_ARGUMENTS, value);
   }
 
   public void setWorkingDirectory(String value) {

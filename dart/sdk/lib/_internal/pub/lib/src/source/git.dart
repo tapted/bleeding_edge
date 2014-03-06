@@ -49,7 +49,7 @@ class GitSource extends Source {
         // Check the url points to github, otherwise give up.
         if (gitUri.host != "github.com") {
           throw new Exception(
-              "Cannot get '${id.name}' from Git (${_getUrl(id)}).\n"
+              "Cannot get ${id.name} from Git (${_getUrl(id)}).\n"
               "Please ensure Git is correctly installed.");
         }
 
@@ -146,7 +146,7 @@ class GitSource extends Source {
   /// future that completes once this is finished and throws an exception if it
   /// fails.
   Future _ensureRepoCache(PackageId id) {
-    return new Future.sync(() {
+    return syncFuture(() {
       var path = _repoCachePath(id);
       if (!entryExists(path)) return _clone(_getUrl(id), path, mirror: true);
       return git.run(["fetch"], workingDir: path).then((result) => null);
@@ -155,8 +155,9 @@ class GitSource extends Source {
 
   /// Returns a future that completes to the revision hash of [id].
   Future<String> _revisionAt(PackageId id) {
-    return git.run(["rev-parse", _getEffectiveRef(id)],
-        workingDir: _repoCachePath(id)).then((result) => result[0]);
+    return _ensureRepoCache(id).then((_) =>
+        git.run(["rev-parse", _getEffectiveRef(id)],
+            workingDir: _repoCachePath(id)).then((result) => result[0]));
   }
 
   /// Clones the repo at the URI [from] to the path [to] on the local
@@ -166,7 +167,7 @@ class GitSource extends Source {
   /// the working tree, but instead makes the repository a local mirror of the
   /// remote repository. See the manpage for `git clone` for more information.
   Future _clone(String from, String to, {bool mirror: false}) {
-    return new Future.sync(() {
+    return syncFuture(() {
       // Git on Windows does not seem to automatically create the destination
       // directory.
       ensureDir(to);

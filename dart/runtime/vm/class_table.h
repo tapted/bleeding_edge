@@ -11,9 +11,86 @@
 namespace dart {
 
 class Class;
+class ClassStats;
+class JSONArray;
+class JSONStream;
 class ObjectPointerVisitor;
 class RawClass;
-class JSONStream;
+
+template<typename T>
+class AllocStats {
+ public:
+  T new_count;
+  T new_size;
+  T old_count;
+  T old_size;
+
+  void ResetNew() {
+    new_count = 0;
+    new_size = 0;
+  }
+
+  void AddNew(T size) {
+    new_count++;
+    new_size += size;
+  }
+
+  void ResetOld() {
+    old_count = 0;
+    old_size = 0;
+  }
+
+  void AddOld(T size) {
+    old_count++;
+    old_size += size;
+  }
+
+  void Reset() {
+    new_count = 0;
+    new_size = 0;
+    old_count = 0;
+    old_size = 0;
+  }
+};
+
+class ClassHeapStats {
+ public:
+  // Snapshot before GC.
+  AllocStats<intptr_t> pre_gc;
+  // Live after GC.
+  AllocStats<intptr_t> post_gc;
+  // Allocations since the last GC.
+  AllocStats<intptr_t> recent;
+  // Accumulated (across GC) allocations .
+  AllocStats<int64_t> accumulated;
+  // Snapshot of recent at the time of the last reset.
+  AllocStats<intptr_t> last_reset;
+
+  static intptr_t allocated_since_gc_new_space_offset() {
+    return OFFSET_OF(ClassHeapStats, recent) +
+           OFFSET_OF(AllocStats<intptr_t>, new_count);
+  }
+  static intptr_t allocated_since_gc_old_space_offset() {
+    return OFFSET_OF(ClassHeapStats, recent) +
+           OFFSET_OF(AllocStats<intptr_t>, old_count);
+  }
+  static intptr_t allocated_size_since_gc_new_space_offset() {
+    return OFFSET_OF(ClassHeapStats, recent) +
+           OFFSET_OF(AllocStats<intptr_t>, new_size);
+  }
+  static intptr_t allocated_size_since_gc_old_space_offset() {
+    return OFFSET_OF(ClassHeapStats, recent) +
+           OFFSET_OF(AllocStats<intptr_t>, old_size);
+  }
+
+  void Initialize();
+  void ResetAtNewGC();
+  void ResetAtOldGC();
+  void ResetAccumulator();
+  void UpdateSize(intptr_t instance_size);
+  void PrintTOJSONArray(const Class& cls, JSONArray* array);
+};
+
 
 class ClassTable {
  public:
@@ -38,7 +115,11 @@ class ClassTable {
 
   void Register(const Class& cls);
 
+  void RegisterAt(intptr_t index, const Class& cls);
+
   void VisitObjectPointers(ObjectPointerVisitor* visitor);
+
+  void Validate();
 
   void Print();
 
@@ -48,14 +129,49 @@ class ClassTable {
     return OFFSET_OF(ClassTable, table_);
   }
 
+  // Called whenever a class is allocated in the runtime.
+  void UpdateAllocatedNew(intptr_t cid, intptr_t size);
+  void UpdateAllocatedOld(intptr_t cid, intptr_t size);
+
+  // Called whenever a old GC occurs.
+  void ResetCountersOld();
+  // Called whenever a new GC occurs.
+  void ResetCountersNew();
+
+  // Used by the generated code.
+  uword PredefinedClassHeapStatsTableAddress() {
+    return reinterpret_cast<uword>(predefined_class_heap_stats_table_);
+  }
+
+  // Used by generated code.
+  uword ClassStatsTableAddress() {
+    return reinterpret_cast<uword>(&class_heap_stats_table_);
+  }
+
+
+  void AllocationProfilePrintToJSONStream(JSONStream* stream);
+  void ResetAllocationAccumulators();
+
  private:
+  friend class MarkingVisitor;
+  friend class ScavengerVisitor;
+  friend class ClassHeapStatsTestHelper;
   static const int initial_capacity_ = 512;
   static const int capacity_increment_ = 256;
+
+  static bool ShouldUpdateSizeForClassId(intptr_t cid);
 
   intptr_t top_;
   intptr_t capacity_;
 
   RawClass** table_;
+  ClassHeapStats* class_heap_stats_table_;
+
+  ClassHeapStats* predefined_class_heap_stats_table_;
+
+  ClassHeapStats* StatsAt(intptr_t cid);
+  void UpdateLiveOld(intptr_t cid, intptr_t size);
+  void UpdateLiveNew(intptr_t cid, intptr_t size);
 
   DISALLOW_COPY_AND_ASSIGN(ClassTable);
 };

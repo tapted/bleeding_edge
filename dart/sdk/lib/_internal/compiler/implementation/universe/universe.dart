@@ -31,6 +31,8 @@ class Universe {
    */
   final Set<FunctionElement> staticFunctionsNeedingGetter =
       new Set<FunctionElement>();
+  final Set<FunctionElement> methodsNeedingSuperGetter =
+      new Set<FunctionElement>();
   final Map<String, Set<Selector>> invokedNames =
       new Map<String, Set<Selector>>();
   final Map<String, Set<Selector>> invokedGetters =
@@ -334,8 +336,10 @@ class Selector {
     }
     if (isGetter()) return true;
     if (isSetter()) return false;
+    return signatureApplies(element, compiler);
+  }
 
-    FunctionElement function = element;
+  bool signatureApplies(FunctionElement function, Compiler compiler) {
     FunctionSignature parameters = function.computeSignature(compiler);
     if (argumentCount > parameters.parameterCount) return false;
     int requiredParameterCount = parameters.requiredParameterCount;

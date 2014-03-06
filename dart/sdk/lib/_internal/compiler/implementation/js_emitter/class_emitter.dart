@@ -36,7 +36,7 @@ class ClassEmitter extends CodeEmitterHelper {
       task.needsMixinSupport = true;
     }
 
-    ClassBuilder builder = new ClassBuilder();
+    ClassBuilder builder = new ClassBuilder(namer);
     emitClassConstructor(classElement, builder, runtimeName,
                          onlyForRti: onlyForRti);
     emitFields(classElement, builder, superName, onlyForRti: onlyForRti);
@@ -97,14 +97,9 @@ class ClassEmitter extends CodeEmitterHelper {
                     bool emitStatics: false,
                     bool onlyForRti: false }) {
     assert(!emitStatics || !onlyForRti);
-    bool isClass = false;
-    bool isLibrary = false;
-    if (element.isClass()) {
-      isClass = true;
-    } else if (element.isLibrary()) {
-      isLibrary = false;
+    if (element.isLibrary()) {
       assert(invariant(element, emitStatics));
-    } else {
+    } else if (!element.isClass()) {
       throw new SpannableAssertionFailure(
           element, 'Must be a ClassElement or a LibraryElement');
     }
@@ -160,6 +155,14 @@ class ClassEmitter extends CodeEmitterHelper {
             }
 
             int getterCode = 0;
+            if (needsAccessor && backend.fieldHasInterceptedGetter(field)) {
+              task.interceptorEmitter.interceptorInvocationNames.add(
+                  namer.getterName(field));
+            }
+            if (needsAccessor && backend.fieldHasInterceptedGetter(field)) {
+              task.interceptorEmitter.interceptorInvocationNames.add(
+                  namer.setterName(field));
+            }
             if (needsGetter) {
               if (field.isInstanceMember()) {
                 // 01:  function() { return this.field; }
@@ -201,7 +204,8 @@ class ClassEmitter extends CodeEmitterHelper {
             int code = getterCode + (setterCode << 2);
             if (code == 0) {
               compiler.reportInternalError(
-                  field, 'Internal error: code is 0 ($element/$field)');
+                  field, MessageKind.GENERIC,
+                  {'text': 'Field code is 0 ($element/$field)'});
             } else {
               fieldCode = FIELD_CODE_CHARACTERS[code - FIRST_FIELD_CODE];
             }
@@ -311,16 +315,16 @@ class ClassEmitter extends CodeEmitterHelper {
     }
 
     List<jsAst.Property> statics = new List<jsAst.Property>();
-    ClassBuilder staticsBuilder = new ClassBuilder();
+    ClassBuilder staticsBuilder = new ClassBuilder(namer);
     if (emitFields(classElement, staticsBuilder, null, emitStatics: true)) {
       statics.add(staticsBuilder.toObjectInitializer().properties.single);
     }
 
-    Map<String, ClassBuilder> classPropertyLists =
-        task.elementDecriptors.remove(classElement);
+    Map<OutputUnit, ClassBuilder> classPropertyLists =
+        task.elementDescriptors.remove(classElement);
     if (classPropertyLists != null) {
       for (ClassBuilder classProperties in classPropertyLists.values) {
-        // TODO(ahe): What about deferred?
+        // TODO(sigurdm): What about deferred?
         if (classProperties != null) {
           statics.addAll(classProperties.properties);
         }
@@ -339,7 +343,7 @@ class ClassEmitter extends CodeEmitterHelper {
       if (!backend.isNeededForReflection(classElement)) {
         enclosingBuilder.addProperty("+$reflectionName", js.number(0));
       } else {
-        List<int> types = new List<int>();
+        List<int> types = <int>[];
         if (classElement.supertype != null) {
           types.add(task.metadataEmitter.reifyType(classElement.supertype));
         }
@@ -347,8 +351,7 @@ class ClassEmitter extends CodeEmitterHelper {
           types.add(task.metadataEmitter.reifyType(interface));
         }
         enclosingBuilder.addProperty("+$reflectionName",
-            new jsAst.ArrayInitializer.from(types.map((typeNumber) =>
-                js.number(typeNumber))));
+            new jsAst.ArrayInitializer.from(types.map(js.number)));
       }
     }
   }

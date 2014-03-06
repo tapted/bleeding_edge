@@ -263,10 +263,11 @@ abstract class RawSecureSocket implements RawSocket {
    * connection is prepared for TLS handshake.
    *
    * If the [socket] already has a subscription, pass the existing
-   * subscription in the [subscription] parameter. The secure socket
-   * will take over the subscription and process any subsequent
-   * events. In most cases calling `pause` on this subscription before
-   * starting TLS handshake is the right thing to do.
+   * subscription in the [subscription] parameter. The [secure]
+   * operation will take over the subscription by replacing the
+   * handlers with it own secure processing. The caller must not touch
+   * this subscription anymore. Passing a paused subscription is an
+   * error.
    *
    * If the [host] argument is passed it will be used as the host name
    * for the TLS handshake. If [host] is not passed the host name from
@@ -310,9 +311,11 @@ abstract class RawSecureSocket implements RawSocket {
    * connection is going to start the TLS handshake.
    *
    * If the [socket] already has a subscription, pass the existing
-   * subscription in the [subscription] parameter. The secure socket
-   * will take over the subscription and process any subsequent
-   * events.
+   * subscription in the [subscription] parameter. The [secureServer]
+   * operation will take over the subscription by replacing the
+   * handlers with it own secure processing. The caller must not touch
+   * this subscription anymore. Passing a paused subscription is an
+   * error.
    *
    * If some of the data of the TLS handshake has already been read
    * from the socket this data can be passed in the [bufferedData]
@@ -491,17 +494,17 @@ class _RawSecureSocket extends Stream<RawSocketEvent>
   }
 
   _RawSecureSocket(
-      InternetAddress this.address,
+      this.address,
       int requestedPort,
-      String this.certificateName,
-      bool this.is_server,
+      this.certificateName,
+      this.is_server,
       RawSocket socket,
-      StreamSubscription this._socketSubscription,
-      List<int> this._bufferedData,
-      bool this.requestClientCertificate,
-      bool this.requireClientCertificate,
-      bool this.sendClientCertificate,
-      bool this.onBadCertificate(X509Certificate certificate)) {
+      this._socketSubscription,
+      this._bufferedData,
+      this.requestClientCertificate,
+      this.requireClientCertificate,
+      this.sendClientCertificate,
+      this.onBadCertificate(X509Certificate certificate)) {
     _controller = new StreamController<RawSocketEvent>(
         sync: true,
         onListen: _onSubscriptionStateChange,
@@ -535,12 +538,16 @@ class _RawSecureSocket extends Stream<RawSocketEvent>
                                              onError: _reportError,
                                              onDone: _doneHandler);
       } else {
-        _socketSubscription.onData(_eventDispatcher);
-        _socketSubscription.onError(_reportError);
-        _socketSubscription.onDone(_doneHandler);
+        if (_socketSubscription.isPaused) {
+          throw new StateError("Subscription passed to TLS upgrade is paused");
+        }
+        _socketSubscription
+            ..onData(_eventDispatcher)
+            ..onError(_reportError)
+            ..onDone(_doneHandler);
       }
       _secureFilter.connect(address.host,
-                            (address as dynamic)._sockaddr_storage,
+                            (address as dynamic)._in_addr,
                             port,
                             is_server,
                             certificateName,
@@ -608,8 +615,8 @@ class _RawSecureSocket extends Stream<RawSocketEvent>
   int get remotePort => _socket.remotePort;
 
   int available() {
-    if (_status != CONNECTED) return 0;
-    return _secureFilter.buffers[READ_PLAINTEXT].length;
+    return _status != CONNECTED ? 0
+                                : _secureFilter.buffers[READ_PLAINTEXT].length;
   }
 
   Future<RawSecureSocket> close() {
@@ -888,6 +895,7 @@ class _RawSecureSocket extends Stream<RawSocketEvent>
           _secureFilter = null;
           return;
         }
+        _socket.readEventsEnabled = true;
         if (_filterStatus.writeEmpty && _closedWrite && !_socketClosedWrite) {
           // Checks for and handles all cases of partially closed sockets.
           shutdown(SocketDirection.SEND);
@@ -941,6 +949,8 @@ class _RawSecureSocket extends Stream<RawSocketEvent>
     var buffer = _secureFilter.buffers[READ_ENCRYPTED];
     if (buffer.writeFromSource(_readSocketOrBufferedData) > 0) {
       _filterStatus.readEmpty = false;
+    } else {
+      _socket.readEventsEnabled = false;
     }
   }
 
@@ -966,7 +976,8 @@ class _RawSecureSocket extends Stream<RawSocketEvent>
 
   _sendReadEvent() {
     _pendingReadEvent = false;
-    if (_readEventsEnabled &&
+    if (_status != CLOSED &&
+        _readEventsEnabled &&
         _pauseCount == 0 &&
         _secureFilter != null &&
         !_secureFilter.buffers[READ_PLAINTEXT].isEmpty) {
@@ -1068,9 +1079,13 @@ class _RawSecureSocket extends Stream<RawSocketEvent>
  * and one writing.  All updates to start and end are done by Dart code.
  */
 class _ExternalBuffer {
+  List data;  // This will be a ExternalByteArray, backed by C allocated data.
+  int start;
+  int end;
+  final size;
+
   _ExternalBuffer(this.size) {
-    start = size~/2;
-    end = size~/2;
+    start = end = size ~/ 2;
   }
 
   void advanceStart(int bytes) {
@@ -1095,20 +1110,14 @@ class _ExternalBuffer {
 
   bool get isEmpty => end == start;
 
-  int get length {
-    if (start > end) return size + end - start;
-    return end - start;
-  }
+  int get length =>
+      start > end ? size + end - start : end - start;
 
-  int get linearLength {
-    if (start > end) return size - start;
-    return end - start;
-  }
+  int get linearLength =>
+      start > end ? size - start : end - start;
 
-  int get free {
-    if (start > end) return start - end - 1;
-    return size + start - end - 1;
-  }
+  int get free =>
+      start > end ? start - end - 1 : size + start - end - 1;
 
   int get linearFree {
     if (start > end) return start - end - 1;
@@ -1162,7 +1171,7 @@ class _ExternalBuffer {
     while (toWrite > 0) {
       // Source returns at most toWrite bytes, and it returns null when empty.
       var inputData = getData(toWrite);
-      if (inputData == null) break;
+      if (inputData == null || inputData.length == 0) break;
       var len = inputData.length;
       data.setRange(end, end + len, inputData);
       advanceEnd(len);
@@ -1185,11 +1194,6 @@ class _ExternalBuffer {
       }
     }
   }
-
-  List data;  // This will be a ExternalByteArray, backed by C allocated data.
-  int start;
-  int end;
-  final size;
 }
 
 
@@ -1232,9 +1236,7 @@ class TlsException implements IOException {
                       OSError osError = null])
      : this._("TlsException", message, osError);
 
-  const TlsException._(String this.type,
-                       String this.message,
-                       OSError this.osError);
+  const TlsException._(this.type, this.message, this.osError);
 
   String toString() {
     StringBuffer sb = new StringBuffer();

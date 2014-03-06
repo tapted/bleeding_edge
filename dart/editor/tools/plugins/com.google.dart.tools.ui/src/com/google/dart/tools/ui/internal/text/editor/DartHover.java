@@ -15,15 +15,18 @@
 package com.google.dart.tools.ui.internal.text.editor;
 
 import com.google.common.collect.Lists;
-import com.google.dart.engine.ast.ASTNode;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.Expression;
 import com.google.dart.engine.ast.MethodDeclaration;
 import com.google.dart.engine.ast.visitor.ElementLocator;
+import com.google.dart.engine.element.CompilationUnitElement;
 import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ExecutableElement;
+import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.ParameterElement;
 import com.google.dart.engine.element.PropertyAccessorElement;
 import com.google.dart.engine.type.Type;
+import com.google.dart.engine.utilities.general.StringUtilities;
 import com.google.dart.engine.utilities.source.SourceRange;
 import com.google.dart.tools.core.utilities.dartdoc.DartDocUtilities;
 import com.google.dart.tools.ui.internal.actions.NewSelectionConverter;
@@ -62,7 +65,6 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
-import org.eclipse.swt.widgets.Text;
 import org.eclipse.ui.forms.widgets.FormToolkit;
 import org.eclipse.ui.forms.widgets.Section;
 import org.eclipse.ui.texteditor.ITextEditor;
@@ -74,15 +76,18 @@ import java.util.Iterator;
 import java.util.List;
 
 public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExtension2 {
+
   private static class AnnotationsSection {
+    private final FormToolkit toolkit;
     private final Section section;
     private final Composite container;
 
     public AnnotationsSection(Composite parent, String title) {
-      this.section = formToolkit.createSection(parent, Section.TITLE_BAR);
+      toolkit = createToolkit(parent.getDisplay());
+      this.section = toolkit.createSection(parent, Section.TITLE_BAR);
       GridDataFactory.create(section).grabHorizontal().fill();
       section.setText(title);
-      container = formToolkit.createComposite(section);
+      container = toolkit.createComposite(section);
       GridLayoutFactory.create(container).columns(2).spacingHorizontal(0);
       section.setClient(container);
     }
@@ -98,7 +103,7 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
           IMarker marker = ((MarkerAnnotation) annotation).getMarker();
           imageLabel.setImage(ProblemsView.LABEL_PROVIDER.getImage(marker));
         }
-        formToolkit.createLabel(container, annotation.getText());
+        toolkit.createLabel(container, annotation.getText());
       }
     }
   }
@@ -129,6 +134,7 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
 
     private Composite container;
     private TextSection elementSection;
+    private TextSection librarySection;
     private AnnotationsSection problemsSection;
     private DocSection docSection;
     private TextSection staticTypeSection;
@@ -137,6 +143,7 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
 
     public DartInformationControl(Shell parentShell) {
       super(parentShell, false);
+      toolkit = createToolkit(parentShell.getDisplay());
       create();
     }
 
@@ -166,6 +173,7 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
       hoverInfo = null;
       // Hide all sections.
       setGridVisible(elementSection, false);
+      setGridVisible(librarySection, false);
       setGridVisible(problemsSection, false);
       setGridVisible(docSection, false);
       setGridVisible(staticTypeSection, false);
@@ -176,7 +184,7 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
         return;
       }
       hoverInfo = (HoverInfo) input;
-      ASTNode node = hoverInfo.node;
+      AstNode node = hoverInfo.node;
       Element element = hoverInfo.element;
       // Element
       if (element != null) {
@@ -192,7 +200,21 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
           String text = element.toString();
           text = WordUtils.wrap(text, 100);
           setGridVisible(elementSection, true);
+          elementSection.setTitle(WordUtils.capitalize(element.getKind().getDisplayName()));
           elementSection.setText(text);
+        }
+        // show Library
+        {
+          LibraryElement library = element.getLibrary();
+          CompilationUnitElement unit = element.getAncestor(CompilationUnitElement.class);
+          if (library != null && unit != null) {
+            String unitName = unit.getSource().getFullName();
+            String libraryName = library.getDisplayName();
+            String text = StringUtilities.abbreviateLeft(libraryName, 25) + " | "
+                + StringUtilities.abbreviateLeft(unitName, 35);
+            setGridVisible(librarySection, true);
+            librarySection.setText(text);
+          }
         }
         // Dart Doc
         try {
@@ -208,16 +230,9 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
       // types
       if (node instanceof Expression) {
         Expression expression = (Expression) node;
-        // show node if no Element
-        if (element == null) {
-          String text = node.toSource();
-          text = WordUtils.wrap(text, 100);
-          setGridVisible(elementSection, true);
-          elementSection.setText(text);
-        }
         // parameter
         {
-          ASTNode n = expression;
+          AstNode n = expression;
           while (n != null) {
             if (n instanceof Expression) {
               ParameterElement parameterElement = ((Expression) n).getBestParameterElement();
@@ -264,9 +279,10 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
 
     @Override
     protected void createContent(Composite parent) {
-      container = formToolkit.createComposite(parent);
+      container = toolkit.createComposite(parent);
       GridLayoutFactory.create(container);
       elementSection = new TextSection(container, "Element");
+      librarySection = new TextSection(container, "Library");
       problemsSection = new AnnotationsSection(container, "Problems");
       docSection = new DocSection(container, "Documentation");
       staticTypeSection = new TextSection(container, "Static type");
@@ -284,23 +300,28 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
   }
 
   private static class DocSection {
+    private final FormToolkit toolkit;
     private final Section section;
     private final StyledText textWidget;
 
     public DocSection(Composite parent, String title) {
-      this.section = formToolkit.createSection(parent, Section.TITLE_BAR);
+      toolkit = createToolkit(parent.getDisplay());
+      this.section = toolkit.createSection(parent, Section.TITLE_BAR);
       GridDataFactory.create(section).grab().fill();
       section.setText(title);
       // create Composite to draw flat border
-      Composite body = formToolkit.createComposite(section);
+      Composite body = toolkit.createComposite(section);
       GridLayoutFactory.create(body).margins(2);
       section.setClient(body);
       // create StyledText widget
       textWidget = new StyledText(body, SWT.H_SCROLL | SWT.V_SCROLL);
       textWidget.setMargins(5, 5, 5, 5);
+      // We do this to prevent line spacing changing.
+      // See https://code.google.com/p/dart/issues/detail?id=15899
+      textWidget.setLineSpacing(1);
       // configure flat border
       textWidget.setData(FormToolkit.KEY_DRAW_BORDER, FormToolkit.TEXT_BORDER);
-      formToolkit.paintBordersFor(body);
+      toolkit.paintBordersFor(body);
     }
 
     public void setDoc(String doc) {
@@ -318,11 +339,11 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
   }
 
   private static class HoverInfo {
-    ASTNode node;
+    AstNode node;
     Element element;
     List<Annotation> annotations;
 
-    public HoverInfo(ASTNode node, Element element, List<Annotation> annotations) {
+    public HoverInfo(AstNode node, Element element, List<Annotation> annotations) {
       this.node = node;
       this.element = element;
       this.annotations = annotations;
@@ -330,15 +351,17 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
   }
 
   private static class TextSection {
+    private final FormToolkit toolkit;
     private final Section section;
-    private final Text textWidget;
+    private final StyledText textWidget;
 
     public TextSection(Composite parent, String title) {
-      this.section = formToolkit.createSection(parent, Section.TITLE_BAR);
+      toolkit = createToolkit(parent.getDisplay());
+      this.section = toolkit.createSection(parent, Section.TITLE_BAR);
       GridDataFactory.create(section).grabHorizontal().fill();
       section.setText(title);
-      textWidget = new Text(section, SWT.MULTI | SWT.READ_ONLY | SWT.WRAP);
-      formToolkit.adapt(textWidget, false, false);
+      textWidget = new StyledText(section, SWT.MULTI | SWT.READ_ONLY | SWT.WRAP);
+      toolkit.adapt(textWidget, false, false);
       section.setClient(textWidget);
     }
 
@@ -346,17 +369,29 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
       textWidget.setText(text);
       textWidget.setSelection(0);
     }
+
+    public void setTitle(String title) {
+      section.setText(title);
+    }
   }
 
   private static final List<ITextHover> hoverContributors = Lists.newArrayList();
 
-  private static final FormToolkit formToolkit = new FormToolkit(Display.getDefault());
+  private static FormToolkit toolkit;
 
   /**
    * Register a {@link ITextHover} tooltip contributor.
    */
   public static void addContributer(ITextHover hoverContributor) {
     hoverContributors.add(hoverContributor);
+  }
+
+  private static FormToolkit createToolkit(Display display) {
+    if (toolkit == null) {
+      toolkit = new FormToolkit(display);
+    }
+
+    return toolkit;
   }
 
   /**
@@ -456,14 +491,15 @@ public class DartHover implements ITextHover, ITextHoverExtension, ITextHoverExt
     if (editor != null) {
       List<Annotation> annotations = getAnnotations(hoverRegion);
       // prepare node
-      ASTNode node = NewSelectionConverter.getNodeAtOffset(editor, hoverRegion.getOffset());
+      int offset = hoverRegion.getOffset();
+      AstNode node = NewSelectionConverter.getNodeAtOffset(editor, offset);
       if (node instanceof MethodDeclaration) {
         MethodDeclaration method = (MethodDeclaration) node;
         node = method.getName();
       }
       // show Expression
       if (node instanceof Expression) {
-        Element element = ElementLocator.locate(node);
+        Element element = ElementLocator.locateWithOffset(node, offset);
         return new HoverInfo(node, element, annotations);
       }
       // always show annotations, enen if no node
