@@ -18,6 +18,7 @@ import '../source.dart';
 import '../utils.dart';
 import '../version.dart';
 import '../wrap/http_wrap.dart';
+import '../wrap/io_wrap.dart';
 
 /// A package source that gets packages from a package hosting site that uses
 /// the same API as pub.dartlang.org.

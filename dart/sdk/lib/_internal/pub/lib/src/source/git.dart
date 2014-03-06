@@ -89,12 +89,12 @@ class GitSource extends Source {
   }
 
   /// Returns the path to the revision-specific cache of [id].
-  Future<String> systemCacheDirectory(PackageId id) {
+  Future<PathRep> systemCacheDirectory(PackageId id) {
     return new Future.value(systemCacheRoot.join('git', id.name));
   }
 
   /// Ensures [description] is a Git URL.
-  dynamic parseDescription(String containingPath, description,
+  dynamic parseDescription(PathRep containingPath, description,
                            {bool fromLockFile: false}) {
     // TODO(rnystrom): Handle git URLs that are relative file paths (#8570).
     // TODO(rnystrom): Now that this function can modify the description, it

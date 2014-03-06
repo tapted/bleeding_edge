@@ -144,7 +144,7 @@ abstract class Source {
   ///
   /// This doesn't need to be implemented if [downloadToSystemCache] is
   /// implemented.
-  Future<bool> get(PackageId id, String path) {
+  Future<bool> get(PackageId id, PathRep path) {
     throw new UnimplementedError("Either get() or downloadToSystemCache() must "
         "be implemented for source $name.");
   }
@@ -307,7 +307,7 @@ abstract class Source {
   Future<PackageId> resolveId(PackageId id) => new Future.value(id);
 
   /// Returns the [Package]s that have been downloaded to the system cache.
-  List<Package> getCachedPackages() {
+  Future<List<Package>> getCachedPackages() {
     if (shouldCache) {
       throw new UnimplementedError("Source $name must implement this.");
     }
