@@ -19,12 +19,13 @@ import com.google.dart.engine.html.ast.HtmlScriptTagNode;
 import com.google.dart.engine.html.ast.HtmlUnit;
 import com.google.dart.engine.html.ast.XmlAttributeNode;
 import com.google.dart.engine.html.ast.visitor.RecursiveXmlVisitor;
-import com.google.dart.engine.html.parser.HtmlParseResult;
 import com.google.dart.engine.html.parser.HtmlParser;
-import com.google.dart.engine.html.scanner.HtmlScanResult;
-import com.google.dart.engine.html.scanner.HtmlScanner;
+import com.google.dart.engine.html.scanner.AbstractScanner;
+import com.google.dart.engine.html.scanner.StringScanner;
+import com.google.dart.engine.html.scanner.Token;
 import com.google.dart.engine.internal.context.InternalAnalysisContext;
 import com.google.dart.engine.internal.context.RecordingErrorListener;
+import com.google.dart.engine.internal.context.TimestampedData;
 import com.google.dart.engine.source.Source;
 import com.google.dart.engine.utilities.source.LineInfo;
 
@@ -42,9 +43,14 @@ public class ParseHtmlTask extends AnalysisTask {
   private Source source;
 
   /**
+   * The contents of the source.
+   */
+  private CharSequence content;
+
+  /**
    * The time at which the contents of the source were last modified.
    */
-  private long modificationTime = -1L;
+  private long modificationTime;
 
   /**
    * The line information that was produced.
@@ -72,30 +78,23 @@ public class ParseHtmlTask extends AnalysisTask {
   private static final String ATTRIBUTE_SRC = "src";
 
   /**
-   * The name of the 'type' attribute in a HTML tag.
-   */
-  private static final String ATTRIBUTE_TYPE = "type";
-
-  /**
    * The name of the 'script' tag in an HTML file.
    */
   private static final String TAG_SCRIPT = "script";
-
-  /**
-   * The value of the 'type' attribute of a 'script' tag that indicates that the script is written
-   * in Dart.
-   */
-  private static final String TYPE_DART = "application/dart";
 
   /**
    * Initialize a newly created task to perform analysis within the given context.
    * 
    * @param context the context in which the task is to be performed
    * @param source the source to be parsed
+   * @param contentData the time-stamped contents of the source
    */
-  public ParseHtmlTask(InternalAnalysisContext context, Source source) {
+  public ParseHtmlTask(InternalAnalysisContext context, Source source,
+      TimestampedData<CharSequence> contentData) {
     super(context);
     this.source = source;
+    content = contentData.getData();
+    modificationTime = contentData.getModificationTime();
   }
 
   @Override
@@ -170,20 +169,18 @@ public class ParseHtmlTask extends AnalysisTask {
 
   @Override
   protected void internalPerform() throws AnalysisException {
-    HtmlScanner scanner = new HtmlScanner(source);
     try {
-      source.getContents(scanner);
+      AbstractScanner scanner = new StringScanner(source, content);
+      scanner.setPassThroughElements(new String[] {TAG_SCRIPT});
+      Token token = scanner.tokenize();
+      lineInfo = new LineInfo(scanner.getLineStarts());
+      RecordingErrorListener errorListener = new RecordingErrorListener();
+      unit = new HtmlParser(source, errorListener).parse(token, lineInfo);
+      errors = errorListener.getErrors(source);
+      referencedLibraries = getLibrarySources();
     } catch (Exception exception) {
       throw new AnalysisException(exception);
     }
-    HtmlScanResult scannerResult = scanner.getResult();
-    modificationTime = scannerResult.getModificationTime();
-    lineInfo = new LineInfo(scannerResult.getLineStarts());
-    final RecordingErrorListener errorListener = new RecordingErrorListener();
-    HtmlParseResult result = new HtmlParser(source, errorListener).parse(scannerResult);
-    unit = result.getHtmlUnit();
-    errors = errorListener.getErrors(source);
-    referencedLibraries = getLibrarySources();
   }
 
   /**
@@ -198,7 +195,7 @@ public class ParseHtmlTask extends AnalysisTask {
       public Void visitHtmlScriptTagNode(HtmlScriptTagNode node) {
         XmlAttributeNode scriptAttribute = null;
         for (XmlAttributeNode attribute : node.getAttributes()) {
-          if (attribute.getName().getLexeme().equalsIgnoreCase(ATTRIBUTE_SRC)) {
+          if (attribute.getName().equalsIgnoreCase(ATTRIBUTE_SRC)) {
             scriptAttribute = attribute;
           }
         }
@@ -207,7 +204,7 @@ public class ParseHtmlTask extends AnalysisTask {
             URI uri = new URI(null, null, scriptAttribute.getText(), null);
             String fileName = uri.getPath();
             Source librarySource = getContext().getSourceFactory().resolveUri(source, fileName);
-            if (librarySource != null && librarySource.exists()) {
+            if (getContext().exists(librarySource)) {
               libraries.add(librarySource);
             }
           } catch (URISyntaxException e) {

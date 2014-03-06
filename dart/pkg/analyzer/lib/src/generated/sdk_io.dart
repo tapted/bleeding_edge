@@ -1,3 +1,7 @@
+// Copyright (c) 2014, the Dart project authors.  Please see the AUTHORS file
+// for details. All rights reserved. Use of this source code is governed by a
+// BSD-style license that can be found in the LICENSE file.
+
 // This code was auto-generated, is not intended to be edited, and is subject to
 // significant change. Please see the README file for more information.
 
@@ -17,8 +21,6 @@ import 'engine.dart';
 /**
  * Instances of the class `DirectoryBasedDartSdk` represent a Dart SDK installed in a
  * specified directory.
- *
- * @coverage dart.engine.sdk
  */
 class DirectoryBasedDartSdk implements DartSdk {
   /**
@@ -172,33 +174,20 @@ class DirectoryBasedDartSdk implements DartSdk {
    *
    * @param sdkDirectory the directory containing the SDK
    */
-  DirectoryBasedDartSdk(JavaFile sdkDirectory) {
-    this._sdkDirectory = sdkDirectory.getAbsoluteFile();
-    initializeSdk();
-    initializeLibraryMap();
-    _analysisContext = new AnalysisContextImpl();
-    _analysisContext.sourceFactory = new SourceFactory.con2([new DartUriResolver(this)]);
-    List<String> uris = this.uris;
-    ChangeSet changeSet = new ChangeSet();
-    for (String uri in uris) {
-      changeSet.added(_analysisContext.sourceFactory.forUri(uri));
-    }
-    _analysisContext.applyChanges(changeSet);
-  }
+  DirectoryBasedDartSdk(JavaFile sdkDirectory) : this.con1(sdkDirectory, false);
 
   /**
    * Initialize a newly created SDK to represent the Dart SDK installed in the given directory.
    *
-   * Added in order to test AnalysisContextImpl2.
-   *
    * @param sdkDirectory the directory containing the SDK
+   * @param useDart2jsPaths `true` if the dart2js path should be used when it is available
    */
-  DirectoryBasedDartSdk.con1(JavaFile sdkDirectory, bool ignored) {
+  DirectoryBasedDartSdk.con1(JavaFile sdkDirectory, bool useDart2jsPaths) {
     this._sdkDirectory = sdkDirectory.getAbsoluteFile();
     initializeSdk();
-    initializeLibraryMap();
+    initializeLibraryMap(useDart2jsPaths);
     _analysisContext = new AnalysisContextImpl();
-    _analysisContext.sourceFactory = new SourceFactory.con2([new DartUriResolver(this)]);
+    _analysisContext.sourceFactory = new SourceFactory([new DartUriResolver(this)]);
     List<String> uris = this.uris;
     ChangeSet changeSet = new ChangeSet();
     for (String uri in uris) {
@@ -207,7 +196,7 @@ class DirectoryBasedDartSdk implements DartSdk {
     _analysisContext.applyChanges(changeSet);
   }
 
-  Source fromEncoding(ContentCache contentCache, UriKind kind, Uri uri) => new FileBasedSource.con2(contentCache, new JavaFile.fromUri(uri), kind);
+  Source fromEncoding(UriKind kind, Uri uri) => new FileBasedSource.con2(new JavaFile.fromUri(uri), kind);
 
   AnalysisContext get context => _analysisContext;
 
@@ -217,12 +206,10 @@ class DirectoryBasedDartSdk implements DartSdk {
    * @return the file containing the Dartium executable
    */
   JavaFile get dartiumExecutable {
-    {
-      if (_dartiumExecutable == null) {
-        JavaFile file = new JavaFile.relative(dartiumWorkingDirectory, dartiumBinaryName);
-        if (file.exists()) {
-          _dartiumExecutable = file;
-        }
+    if (_dartiumExecutable == null) {
+      JavaFile file = new JavaFile.relative(dartiumWorkingDirectory, dartiumBinaryName);
+      if (file.exists()) {
+        _dartiumExecutable = file;
       }
     }
     return _dartiumExecutable;
@@ -300,17 +287,15 @@ class DirectoryBasedDartSdk implements DartSdk {
    * @return the revision number of this SDK
    */
   String get sdkVersion {
-    {
-      if (_sdkVersion == null) {
-        _sdkVersion = DartSdk.DEFAULT_VERSION;
-        JavaFile revisionFile = new JavaFile.relative(_sdkDirectory, _REVISION_FILE_NAME);
-        try {
-          String revision = revisionFile.readAsStringSync();
-          if (revision != null) {
-            _sdkVersion = revision;
-          }
-        } on JavaIOException catch (exception) {
+    if (_sdkVersion == null) {
+      _sdkVersion = DartSdk.DEFAULT_VERSION;
+      JavaFile revisionFile = new JavaFile.relative(_sdkDirectory, _REVISION_FILE_NAME);
+      try {
+        String revision = revisionFile.readAsStringSync();
+        if (revision != null) {
+          _sdkVersion = revision;
         }
+      } on JavaIOException catch (exception) {
       }
     }
     return _sdkVersion;
@@ -329,12 +314,10 @@ class DirectoryBasedDartSdk implements DartSdk {
    * @return the file containing the VM executable
    */
   JavaFile get vmExecutable {
-    {
-      if (_vmExecutable == null) {
-        JavaFile file = new JavaFile.relative(new JavaFile.relative(_sdkDirectory, _BIN_DIRECTORY_NAME), vmBinaryName);
-        if (file.exists()) {
-          _vmExecutable = file;
-        }
+    if (_vmExecutable == null) {
+      JavaFile file = new JavaFile.relative(new JavaFile.relative(_sdkDirectory, _BIN_DIRECTORY_NAME), vmBinaryName);
+      if (file.exists()) {
+        _vmExecutable = file;
       }
     }
     return _vmExecutable;
@@ -359,7 +342,7 @@ class DirectoryBasedDartSdk implements DartSdk {
     if (library == null) {
       return null;
     }
-    return new FileBasedSource.con2(_analysisContext.sourceFactory.contentCache, new JavaFile.relative(libraryDirectory, library.path), UriKind.DART_URI);
+    return new FileBasedSource.con2(new JavaFile.relative(libraryDirectory, library.path), UriKind.DART_URI);
   }
 
   /**
@@ -399,14 +382,16 @@ class DirectoryBasedDartSdk implements DartSdk {
 
   /**
    * Read all of the configuration files to initialize the library maps.
+   *
+   * @param useDart2jsPaths `true` if the dart2js path should be used when it is available
    */
-  void initializeLibraryMap() {
+  void initializeLibraryMap(bool useDart2jsPaths) {
+    JavaFile librariesFile = new JavaFile.relative(new JavaFile.relative(libraryDirectory, _INTERNAL_DIR), _LIBRARIES_FILE);
     try {
-      JavaFile librariesFile = new JavaFile.relative(new JavaFile.relative(libraryDirectory, _INTERNAL_DIR), _LIBRARIES_FILE);
       String contents = librariesFile.readAsStringSync();
-      _libraryMap = new SdkLibrariesReader().readFrom(librariesFile, contents);
+      _libraryMap = new SdkLibrariesReader(useDart2jsPaths).readFrom(librariesFile, contents);
     } on JavaException catch (exception) {
-      AnalysisEngine.instance.logger.logError3(exception);
+      AnalysisEngine.instance.logger.logError2("Could not initialize the library map from ${librariesFile.getAbsolutePath()}", exception);
       _libraryMap = new LibraryMap();
     }
   }
@@ -443,106 +428,49 @@ class DirectoryBasedDartSdk implements DartSdk {
  *     platforms: 0),
  * };
  * </pre>
- *
- * @coverage dart.engine.sdk
  */
 class SdkLibrariesReader {
   /**
+   * A flag indicating whether the dart2js path should be used when it is available.
+   */
+  bool _useDart2jsPaths = false;
+
+  /**
+   * Initialize a newly created library reader to use the dart2js path if the given value is
+   * `true`.
+   *
+   * @param useDart2jsPaths `true` if the dart2js path should be used when it is available
+   */
+  SdkLibrariesReader(bool useDart2jsPaths) {
+    this._useDart2jsPaths = useDart2jsPaths;
+  }
+
+  /**
    * Return the library map read from the given source.
    *
+   * @param file the [File] of the library file
+   * @param libraryFileContents the contents from the library file
    * @return the library map read from the given source
    */
-  LibraryMap readFrom(JavaFile librariesFile, String libraryFileContents) {
+  LibraryMap readFrom(JavaFile file, String libraryFileContents) => readFrom2(new FileBasedSource.con2(file, UriKind.FILE_URI), libraryFileContents);
+
+  /**
+   * Return the library map read from the given source.
+   *
+   * @param source the source of the library file
+   * @param libraryFileContents the contents from the library file
+   * @return the library map read from the given source
+   */
+  LibraryMap readFrom2(Source source, String libraryFileContents) {
     BooleanErrorListener errorListener = new BooleanErrorListener();
-    Source source = new FileBasedSource.con2(null, librariesFile, UriKind.FILE_URI);
-    Scanner scanner = new Scanner(source, new CharSequenceReader(new CharSequence(libraryFileContents)), errorListener);
+    Scanner scanner = new Scanner(source, new CharSequenceReader(libraryFileContents), errorListener);
     Parser parser = new Parser(source, errorListener);
     CompilationUnit unit = parser.parseCompilationUnit(scanner.tokenize());
-    SdkLibrariesReader_LibraryBuilder libraryBuilder = new SdkLibrariesReader_LibraryBuilder();
+    SdkLibrariesReader_LibraryBuilder libraryBuilder = new SdkLibrariesReader_LibraryBuilder(_useDart2jsPaths);
+    // If any syntactic errors were found then don't try to visit the AST structure.
     if (!errorListener.errorReported) {
       unit.accept(libraryBuilder);
     }
     return libraryBuilder.librariesMap;
-  }
-}
-
-class SdkLibrariesReader_LibraryBuilder extends RecursiveASTVisitor<Object> {
-  /**
-   * The prefix added to the name of a library to form the URI used in code to reference the
-   * library.
-   */
-  static String _LIBRARY_PREFIX = "dart:";
-
-  /**
-   * The name of the optional parameter used to indicate whether the library is an implementation
-   * library.
-   */
-  static String _IMPLEMENTATION = "implementation";
-
-  /**
-   * The name of the optional parameter used to indicate whether the library is documented.
-   */
-  static String _DOCUMENTED = "documented";
-
-  /**
-   * The name of the optional parameter used to specify the category of the library.
-   */
-  static String _CATEGORY = "category";
-
-  /**
-   * The name of the optional parameter used to specify the platforms on which the library can be
-   * used.
-   */
-  static String _PLATFORMS = "platforms";
-
-  /**
-   * The value of the [PLATFORMS] parameter used to specify that the library can
-   * be used on the VM.
-   */
-  static String _VM_PLATFORM = "VM_PLATFORM";
-
-  /**
-   * The library map that is populated by visiting the AST structure parsed from the contents of
-   * the libraries file.
-   */
-  final LibraryMap librariesMap = new LibraryMap();
-
-  Object visitMapLiteralEntry(MapLiteralEntry node) {
-    String libraryName = null;
-    Expression key = node.key;
-    if (key is SimpleStringLiteral) {
-      libraryName = "${_LIBRARY_PREFIX}${(key as SimpleStringLiteral).value}";
-    }
-    Expression value = node.value;
-    if (value is InstanceCreationExpression) {
-      SdkLibraryImpl library = new SdkLibraryImpl(libraryName);
-      List<Expression> arguments = (value as InstanceCreationExpression).argumentList.arguments;
-      for (Expression argument in arguments) {
-        if (argument is SimpleStringLiteral) {
-          library.path = (argument as SimpleStringLiteral).value;
-        } else if (argument is NamedExpression) {
-          String name = (argument as NamedExpression).name.label.name;
-          Expression expression = (argument as NamedExpression).expression;
-          if (name == _CATEGORY) {
-            library.category = (expression as SimpleStringLiteral).value;
-          } else if (name == _IMPLEMENTATION) {
-            library.implementation = (expression as BooleanLiteral).value;
-          } else if (name == _DOCUMENTED) {
-            library.documented = (expression as BooleanLiteral).value;
-          } else if (name == _PLATFORMS) {
-            if (expression is SimpleIdentifier) {
-              String identifier = (expression as SimpleIdentifier).name;
-              if (identifier == _VM_PLATFORM) {
-                library.setVmLibrary();
-              } else {
-                library.setDart2JsLibrary();
-              }
-            }
-          }
-        }
-      }
-      librariesMap.setLibrary(libraryName, library);
-    }
-    return null;
   }
 }

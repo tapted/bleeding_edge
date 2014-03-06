@@ -64,11 +64,11 @@ public class AnalysisCache {
   }
 
   /**
-   * Record that the given source was just accessed.
+   * Record that the AST associated with the given source was just read from the cache.
    * 
-   * @param source the source that was accessed
+   * @param source the source whose AST was accessed
    */
-  public void accessed(Source source) {
+  public void accessedAst(Source source) {
     if (recentlyUsed.remove(source)) {
       recentlyUsed.add(source);
       return;
@@ -108,6 +108,7 @@ public class AnalysisCache {
    * @param entry the entry to be associated with the source
    */
   public void put(Source source, SourceEntry entry) {
+    ((SourceEntryImpl) entry).fixExceptionState();
     sourceMap.put(source, entry);
   }
 
@@ -117,7 +118,17 @@ public class AnalysisCache {
    * @param source the source to be removed
    */
   public void remove(Source source) {
+    recentlyUsed.remove(source);
     sourceMap.remove(source);
+  }
+
+  /**
+   * Record that the AST associated with the given source was just removed from the cache.
+   * 
+   * @param source the source whose AST was removed
+   */
+  public void removedAst(Source source) {
+    recentlyUsed.remove(source);
   }
 
   /**
@@ -144,6 +155,23 @@ public class AnalysisCache {
   }
 
   /**
+   * Record that the AST associated with the given source was just stored to the cache.
+   * 
+   * @param source the source whose AST was stored
+   */
+  public void storedAst(Source source) {
+    if (recentlyUsed.contains(source)) {
+      return;
+    }
+    while (recentlyUsed.size() >= maxCacheSize) {
+      if (!flushAstFromCache()) {
+        break;
+      }
+    }
+    recentlyUsed.add(source);
+  }
+
+  /**
    * Attempt to flush one AST structure from the cache.
    * 
    * @return {@code true} if a structure was flushed
@@ -156,7 +184,7 @@ public class AnalysisCache {
     SourceEntry sourceEntry = sourceMap.get(removedSource);
     if (sourceEntry instanceof HtmlEntry) {
       HtmlEntryImpl htmlCopy = ((HtmlEntry) sourceEntry).getWritableCopy();
-      htmlCopy.setState(HtmlEntry.PARSED_UNIT, CacheState.FLUSHED);
+      htmlCopy.flushAstStructures();
       sourceMap.put(removedSource, htmlCopy);
     } else if (sourceEntry instanceof DartEntry) {
       DartEntryImpl dartCopy = ((DartEntry) sourceEntry).getWritableCopy();

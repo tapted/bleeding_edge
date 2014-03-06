@@ -13,10 +13,8 @@
  */
 package com.google.dart.tools.ui.internal.refactoring.actions;
 
-import com.google.dart.engine.ast.ASTNode;
-import com.google.dart.engine.ast.ConstructorDeclaration;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.Directive;
-import com.google.dart.engine.ast.InstanceCreationExpression;
 import com.google.dart.engine.ast.SimpleIdentifier;
 import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ImportElement;
@@ -51,7 +49,7 @@ public class RenameDartElementAction extends AbstractRefactoringAction {
    */
   private static Element getElementToRename(DartSelection selection) {
     Element element = getSelectionElement(selection);
-    ASTNode node = getSelectionNode(selection);
+    AstNode node = getSelectionNode(selection);
     // 'library x;' or 'part of x;'
     if (node != null) {
       Directive directive = node.getAncestor(Directive.class);
@@ -65,24 +63,9 @@ public class RenameDartElementAction extends AbstractRefactoringAction {
         }
       }
     }
-    // can we rename this node at all?
-    if (node instanceof SimpleIdentifier) {
-      // may be PrefixElement, rename ImportElement instead
-      if (element instanceof PrefixElement) {
-        element = IndexContributor.getImportElement((SimpleIdentifier) node);
-      }
-      // usually
-    } else if (node instanceof InstanceCreationExpression) {
-      // "new X()" - to give name to unnamed constructor
-    } else {
-      return null;
-    }
-    // it is more logical to rename constructor, not type
-    if (node instanceof SimpleIdentifier && node.getParent() instanceof ConstructorDeclaration) {
-      ConstructorDeclaration constructor = (ConstructorDeclaration) node.getParent();
-      if (constructor.getName() == null && constructor.getReturnType() == node) {
-        element = constructor.getElement();
-      }
+    // may be PrefixElement, rename ImportElement instead
+    if (element instanceof PrefixElement) {
+      element = IndexContributor.getImportElement((SimpleIdentifier) node);
     }
     // do we have interesting Element?
     if (!isInterestingElement(node, element)) {

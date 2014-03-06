@@ -104,9 +104,7 @@ class DartUtils {
 
   static void SetIntegerField(Dart_Handle handle,
                               const char* name,
-                              intptr_t val);
-  static intptr_t GetIntegerField(Dart_Handle handle,
-                                  const char* name);
+                              int64_t val);
   static void SetStringField(Dart_Handle handle,
                              const char* name,
                              const char* val);
@@ -143,6 +141,7 @@ class DartUtils {
 
   static bool PostNull(Dart_Port port_id);
   static bool PostInt32(Dart_Port port_id, int32_t value);
+  static bool PostInt64(Dart_Port port_id, int64_t value);
 
   static Dart_Handle GetDartType(const char* library_url,
                                  const char* class_name);
@@ -186,6 +185,9 @@ class DartUtils {
   static Dart_Handle FilePathFromUri(Dart_Handle script_uri,
                                      Dart_Handle builtin_lib);
 
+  static Dart_Handle ExtensionPathFromUri(Dart_Handle extension_uri,
+                                          Dart_Handle builtin_lib);
+
   static Dart_Handle ResolveUri(Dart_Handle library_url,
                                 Dart_Handle url,
                                 Dart_Handle builtin_lib);
@@ -209,13 +211,14 @@ class DartUtils {
   static const char* kDartExtensionScheme;
   static const char* kAsyncLibURL;
   static const char* kBuiltinLibURL;
-  static const char* kCollectionDevLibURL;
   static const char* kCoreLibURL;
+  static const char* kInternalLibURL;
   static const char* kIsolateLibURL;
   static const char* kIOLibURL;
   static const char* kIOLibPatchURL;
   static const char* kUriLibURL;
   static const char* kHttpScheme;
+  static const char* kVMServiceLibURL;
 
   static const char* kIdFieldName;
 

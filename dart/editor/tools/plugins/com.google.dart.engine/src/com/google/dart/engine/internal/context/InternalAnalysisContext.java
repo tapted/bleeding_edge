@@ -21,6 +21,7 @@ import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.internal.cache.SourceEntry;
 import com.google.dart.engine.internal.resolver.TypeProvider;
 import com.google.dart.engine.internal.scope.Namespace;
+import com.google.dart.engine.scanner.Token;
 import com.google.dart.engine.source.Source;
 import com.google.dart.engine.source.SourceContainer;
 
@@ -60,6 +61,17 @@ public interface InternalAnalysisContext extends AnalysisContext {
    * @throws AnalysisException if the imported libraries could not be computed
    */
   public Source[] computeImportedLibraries(Source source) throws AnalysisException;
+
+  /**
+   * Return an AST structure corresponding to the given source, but ensure that the structure has
+   * not already been resolved and will not be resolved by any other threads.
+   * 
+   * @param source the compilation unit for which an AST structure should be returned
+   * @return the AST structure representing the content of the source
+   * @throws AnalysisException if the analysis could not be performed
+   */
+  public ResolvableHtmlUnit computeResolvableAngularComponentHtmlUnit(Source source)
+      throws AnalysisException;
 
   /**
    * Return an AST structure corresponding to the given source, but ensure that the structure has
@@ -129,6 +141,16 @@ public interface InternalAnalysisContext extends AnalysisContext {
   public TypeProvider getTypeProvider() throws AnalysisException;
 
   /**
+   * Return a time-stamped parsed AST for the given source.
+   * 
+   * @param source the source of the compilation unit for which an AST is to be returned
+   * @return a time-stamped AST for the source
+   * @throws AnalysisException if the source could not be parsed
+   */
+  public TimestampedData<CompilationUnit> internalParseCompilationUnit(Source source)
+      throws AnalysisException;
+
+  /**
    * Return a time-stamped fully-resolved compilation unit for the given source in the given
    * library.
    * 
@@ -141,6 +163,15 @@ public interface InternalAnalysisContext extends AnalysisContext {
    */
   public TimestampedData<CompilationUnit> internalResolveCompilationUnit(Source unitSource,
       LibraryElement libraryElement) throws AnalysisException;
+
+  /**
+   * Return a time-stamped token stream for the given source.
+   * 
+   * @param source the source of the compilation unit for which a token stream is to be returned
+   * @return a time-stamped token stream for the source
+   * @throws AnalysisException if the token stream could not be computed
+   */
+  public TimestampedData<Token> internalScanTokenStream(Source source) throws AnalysisException;
 
   /**
    * Given a table mapping the source for the libraries represented by the corresponding elements to

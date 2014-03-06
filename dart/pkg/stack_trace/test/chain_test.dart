@@ -386,6 +386,82 @@ void main() {
           '$userSlashCode 10:11  Foo.bar\n'
           'dart:core             Bar.baz\n'));
     });
+
+    test("doesn't return an empty chain", () {
+      var chain = new Chain([
+        new Trace.parse(
+            'dart:core 10:11                             Foo.bar\n'
+            'package:stack_trace/stack_trace.dart 10:11  Bar.baz\n'
+            'dart:core 10:11                             Zip.zap'),
+        new Trace.parse(
+            'dart:core 10:11                             A.b\n'
+            'package:stack_trace/stack_trace.dart 10:11  C.d\n'
+            'dart:core 10:11                             E.f')
+      ]);
+
+      expect(chain.terse.toString(), equals('dart:core  E.f\n'));
+    });
+  });
+
+  group('Chain.foldFrames', () {
+    test('folds each trace', () {
+      var chain = new Chain([
+        new Trace.parse(
+            'a.dart 10:11  Foo.bar\n'
+            'a.dart 10:11  Bar.baz\n'
+            'b.dart 10:11  Bang.qux\n'
+            'a.dart 10:11  Zip.zap\n'
+            'a.dart 10:11  Zop.zoop'),
+        new Trace.parse(
+            'a.dart 10:11  Foo.bar\n'
+            'a.dart 10:11  Bar.baz\n'
+            'a.dart 10:11  Bang.qux\n'
+            'a.dart 10:11  Zip.zap\n'
+            'b.dart 10:11  Zop.zoop')
+      ]);
+
+      var folded = chain.foldFrames((frame) => frame.library == 'a.dart');
+      expect(folded.toString(), equals(
+          'a.dart 10:11  Bar.baz\n'
+          'b.dart 10:11  Bang.qux\n'
+          'a.dart 10:11  Zop.zoop\n'
+          '===== asynchronous gap ===========================\n'
+          'a.dart 10:11  Zip.zap\n'
+          'b.dart 10:11  Zop.zoop\n'));
+    });
+
+    test('eliminates completely-folded traces', () {
+      var chain = new Chain([
+        new Trace.parse(
+            'a.dart 10:11  Foo.bar\n'
+            'b.dart 10:11  Bang.qux'),
+        new Trace.parse(
+            'a.dart 10:11  Foo.bar\n'
+            'a.dart 10:11  Bang.qux'),
+        new Trace.parse(
+            'a.dart 10:11  Zip.zap\n'
+            'b.dart 10:11  Zop.zoop')
+      ]);
+
+      var folded = chain.foldFrames((frame) => frame.library == 'a.dart');
+      expect(folded.toString(), equals(
+          'a.dart 10:11  Foo.bar\n'
+          'b.dart 10:11  Bang.qux\n'
+          '===== asynchronous gap ===========================\n'
+          'a.dart 10:11  Zip.zap\n'
+          'b.dart 10:11  Zop.zoop\n'));
+    });
+
+    test("doesn't return an empty trace", () {
+      var chain = new Chain([
+        new Trace.parse(
+            'a.dart 10:11  Foo.bar\n'
+            'a.dart 10:11  Bang.qux')
+      ]);
+
+      var folded = chain.foldFrames((frame) => frame.library == 'a.dart');
+      expect(folded.toString(), equals('a.dart 10:11  Bang.qux\n'));
+    });
   });
 
   test('Chain.toTrace eliminates asynchronous gaps', () {

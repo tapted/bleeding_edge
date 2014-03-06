@@ -35,7 +35,7 @@ class FooBar extends PolymerElement {
 class TestCustomEvent extends PolymerElement {
   TestCustomEvent.created() : super.created();
 
-  get fooBar => getShadowRoot('test-custom-event').query('foo-bar');
+  get fooBar => getShadowRoot('test-custom-event').querySelector('foo-bar');
 
   final events = [];
   fooHandler(e) => events.add(['foo', e]);
@@ -49,14 +49,14 @@ main() {
   setUp(() => Polymer.onReady);
 
   test('custom event', () {
-    final testComp = query('test-custom-event');
+    final testComp = querySelector('test-custom-event');
     final fooBar = testComp.fooBar;
 
     final binding = nodeBind(fooBar).bindings['on-barbaz'];
-    expect(binding, isNotNull, reason: 'on-barbaz event should be bound');
+    expect(binding is Bindable, true,
+        reason: 'on-barbaz event should be bound');
 
-    expect(binding.model is! StreamSubscription, true,
-        reason: 'event bindings should not be a StreamSubscription');
+    expect(binding.value, null, reason: 'event bindings do not have value');
 
     fooBar.fireFoo(123);
     fooBar.fireBarBaz(42);

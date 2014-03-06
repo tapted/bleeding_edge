@@ -346,6 +346,23 @@ public class NonErrorResolverTest extends ResolverTestCase {
     verify(source);
   }
 
+  public void test_commentReference_beforeConstructor() throws Exception {
+    String code = createSource(//
+        "abstract class A {",
+        "  /// [p]",
+        "  A(int p) {}",
+        "}");
+    Source source = addSource(code);
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+    CompilationUnit unit = getAnalysisContext().parseCompilationUnit(source);
+    {
+      SimpleIdentifier ref = findNode(unit, code, "p]", SimpleIdentifier.class);
+      assertInstanceOf(ParameterElement.class, ref.getStaticElement());
+    }
+  }
+
   public void test_commentReference_beforeFunction_blockBody() throws Exception {
     String code = createSource(//
         "/// [p]",
@@ -861,6 +878,20 @@ public class NonErrorResolverTest extends ResolverTestCase {
     verify(source);
   }
 
+  public void test_extraPositionalArguments_implicitConstructor() throws Exception {
+    Source source = addSource(createSource(//
+        "class A<E extends num> {",
+        "  A(E x, E y);",
+        "}",
+        "class B<E extends num> = A<E>;",
+        "void main() {",
+        "   B<int> x = new B<int>(0,0);",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
   public void test_extraPositionalArguments_typedef_local() throws Exception {
     Source source = addSource(createSource(//
         "typedef A(p1, p2);",
@@ -1057,7 +1088,7 @@ public class NonErrorResolverTest extends ResolverTestCase {
 
   public void test_functionDeclaration_scope_returnType() throws Exception {
     Source source = addSource(createSource(//
-    "int f(int) {}"));
+    "int f(int) { return 0; }"));
     resolve(source);
     assertNoErrors(source);
     verify(source);
@@ -1335,8 +1366,7 @@ public class NonErrorResolverTest extends ResolverTestCase {
         "class B<E> {",
         "  E get x {return 1;}",
         "}",
-        "class C<E> extends A<E> implements B<E> {",
-        "}"));
+        "class C<E> extends A<E> implements B<E> {}"));
     resolve(source);
     assertNoErrors(source);
     verify(source);
@@ -1502,7 +1532,7 @@ public class NonErrorResolverTest extends ResolverTestCase {
         "  static _m() {}",
         "}"));
     resolve(source);
-    assertErrors(source, HintCode.OVERRIDDING_PRIVATE_MEMBER);
+    assertErrors(source);
     verify(source);
   }
 
@@ -1607,7 +1637,7 @@ public class NonErrorResolverTest extends ResolverTestCase {
         "class byte {",
         "  int _value;",
         "  byte(this._value);",
-        "  byte operator +(int val) {}",
+        "  byte operator +(int val) { return this; }",
         "}",
         "",
         "void main() {",
@@ -1878,7 +1908,7 @@ public class NonErrorResolverTest extends ResolverTestCase {
         "  void m() {}",
         "}",
         "class B extends A {",
-        "  int m() {}",
+        "  int m() { return 0; }",
         "}"));
     resolve(source);
     assertNoErrors(source);
@@ -2240,6 +2270,15 @@ public class NonErrorResolverTest extends ResolverTestCase {
     verify(source);
   }
 
+  public void test_nativeFunctionBodyInNonSDKCode_function() throws Exception {
+    Source source = addSource(createSource(//
+        "import 'dart-ext:x';",
+        "int m(a) native 'string';"));
+    resolve(source);
+    assertNoErrors(source);
+    // Cannot verify the AST because the import's URI cannot be resolved.
+  }
+
   public void test_newWithAbstractClass_factory() throws Exception {
     Source source = addSource(createSource(//
         "abstract class A {",
@@ -2282,7 +2321,7 @@ public class NonErrorResolverTest extends ResolverTestCase {
     verify(source);
   }
 
-  public void test_nonAbstractClassInheritsAbstractMemberOne_abstractOverridesConcrete_accessor()
+  public void test_nonAbstractClassInheritsAbstractMemberOne_abstractsDontOverrideConcretes_getter()
       throws Exception {
     Source source = addSource(createSource(//
         "class A {",
@@ -2291,14 +2330,13 @@ public class NonErrorResolverTest extends ResolverTestCase {
         "abstract class B extends A {",
         "  int get g;",
         "}",
-        "class C extends B {",
-        "}"));
+        "class C extends B {}"));
     resolve(source);
     assertNoErrors(source);
     verify(source);
   }
 
-  public void test_nonAbstractClassInheritsAbstractMemberOne_abstractOverridesConcrete_method()
+  public void test_nonAbstractClassInheritsAbstractMemberOne_abstractsDontOverrideConcretes_method()
       throws Exception {
     Source source = addSource(createSource(//
         "class A {",
@@ -2307,8 +2345,68 @@ public class NonErrorResolverTest extends ResolverTestCase {
         "abstract class B extends A {",
         "  m(p);",
         "}",
-        "class C extends B {",
-        "}"));
+        "class C extends B {}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_nonAbstractClassInheritsAbstractMemberOne_abstractsDontOverrideConcretes_setter()
+      throws Exception {
+    Source source = addSource(createSource(//
+        "class A {",
+        "  set s(v) {}",
+        "}",
+        "abstract class B extends A {",
+        "  set s(v);",
+        "}",
+        "class C extends B {}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_nonAbstractClassInheritsAbstractMemberOne_mixin_getter() throws Exception {
+    // 17034
+    Source source = addSource(createSource(//
+        "class A {",
+        "  var a;",
+        "}",
+        "abstract class M {",
+        "  get a;",
+        "}",
+        "class B extends A with M {}",
+        "class C extends B {}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_nonAbstractClassInheritsAbstractMemberOne_mixin_method() throws Exception {
+    Source source = addSource(createSource(//
+        "class A {",
+        "  m() {}",
+        "}",
+        "abstract class M {",
+        "  m();",
+        "}",
+        "class B extends A with M {}",
+        "class C extends B {}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_nonAbstractClassInheritsAbstractMemberOne_mixin_setter() throws Exception {
+    Source source = addSource(createSource(//
+        "class A {",
+        "  var a;",
+        "}",
+        "abstract class M {",
+        "  set a(dynamic v);",
+        "}",
+        "class B extends A with M {}",
+        "class C extends B {}"));
     resolve(source);
     assertNoErrors(source);
     verify(source);
@@ -2893,6 +2991,75 @@ public class NonErrorResolverTest extends ResolverTestCase {
         "}"));
     resolve(source);
     assertNoErrors(source);
+  }
+
+  public void test_proxy_annotation_superclass() throws Exception {
+    Source source = addSource(createSource(//
+        "library L;",
+        "class B extends A {",
+        "  m() {",
+        "    n();",
+        "    var x = g;",
+        "    s = 1;",
+        "    var y = this + this;",
+        "  }",
+        "}",
+        "@proxy",
+        "class A {}"));
+    resolve(source);
+    assertNoErrors(source);
+  }
+
+  public void test_proxy_annotation_superclass_mixin() throws Exception {
+    Source source = addSource(createSource(//
+        "library L;",
+        "class B extends Object with A {",
+        "  m() {",
+        "    n();",
+        "    var x = g;",
+        "    s = 1;",
+        "    var y = this + this;",
+        "  }",
+        "}",
+        "@proxy",
+        "class A {}"));
+    resolve(source);
+    assertNoErrors(source);
+  }
+
+  public void test_proxy_annotation_superinterface() throws Exception {
+    Source source = addSource(createSource(//
+        "library L;",
+        "class B implements A {",
+        "  m() {",
+        "    n();",
+        "    var x = g;",
+        "    s = 1;",
+        "    var y = this + this;",
+        "  }",
+        "}",
+        "@proxy",
+        "class A {}"));
+    resolve(source);
+    assertNoErrors(source);
+  }
+
+  public void test_proxy_annotation_superinterface_infiniteLoop() throws Exception {
+    Source source = addSource(createSource(//
+        "library L;",
+        "class C implements A {",
+        "  m() {",
+        "    n();",
+        "    var x = g;",
+        "    s = 1;",
+        "    var y = this + this;",
+        "  }",
+        "}",
+        "class B implements A{}",
+        "class A implements B{}"));
+    resolve(source);
+    // Test is that a stack overflow isn't reached in resolution (previous line), no need to assert
+    // error set.
   }
 
   public void test_recursiveConstructorRedirect() throws Exception {

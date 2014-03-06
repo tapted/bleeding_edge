@@ -36,6 +36,14 @@ import com.google.dart.engine.element.PrefixElement;
 import com.google.dart.engine.element.PropertyAccessorElement;
 import com.google.dart.engine.element.TopLevelVariableElement;
 import com.google.dart.engine.element.TypeParameterElement;
+import com.google.dart.engine.element.angular.AngularComponentElement;
+import com.google.dart.engine.element.angular.AngularControllerElement;
+import com.google.dart.engine.element.angular.AngularDirectiveElement;
+import com.google.dart.engine.element.angular.AngularFilterElement;
+import com.google.dart.engine.element.angular.AngularPropertyElement;
+import com.google.dart.engine.element.angular.AngularScopePropertyElement;
+import com.google.dart.engine.element.angular.AngularSelectorElement;
+import com.google.dart.engine.element.angular.AngularViewElement;
 
 /**
  * Instances of the class {@code SimpleElementVisitor} implement an element visitor that will do
@@ -46,6 +54,46 @@ import com.google.dart.engine.element.TypeParameterElement;
  * @coverage dart.engine.element
  */
 public class SimpleElementVisitor<R> implements ElementVisitor<R> {
+  @Override
+  public R visitAngularComponentElement(AngularComponentElement element) {
+    return null;
+  }
+
+  @Override
+  public R visitAngularControllerElement(AngularControllerElement element) {
+    return null;
+  }
+
+  @Override
+  public R visitAngularDirectiveElement(AngularDirectiveElement element) {
+    return null;
+  }
+
+  @Override
+  public R visitAngularFilterElement(AngularFilterElement element) {
+    return null;
+  }
+
+  @Override
+  public R visitAngularPropertyElement(AngularPropertyElement element) {
+    return null;
+  }
+
+  @Override
+  public R visitAngularScopePropertyElement(AngularScopePropertyElement element) {
+    return null;
+  }
+
+  @Override
+  public R visitAngularSelectorElement(AngularSelectorElement element) {
+    return null;
+  }
+
+  @Override
+  public R visitAngularViewElement(AngularViewElement element) {
+    return null;
+  }
+
   @Override
   public R visitClassElement(ClassElement element) {
     return null;

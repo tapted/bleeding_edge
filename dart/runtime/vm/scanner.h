@@ -42,13 +42,7 @@ class Scanner : ValueObject {
   };
 
   // Dummy token index reflecting an unknown source position.
-  static const intptr_t kDummyTokenIndex = 0;
-
-  // Character used to indicate a private identifier.
-  static const char kPrivateIdentifierStart  = '_';
-
-  // Character used to separate the private identifier from the key.
-  static const char kPrivateKeySeparator = '@';
+  static const intptr_t kNoSourcePos = 0;
 
   typedef ZoneGrowableArray<TokenDescriptor> GrowableTokenStream;
 
@@ -79,9 +73,6 @@ class Scanner : ValueObject {
   }
 
   static void InitOnce();
-
-  // Allocated a private key which is used for name mangling.
-  static RawString* AllocatePrivateKey(const Library& library);
 
   // Return true if str is an identifier.
   static bool IsIdent(const String& str);

@@ -123,11 +123,19 @@ class SsaInstructionSimplifier extends HBaseVisitor
       if (replacement != instruction) {
         block.rewrite(instruction, replacement);
 
-        // If we can replace [instruction] with [replacement], then
-        // [replacement]'s type can be narrowed.
-        TypeMask newType = replacement.instructionType.intersection(
-            instruction.instructionType, compiler);
-        replacement.instructionType = newType;
+        // The intersection of double and int return conflicting, and
+        // because of our number implementation for JavaScript, it
+        // might be that an operation thought to return double, can be
+        // simplified to an int. For example:
+        // `2.5 * 10`.
+        if (!(replacement.isNumberOrNull(compiler)
+              && instruction.isNumberOrNull(compiler))) {
+          // If we can replace [instruction] with [replacement], then
+          // [replacement]'s type can be narrowed.
+          TypeMask newType = replacement.instructionType.intersection(
+              instruction.instructionType, compiler);
+          replacement.instructionType = newType;
+        }
 
         // If the replacement instruction does not know its
         // source element, use the source element of the
@@ -255,10 +263,10 @@ class SsaInstructionSimplifier extends HBaseVisitor
             target = backend.jsArrayAdd;
           }
         }
-      } else if (input.isString(compiler)) {
+      } else if (input.isStringOrNull(compiler)) {
         if (selector.applies(backend.jsStringSplit, compiler)) {
           HInstruction argument = node.inputs[2];
-          if (argument.isString(compiler) && !argument.canBeNull()) {
+          if (argument.isString(compiler)) {
             target = backend.jsStringSplit;
           }
         } else if (selector.applies(backend.jsStringOperatorAdd, compiler)) {
@@ -266,7 +274,6 @@ class SsaInstructionSimplifier extends HBaseVisitor
           // make sure the receiver and the argument are not null.
           HInstruction argument = node.inputs[2];
           if (argument.isString(compiler)
-              && !argument.canBeNull()
               && !input.canBeNull()) {
             target = backend.jsStringOperatorAdd;
           }
@@ -694,7 +701,7 @@ class SsaInstructionSimplifier extends HBaseVisitor
   }
 
   HInstruction directFieldGet(HInstruction receiver, Element field) {
-    Modifiers modifiers = field.modifiers;
+    ast.Modifiers modifiers = field.modifiers;
     bool isAssignable = !compiler.world.fieldNeverChanges(field);
 
     TypeMask type;
@@ -776,7 +783,7 @@ class SsaInstructionSimplifier extends HBaseVisitor
 
     HInstruction folded = graph.addConstant(
         constantSystem.createString(
-            new DartString.concat(leftString.value, rightString.value)),
+            new ast.DartString.concat(leftString.value, rightString.value)),
         compiler);
     if (prefix == null) return folded;
     return new HStringConcat(prefix, folded, node.node, backend.stringType);
@@ -784,7 +791,7 @@ class SsaInstructionSimplifier extends HBaseVisitor
 
   HInstruction visitStringify(HStringify node) {
     HInstruction input = node.inputs[0];
-    if (input.isString(compiler) && !input.canBeNull()) return input;
+    if (input.isString(compiler)) return input;
     if (input.isConstant()) {
       HConstant constant = input;
       if (!constant.constant.isPrimitive()) return node;
@@ -886,9 +893,12 @@ class SsaDeadCodeEliminator extends HGraphVisitor implements OptimizationPhase {
 
   HInstruction zapInstructionCache;
   HInstruction get zapInstruction {
-    return (zapInstructionCache == null)
-        ? zapInstructionCache = analyzer.graph.addConstantInt(0, compiler)
-        : zapInstructionCache;
+    if (zapInstructionCache == null) {
+      // A constant with no type does not pollute types at phi nodes.
+      Constant constant = new DummyConstant(const TypeMask.nonNullEmpty());
+      zapInstructionCache = analyzer.graph.addConstant(constant, compiler);
+    }
+    return zapInstructionCache;
   }
 
   /// Returns whether the next throwing instruction that may have side
@@ -1698,14 +1708,22 @@ class MemorySet {
   MemorySet(this.compiler);
 
   /**
-   * Returns whether [first] and [second] may alias to the same
-   * object.
+   * Returns whether [first] and [second] always alias to the same object.
+   */
+  bool mustAlias(HInstruction first, HInstruction second) {
+    return first == second;
+  }
+
+  /**
+   * Returns whether [first] and [second] may alias to the same object.
    */
   bool mayAlias(HInstruction first, HInstruction second) {
-    if (first == second) return true;
+    if (mustAlias(first, second)) return true;
     if (isConcrete(first) && isConcrete(second)) return false;
     if (nonEscapingReceivers.contains(first)) return false;
     if (nonEscapingReceivers.contains(second)) return false;
+    // Typed arrays of different types might have a shared buffer.
+    if (couldBeTypedArray(first) && couldBeTypedArray(second)) return true;
     TypeMask intersection = first.instructionType.intersection(
         second.instructionType, compiler);
     if (intersection.isEmpty) return false;
@@ -1720,6 +1738,11 @@ class MemorySet {
     return instruction is HForeignNew
         || instruction is HConstant
         || instruction is HLiteralList;
+  }
+
+  bool couldBeTypedArray(HInstruction receiver) {
+    JavaScriptBackend backend = compiler.backend;
+    return backend.couldBeTypedArray(receiver.instructionType);
   }
 
   /**
@@ -1841,15 +1864,19 @@ class MemorySet {
     nonEscapingReceivers.remove(value);
     keyedValues.forEach((key, values) {
       if (mayAlias(receiver, key)) {
+        // Typed arrays that are views of the same buffer may have different
+        // offsets or element sizes, unless they are the same typed array.
+        bool weakIndex = couldBeTypedArray(key) && !mustAlias(receiver, key);
         values.forEach((otherIndex, otherValue) {
-          if (mayAlias(index, otherIndex)) values[otherIndex] = null;
+          if (weakIndex || mayAlias(index, otherIndex)) {
+            values[otherIndex] = null;
+          }
         });
       }
     });
 
-    JavaScriptBackend backend = compiler.backend;
     // Typed arrays may narrow incoming values.
-    if (backend.couldBeTypedArray(receiver.instructionType)) return;
+    if (couldBeTypedArray(receiver)) return;
 
     Map<HInstruction, HInstruction> map = keyedValues.putIfAbsent(
         receiver, () => <HInstruction, HInstruction> {});

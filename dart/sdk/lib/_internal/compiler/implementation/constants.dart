@@ -17,6 +17,7 @@ abstract class ConstantVisitor<R> {
   R visitConstructed(ConstructedConstant constant);
   R visitType(TypeConstant constant);
   R visitInterceptor(InterceptorConstant constant);
+  R visitDummy(DummyConstant constant);
 }
 
 abstract class Constant {
@@ -41,6 +42,7 @@ abstract class Constant {
   bool isType() => false;
   bool isSentinel() => false;
   bool isInterceptor() => false;
+  bool isDummy() => false;
 
   bool isNaN() => false;
   bool isMinusZero() => false;
@@ -73,9 +75,8 @@ class FunctionConstant extends Constant {
     return new DartString.literal(element.name);
   }
 
-  DartType computeType(Compiler compiler) {
-    return compiler.functionClass.computeType(compiler);
-  }
+  // TODO(johnniwinther): remove computeType.
+  DartType computeType(Compiler compiler) => element.computeType(compiler);
 
   ti.TypeMask computeMask(Compiler compiler) {
     return compiler.typesTask.functionType;
@@ -217,6 +218,14 @@ class DoubleConstant extends NumConstant {
   }
 
   ti.TypeMask computeMask(Compiler compiler) {
+    // We have to distinguish -0.0 from 0, but for all practical purposes
+    // -0.0 is an integer.
+    // TODO(17235): this kind of special casing should only happen in the
+    // backend.
+    if (isMinusZero() && compiler.backend.constantSystem.isInt(this)) {
+      return compiler.typesTask.uint31Type;
+    }
+    assert(!compiler.backend.constantSystem.isInt(this));
     return compiler.typesTask.doubleType;
   }
 
@@ -535,6 +544,33 @@ class InterceptorConstant extends Constant {
 
   String toString() {
     return 'InterceptorConstant(${Error.safeToString(dispatchedType)})';
+  }
+}
+
+class DummyConstant extends Constant {
+  final ti.TypeMask typeMask;
+
+  DummyConstant(this.typeMask);
+
+  bool isDummy() => true;
+
+  bool operator ==(other) {
+    return other is DummyConstant
+        && typeMask == other.typeMask;
+  }
+
+  get hashCode => typeMask.hashCode;
+
+  List<Constant> getDependencies() => const <Constant>[];
+
+  accept(ConstantVisitor visitor) => visitor.visitDummy(this);
+
+  DartType computeType(Compiler compiler) => compiler.types.dynamicType;
+
+  ti.TypeMask computeMask(Compiler compiler) => typeMask;
+
+  String toString() {
+    return 'DummyConstant($typeMask)';
   }
 }
 

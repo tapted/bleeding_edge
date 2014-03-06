@@ -17,8 +17,8 @@ class XTarget extends PolymerElement {
   Future get foundSrc => _found.future;
 
   // force an mdv binding
-  bind(name, model, [path]) =>
-      nodeBindFallback(this).bind(name, model, path);
+  bind(name, value, {oneTime: false}) =>
+      nodeBindFallback(this).bind(name, value, oneTime: oneTime);
 
   inserted() {
     testSrcForMustache();
@@ -51,8 +51,8 @@ main() {
   setUp(() => Polymer.onReady);
 
   test('mustache attributes', () {
-    final xtest = document.query('#test');
-    final xtarget = xtest.shadowRoot.query('#target');
+    final xtest = document.querySelector('#test');
+    final xtarget = xtest.shadowRoot.querySelector('#target');
     return xtarget.foundSrc;
   });
 }

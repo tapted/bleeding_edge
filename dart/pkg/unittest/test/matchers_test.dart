@@ -401,6 +401,15 @@ void main() {
           "Actual: [1, 2]");
     });
 
+    test('equals with matcher element', () {
+      var d = ['foo', 'bar'];
+      shouldPass(d, equals(['foo', startsWith('ba')]));
+      shouldFail(d, equals(['foo', endsWith('ba')]),
+          "Expected: ['foo', <a string ending with 'ba'>] "
+          "Actual: ['foo', 'bar'] "
+          "Which: does not match a string ending with 'ba' at location [1]");
+    });
+
     test('isIn', () {
       var d = [1, 2];
       shouldPass(1, isIn(d));
@@ -481,7 +490,30 @@ void main() {
       shouldFail(d, unorderedEquals([3, 1]),
           "Expected: equals [3, 1] unordered "
           "Actual: [1, 2] "
-          "Which: has no match for element <3> at index 0");
+          "Which: has no match for <3> at index 0");
+    });
+
+    test('unorderedMatchess', () {
+      var d = [1, 2];
+      shouldPass(d, unorderedMatches([2, 1]));
+      shouldPass(d, unorderedMatches([greaterThan(1), greaterThan(0)]));
+      shouldFail(d, unorderedMatches([greaterThan(0)]),
+          "Expected: matches [a value greater than <0>] unordered "
+          "Actual: [1, 2] "
+          "Which: has too many elements (2 > 1)");
+      shouldFail(d, unorderedMatches([3, 2, 1]),
+          "Expected: matches [<3>, <2>, <1>] unordered "
+          "Actual: [1, 2] "
+          "Which: has too few elements (2 < 3)");
+      shouldFail(d, unorderedMatches([3, 1]),
+          "Expected: matches [<3>, <1>] unordered "
+          "Actual: [1, 2] "
+          "Which: has no match for <3> at index 0");
+      shouldFail(d, unorderedMatches([greaterThan(3), greaterThan(0)]),
+          "Expected: matches [a value greater than <3>, a value greater than "
+              "<0>] unordered "
+          "Actual: [1, 2] "
+          "Which: has no match for a value greater than <3> at index 0");
     });
 
     test('pairwise compare', () {
@@ -568,6 +600,17 @@ void main() {
           "Expected: {'foo': 'bar'} "
           "Actual: {'bar': 'foo', 'barrista': 'caffeine'} "
           "Which: has different length and is missing map key 'foo'");
+    });
+
+    test('equals with matcher value', () {
+      var a = new Map();
+      a['foo'] = 'bar';
+      shouldPass(a, equals({'foo': startsWith('ba')}));
+      shouldFail(a, equals({'foo': endsWith('ba')}),
+          "Expected: {'foo': <a string ending with 'ba'>} "
+          "Actual: {'foo': 'bar'} "
+          "Which: does not match a string ending with 'ba' "
+              "at location ['foo']");
     });
 
     test('contains', () {

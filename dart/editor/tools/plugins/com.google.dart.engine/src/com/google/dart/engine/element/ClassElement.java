@@ -13,6 +13,8 @@
  */
 package com.google.dart.engine.element;
 
+import com.google.dart.engine.ast.ClassDeclaration;
+import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.type.InterfaceType;
 
 /**
@@ -42,6 +44,15 @@ public interface ClassElement extends Element {
    * @return the constructors declared in this class
    */
   public ConstructorElement[] getConstructors();
+
+  /**
+   * Return the field (synthetic or explicit) defined in this class that has the given name, or
+   * {@code null} if this class does not define a field with the given name.
+   * 
+   * @param fieldName the name of the field to be returned
+   * @return the field with the given name that is defined in this class
+   */
+  public FieldElement getField(String fieldName);
 
   /**
    * Return an array containing all of the fields declared in this class.
@@ -110,6 +121,17 @@ public interface ClassElement extends Element {
   public ConstructorElement getNamedConstructor(String name);
 
   /**
+   * Return the resolved {@link ClassDeclaration} node that declares this {@link ClassElement}.
+   * <p>
+   * This method is expensive, because resolved AST might be evicted from cache, so parsing and
+   * resolving will be performed.
+   * 
+   * @return the resolved {@link ClassDeclaration}, not {@code null}.
+   */
+  @Override
+  public ClassDeclaration getNode() throws AnalysisException;
+
+  /**
    * Return the element representing the setter with the given name that is declared in this class,
    * or {@code null} if this class does not declare a setter with the given name.
    * 
@@ -131,6 +153,15 @@ public interface ClassElement extends Element {
    * @return the superclass of this class
    */
   public InterfaceType getSupertype();
+
+  /**
+   * Return an array containing all of the toolkit specific objects associated with this class. The
+   * array will be empty if the class does not have any toolkit specific objects or if the
+   * compilation unit containing the class has not yet had toolkit references resolved.
+   * 
+   * @return the toolkit objects associated with this class
+   */
+  public ToolkitObjectElement[] getToolkitObjects();
 
   /**
    * Return the type defined by the class.
@@ -179,6 +210,14 @@ public interface ClassElement extends Element {
    * @return {@code true} if this class is abstract
    */
   public boolean isAbstract();
+
+  /**
+   * Return {@code true} if this class {@link #isProxy()}, or if it inherits the proxy annotation
+   * from a supertype.
+   * 
+   * @return {@code true} if this class defines or inherits a proxy
+   */
+  public boolean isOrInheritsProxy();
 
   /**
    * Return {@code true} if this element has an annotation of the form '@proxy'.

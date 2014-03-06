@@ -13,6 +13,8 @@
  */
 package com.google.dart.engine.element;
 
+import com.google.dart.engine.ast.AstNode;
+import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.context.AnalysisContext;
 import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.source.Source;
@@ -138,7 +140,9 @@ public interface Element {
   public ElementLocation getLocation();
 
   /**
-   * Return an array containing all of the metadata associated with this element.
+   * Return an array containing all of the metadata associated with this element. The array will be
+   * empty if the element does not have any metadata or if the library containing this element has
+   * not yet been resolved.
    * 
    * @return the metadata associated with this element
    */
@@ -161,12 +165,33 @@ public interface Element {
   public int getNameOffset();
 
   /**
+   * Return the resolved {@link AstNode} node that declares this {@link Element}.
+   * <p>
+   * This method is expensive, because resolved AST might be evicted from cache, so parsing and
+   * resolving will be performed.
+   * 
+   * @return the resolved {@link AstNode}, maybe {@code null} if {@link Element} is synthetic or
+   *         isn't contained in a compilation unit, such as a {@link LibraryElement}.
+   */
+  public AstNode getNode() throws AnalysisException;
+
+  /**
    * Return the source that contains this element, or {@code null} if this element is not contained
    * in a source.
    * 
    * @return the source that contains this element
    */
   public Source getSource();
+
+  /**
+   * Return the resolved {@link CompilationUnit} that declares this {@link Element}.
+   * <p>
+   * This method is expensive, because resolved AST might have been already evicted from cache, so
+   * parsing and resolving will be performed.
+   * 
+   * @return the resolved {@link CompilationUnit}, maybe {@code null} if synthetic {@link Element}.
+   */
+  public CompilationUnit getUnit() throws AnalysisException;
 
   /**
    * Return {@code true} if this element, assuming that it is within scope, is accessible to code in
@@ -186,6 +211,29 @@ public interface Element {
    * @return {@code true} if this element is deprecated
    */
   public boolean isDeprecated();
+
+  /**
+   * Return {@code true} if this element has an annotation of the form '@override'.
+   * 
+   * @return {@code true} if this element is overridden
+   */
+  public boolean isOverride();
+
+  /**
+   * Return {@code true} if this element is private. Private elements are visible only within the
+   * library in which they are declared.
+   * 
+   * @return {@code true} if this element is private
+   */
+  public boolean isPrivate();
+
+  /**
+   * Return {@code true} if this element is public. Public elements are visible within any library
+   * that imports the library in which they are declared.
+   * 
+   * @return {@code true} if this element is public
+   */
+  public boolean isPublic();
 
   /**
    * Return {@code true} if this element is synthetic. A synthetic element is an element that is not

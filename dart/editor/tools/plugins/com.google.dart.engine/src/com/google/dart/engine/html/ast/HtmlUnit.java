@@ -13,10 +13,11 @@
  */
 package com.google.dart.engine.html.ast;
 
+import com.google.dart.engine.element.Element;
+import com.google.dart.engine.element.HtmlElement;
 import com.google.dart.engine.html.ast.visitor.XmlVisitor;
 import com.google.dart.engine.html.scanner.Token;
 import com.google.dart.engine.html.scanner.TokenType;
-import com.google.dart.engine.internal.element.HtmlElementImpl;
 
 import java.util.List;
 
@@ -42,11 +43,6 @@ public class HtmlUnit extends XmlNode {
    * The tag nodes contained in the receiver (not {@code null}, contains no {@code null}s).
    */
   private final List<XmlTagNode> tagNodes;
-
-  /**
-   * The element associated with this HTML unit or {@code null} if the receiver is not resolved.
-   */
-  private HtmlElementImpl element;
 
   /**
    * Construct a new instance representing the content of an HTML file.
@@ -77,8 +73,9 @@ public class HtmlUnit extends XmlNode {
    * 
    * @return the element or {@code null} if the receiver is not resolved
    */
-  public HtmlElementImpl getElement() {
-    return element;
+  @Override
+  public HtmlElement getElement() {
+    return (HtmlElement) super.getElement();
   }
 
   @Override
@@ -96,13 +93,13 @@ public class HtmlUnit extends XmlNode {
     return tagNodes;
   }
 
-  /**
-   * Set the element associated with this HTML unit.
-   * 
-   * @param element the element
-   */
-  public void setElement(HtmlElementImpl element) {
-    this.element = element;
+  @Override
+  public void setElement(Element element) {
+    if (element != null && !(element instanceof HtmlElement)) {
+      throw new IllegalArgumentException("HtmlElement expected, but " + element.getClass()
+          + " given");
+    }
+    super.setElement(element);
   }
 
   @Override

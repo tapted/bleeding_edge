@@ -261,6 +261,12 @@ public class BrowserManager {
       }
     }
 
+    if (!restart) {
+      if (enableDebugging != DartiumDebugTarget.getActiveTarget().getEnableBreakpoints()) {
+        restart = true;
+      }
+    }
+
     CoreLaunchUtils.removeTerminatedLaunches();
 
     if (!restart) {
@@ -433,8 +439,8 @@ public class BrowserManager {
     arguments.add("--user-data-dir=" + getCreateUserDataDirectoryPath("dartium"));
 
     if (launchConfig.getUseWebComponents()) {
-      arguments.add("--enable-experimental-webkit-features");
-      arguments.add("--enable-devtools-experiments");
+      arguments.add("--enable-experimental-web-platform-features");
+      arguments.add("--enable-html-imports");
     }
 
     // Whether or not it's actually the first run.
@@ -445,11 +451,6 @@ public class BrowserManager {
 
     // Bypass the error dialog when the profile lock couldn't be attained.
     arguments.add("--no-process-singleton-dialog");
-
-    // TODO(devoncarew): speculative work for redirecting the devtools connection
-    //arguments.add("--remote-debugging-frontend=\"http://localhost:3030/devtools/devtools.html\"");
-    //arguments.add("--remote-debugging-frontend=\"http://localhost:3030/front-end/inspector.html\"");
-    //arguments.add("--debug-devtools-frontend=\"http://localhost:3030/devtools/devtools.html\"");
 
     for (String arg : launchConfig.getArgumentsAsArray()) {
       arguments.add(arg);
@@ -478,6 +479,12 @@ public class BrowserManager {
     ChromiumTabInfo chromeTab = tabChooser.chooseTab(tabs);
 
     if (chromeTab != null) {
+      for (ChromiumTabInfo tab : tabs) {
+        DartDebugCorePlugin.log("Found: " + tab.toString());
+      }
+
+      DartDebugCorePlugin.log("Choosing: " + chromeTab);
+
       return chromeTab;
     }
 

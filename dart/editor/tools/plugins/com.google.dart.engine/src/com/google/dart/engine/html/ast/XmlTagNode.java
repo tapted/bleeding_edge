@@ -90,6 +90,11 @@ public class XmlTagNode extends XmlNode {
   private final Token nodeEnd;
 
   /**
+   * The expressions that are embedded in the tag's content.
+   */
+  private XmlExpression[] expressions = XmlExpression.EMPTY_ARRAY;
+
+  /**
    * Construct a new instance representing an XML or HTML element
    * 
    * @param nodeStart the starting {@link TokenType#LT} token (not {@code null})
@@ -141,7 +146,7 @@ public class XmlTagNode extends XmlNode {
    */
   public XmlAttributeNode getAttribute(String name) {
     for (XmlAttributeNode attribute : attributes) {
-      if (attribute.getName().getLexeme().equals(name)) {
+      if (attribute.getName().equals(name)) {
         return attribute;
       }
     }
@@ -268,8 +273,8 @@ public class XmlTagNode extends XmlNode {
    * 
    * @return the expressions that are embedded in the tag's content
    */
-  public EmbeddedExpression[] getExpressions() {
-    return EmbeddedExpression.EMPTY_ARRAY;
+  public XmlExpression[] getExpressions() {
+    return expressions;
   }
 
   /**
@@ -291,12 +296,12 @@ public class XmlTagNode extends XmlNode {
   }
 
   /**
-   * Answer the {@link TokenType#TAG} token after the starting '&lt;'.
+   * Answer the tag name after the starting '&lt;'.
    * 
-   * @return the token (not {@code null})
+   * @return the tag name (not {@code null})
    */
-  public Token getTag() {
-    return tag;
+  public String getTag() {
+    return tag.getLexeme();
   }
 
   /**
@@ -307,6 +312,24 @@ public class XmlTagNode extends XmlNode {
    */
   public List<XmlTagNode> getTagNodes() {
     return tagNodes;
+  }
+
+  /**
+   * Answer the {@link TokenType#TAG} token after the starting '&lt;'.
+   * 
+   * @return the token (not {@code null})
+   */
+  public Token getTagToken() {
+    return tag;
+  }
+
+  /**
+   * Set the expressions that are embedded in the tag's content.
+   * 
+   * @param expressions expressions that are embedded in the tag's content
+   */
+  public void setExpressions(XmlExpression[] expressions) {
+    this.expressions = expressions;
   }
 
   @Override

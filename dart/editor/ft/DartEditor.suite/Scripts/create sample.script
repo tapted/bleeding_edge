@@ -1,0 +1,5 @@
+util.init
+util.selectMenuItem "File", "New Project" (* menu File>New Project *)
+TypeText "sample" (* enter project name *)
+util.newline (* fire off creation and analysis *)
+WaitFor 10.0, "pubspec lock" (* confirm file creation *)

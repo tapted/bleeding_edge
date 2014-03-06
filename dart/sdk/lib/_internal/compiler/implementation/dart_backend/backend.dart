@@ -13,12 +13,6 @@ class ElementAst {
 
   ElementAst(this.ast, this.treeElements);
 
-  factory ElementAst.rewrite(compiler, ast, treeElements, stripAsserts) {
-    final rewriter =
-        new FunctionBodyRewriter(compiler, treeElements, stripAsserts);
-    return new ElementAst(rewriter.visit(ast), rewriter.cloneTreeElements);
-  }
-
   ElementAst.forClassLike(this.ast)
       : this.treeElements = new TreeElementMapping(null);
 }
@@ -67,55 +61,6 @@ class VariableListAst extends ElementAst {
   }
 }
 
-class FunctionBodyRewriter extends CloningVisitor {
-  final Compiler compiler;
-  final bool stripAsserts;
-
-  FunctionBodyRewriter(this.compiler, originalTreeElements, this.stripAsserts)
-      : super(originalTreeElements);
-
-  visitBlock(Block block) {
-    shouldOmit(Statement statement) {
-      if (statement is EmptyStatement) return true;
-      ExpressionStatement expressionStatement =
-          statement.asExpressionStatement();
-      if (expressionStatement != null) {
-        Send send = expressionStatement.expression.asSend();
-        if (send != null) {
-          Element element = originalTreeElements[send];
-          if (stripAsserts && identical(element, compiler.assertMethod)) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-
-    rewriteStatement(Statement statement) {
-      Block block = statement.asBlock();
-      if (block != null) {
-        Link statements = block.statements.nodes;
-        if (!statements.isEmpty && statements.tail.isEmpty) {
-          Statement single = statements.head;
-          bool isDeclaration =
-              single is VariableDefinitions || single is FunctionDeclaration;
-          if (!isDeclaration) return single;
-        }
-      }
-      return statement;
-    }
-
-    NodeList statements = block.statements;
-    LinkBuilder<Statement> builder = new LinkBuilder<Statement>();
-    for (Statement statement in statements.nodes) {
-      if (!shouldOmit(statement)) {
-        builder.addLast(visit(rewriteStatement(statement)));
-      }
-    }
-    return new Block(rewriteNodeList(statements, builder.toLink()));
-  }
-}
-
 class DartBackend extends Backend {
   final List<CompilerTask> tasks;
   final bool forceStripTypes;
@@ -125,6 +70,8 @@ class DartBackend extends Backend {
   final Map<Node, String> renames;
   final Map<LibraryElement, String> imports;
   final Map<ClassNode, List<Node>> memberNodes;
+  Map<Element, LibraryElement> reexportingLibraries;
+
   // TODO(zarah) Maybe change this to a command-line option.
   // Right now, it is set by the tests.
   bool useMirrorHelperLibrary = false;
@@ -193,6 +140,7 @@ class DartBackend extends Backend {
         renames = new Map<Node, String>(),
         imports = new Map<LibraryElement, String>(),
         memberNodes = new Map<ClassNode, List<Node>>(),
+        reexportingLibraries = <Element, LibraryElement>{},
         forceStripTypes = strips.indexOf('types') != -1,
         stripAsserts = strips.indexOf('asserts') != -1,
         super(compiler);
@@ -265,6 +213,16 @@ class DartBackend extends Backend {
         // those names.
         fixedMemberNames.add(element.name);
       });
+      for (Element export in library.exports) {
+        if (!library.isInternalLibrary &&
+            export.getLibrary().isInternalLibrary) {
+          // If an element of an internal library is reexported by a platform
+          // library, we have to import the reexporting library instead of the
+          // internal library, because the internal library is an
+          // implementation detail of dart2js.
+          reexportingLibraries[export] = library;
+        }
+      }
     }
     // As of now names of named optionals are not renamed. Therefore add all
     // field names used as named optionals into [fixedMemberNames].
@@ -351,8 +309,7 @@ class DartBackend extends Backend {
     });
     resolvedElements.forEach((element, treeElements) {
       if (!shouldOutput(element) || treeElements == null) return;
-      var elementAst = new ElementAst.rewrite(
-          compiler, parse(element), treeElements, stripAsserts);
+      var elementAst = new ElementAst(parse(element), treeElements);
       if (element.isField()) {
         final list = (element as VariableElement).variables;
         elementAst = elementAsts.putIfAbsent(
@@ -444,7 +401,8 @@ class DartBackend extends Backend {
             && isSafeToRemoveTypeDeclarations(classMembers));
     renamePlaceholders(
         compiler, collector, renames, imports,
-        fixedMemberNames, shouldCutDeclarationTypes,
+        fixedMemberNames, reexportingLibraries,
+        shouldCutDeclarationTypes,
         uniqueGlobalNaming: useMirrorHelperLibrary);
 
     // Sort elements.

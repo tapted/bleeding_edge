@@ -8,6 +8,10 @@ _callConstructor(constructor, interceptor) {
   return (receiver) {
     setNativeSubclassDispatchRecord(receiver, interceptor);
 
+    // Mirrors uses the constructor property to cache lookups, so we need it to
+    // be set correctly, including on IE where it is not automatically picked
+    // up from the __proto__.
+    JS('', '#.constructor = #.__proto__.constructor', receiver, receiver);
     return JS('', '#(#)', constructor, receiver);
   };
 }
@@ -55,7 +59,7 @@ void _registerCustomElement(context, document, String tag, Type type,
   //          }
   //        }
   //    });
-  //    document.register('x-foo', { prototype: proto });
+  //    document.registerElement('x-foo', { prototype: proto });
   //    ...
   //    var e = document.createElement('x-foo');
 
@@ -99,9 +103,9 @@ void _registerCustomElement(context, document, String tag, Type type,
   JS('void', '#.createdCallback = #', properties,
       JS('=Object', '{value: #}',
           _makeCallbackMethod(_callConstructor(constructor, interceptor))));
-  JS('void', '#.enteredViewCallback = #', properties,
+  JS('void', '#.attachedCallback = #', properties,
       JS('=Object', '{value: #}', _makeCallbackMethod(_callEnteredView)));
-  JS('void', '#.leftViewCallback = #', properties,
+  JS('void', '#.detachedCallback = #', properties,
       JS('=Object', '{value: #}', _makeCallbackMethod(_callLeftView)));
   JS('void', '#.attributeChangedCallback = #', properties,
       JS('=Object', '{value: #}', _makeCallbackMethod3(_callAttributeChanged)));
@@ -117,7 +121,7 @@ void _registerCustomElement(context, document, String tag, Type type,
     JS('=Object', '#.extends = #', options, extendsTagName);
   }
 
-  JS('void', '#.register(#, #)', document, tag, options);
+  JS('void', '#.registerElement(#, #)', document, tag, options);
 }
 
 //// Called by Element.created to do validation & initialization.

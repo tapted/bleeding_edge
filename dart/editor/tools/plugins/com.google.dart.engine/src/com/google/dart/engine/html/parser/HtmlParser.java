@@ -16,18 +16,12 @@ package com.google.dart.engine.html.parser;
 import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.ast.Expression;
 import com.google.dart.engine.error.AnalysisErrorListener;
-import com.google.dart.engine.html.ast.AttributeWithEmbeddedExpressions;
-import com.google.dart.engine.html.ast.EmbeddedExpression;
 import com.google.dart.engine.html.ast.HtmlScriptTagNode;
 import com.google.dart.engine.html.ast.HtmlUnit;
-import com.google.dart.engine.html.ast.TagWithEmbeddedExpressions;
 import com.google.dart.engine.html.ast.XmlAttributeNode;
 import com.google.dart.engine.html.ast.XmlNode;
 import com.google.dart.engine.html.ast.XmlTagNode;
-import com.google.dart.engine.html.scanner.HtmlScanResult;
-import com.google.dart.engine.html.scanner.HtmlScanner;
 import com.google.dart.engine.html.scanner.Token;
-import com.google.dart.engine.html.scanner.TokenType;
 import com.google.dart.engine.parser.Parser;
 import com.google.dart.engine.scanner.Scanner;
 import com.google.dart.engine.scanner.SubSequenceReader;
@@ -35,7 +29,6 @@ import com.google.dart.engine.source.Source;
 import com.google.dart.engine.utilities.source.LineInfo;
 import com.google.dart.engine.utilities.source.LineInfo.Location;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -60,8 +53,6 @@ public class HtmlParser extends XmlParser {
 
   private static final String APPLICATION_DART_IN_DOUBLE_QUOTES = "\"application/dart\"";
   private static final String APPLICATION_DART_IN_SINGLE_QUOTES = "'application/dart'";
-  private static final String OPENING_DELIMITER = "{{";
-  private static final String CLOSING_DELIMITER = "}}";
   private static final String SCRIPT = "script";
   private static final String TYPE = "type";
 
@@ -70,7 +61,41 @@ public class HtmlParser extends XmlParser {
    */
   public static Set<String> SELF_CLOSING = new HashSet<String>(Arrays.asList(new String[] {
       "area", "base", "basefont", "br", "col", "frame", "hr", "img", "input", "link", "meta",
-      "param", "!", "h1", "h2", "h3", "h4", "h5", "h6"}));
+      "param", "!"}));
+
+  /**
+   * Given the contents of an embedded expression that occurs at the given offset, parse it as a
+   * Dart expression. The contents should not include the expression's delimiters.
+   * 
+   * @param source the source that contains that given token
+   * @param token the token to start parsing from
+   * @return the Dart expression that was parsed
+   */
+  public static Expression parseEmbeddedExpression(Source source,
+      com.google.dart.engine.scanner.Token token, AnalysisErrorListener errorListener) {
+    Parser parser = new Parser(source, errorListener);
+    return parser.parseExpression(token);
+  }
+
+  /**
+   * Given the contents of an embedded expression that occurs at the given offset, scans it as a
+   * Dart code.
+   * 
+   * @param source the source of that contains the given contents
+   * @param contents the contents to scan
+   * @param contentOffset the offset of the contents in the larger file
+   * @return the first Dart token
+   */
+  public static com.google.dart.engine.scanner.Token scanDartSource(Source source,
+      LineInfo lineInfo, String contents, int contentOffset, AnalysisErrorListener errorListener) {
+    Location location = lineInfo.getLocation(contentOffset);
+    Scanner scanner = new Scanner(
+        source,
+        new SubSequenceReader(contents, contentOffset),
+        errorListener);
+    scanner.setSourceStart(location.getLineNumber(), location.getColumnNumber());
+    return scanner.tokenize();
+  }
 
   /**
    * Construct a parser for the specified source.
@@ -83,72 +108,22 @@ public class HtmlParser extends XmlParser {
     this.errorListener = errorListener;
   }
 
-  public Token getEndToken(Token tag, List<XmlAttributeNode> attributes, Token attributeEnd,
-      List<XmlTagNode> tagNodes, Token contentEnd, Token closingTag, Token nodeEnd) {
-    if (nodeEnd != null) {
-      return nodeEnd;
-    }
-    if (closingTag != null) {
-      return closingTag;
-    }
-    if (contentEnd != null) {
-      return contentEnd;
-    }
-    if (!tagNodes.isEmpty()) {
-      return tagNodes.get(tagNodes.size() - 1).getEndToken();
-    }
-    if (attributeEnd != null) {
-      return attributeEnd;
-    }
-    if (!attributes.isEmpty()) {
-      return attributes.get(attributes.size() - 1).getEndToken();
-    }
-    return tag;
-  }
-
   /**
-   * Parse the tokens specified by the given scan result.
+   * Parse the given tokens.
    * 
-   * @param scanResult the result of scanning an HTML source (not {@code null})
+   * @param token the first token in the stream of tokens to be parsed
+   * @param lineInfo the line information created by the scanner
    * @return the parse result (not {@code null})
    */
-  public HtmlParseResult parse(HtmlScanResult scanResult) {
-    int[] lineStarts = scanResult.getLineStarts();
-    lineInfo = new LineInfo(lineStarts);
-    Token firstToken = scanResult.getToken();
-    List<XmlTagNode> tagNodes = parseTopTagNodes(firstToken);
-    HtmlUnit unit = new HtmlUnit(firstToken, tagNodes, getCurrentToken());
-    return new HtmlParseResult(
-        scanResult.getModificationTime(),
-        firstToken,
-        scanResult.getLineStarts(),
-        unit);
-  }
-
-  /**
-   * Scan then parse the specified source.
-   * 
-   * @param source the source to be scanned and parsed (not {@code null})
-   * @return the parse result (not {@code null})
-   */
-  public HtmlParseResult parse(Source source) throws Exception {
-    HtmlScanner scanner = new HtmlScanner(source);
-    source.getContents(scanner);
-    return parse(scanner.getResult());
+  public HtmlUnit parse(Token token, LineInfo lineInfo) {
+    this.lineInfo = lineInfo;
+    List<XmlTagNode> tagNodes = parseTopTagNodes(token);
+    return new HtmlUnit(token, tagNodes, getCurrentToken());
   }
 
   @Override
   protected XmlAttributeNode createAttributeNode(Token name, Token equals, Token value) {
-    ArrayList<EmbeddedExpression> expressions = new ArrayList<EmbeddedExpression>();
-    addEmbeddedExpressions(expressions, value);
-    if (expressions.isEmpty()) {
-      return new XmlAttributeNode(name, equals, value);
-    }
-    return new AttributeWithEmbeddedExpressions(
-        name,
-        equals,
-        value,
-        expressions.toArray(new EmbeddedExpression[expressions.size()]));
+    return new XmlAttributeNode(name, equals, value);
   }
 
   @Override
@@ -180,34 +155,7 @@ public class HtmlParser extends XmlParser {
       tagNode.setScript(unit);
       return tagNode;
     }
-    Token token = nodeStart;
-    Token endToken = getEndToken(
-        tag,
-        attributes,
-        attributeEnd,
-        tagNodes,
-        contentEnd,
-        closingTag,
-        nodeEnd);
-    ArrayList<EmbeddedExpression> expressions = new ArrayList<EmbeddedExpression>();
-    while (token != endToken) {
-      if (token.getType() == TokenType.TEXT) {
-        addEmbeddedExpressions(expressions, token);
-      }
-      token = token.getNext();
-    }
-    if (expressions.isEmpty()) {
-      return super.createTagNode(
-          nodeStart,
-          tag,
-          attributes,
-          attributeEnd,
-          tagNodes,
-          contentEnd,
-          closingTag,
-          nodeEnd);
-    }
-    return new TagWithEmbeddedExpressions(
+    return new XmlTagNode(
         nodeStart,
         tag,
         attributes,
@@ -215,38 +163,12 @@ public class HtmlParser extends XmlParser {
         tagNodes,
         contentEnd,
         closingTag,
-        nodeEnd,
-        expressions.toArray(new EmbeddedExpression[expressions.size()]));
+        nodeEnd);
   }
 
   @Override
   protected boolean isSelfClosing(Token tag) {
     return SELF_CLOSING.contains(tag.getLexeme());
-  }
-
-  /**
-   * Parse the value of the given token for embedded expressions, and add any embedded expressions
-   * that are found to the given list of expressions.
-   * 
-   * @param expressions the list to which embedded expressions are to be added
-   * @param token the token whose value is to be parsed
-   */
-  private void addEmbeddedExpressions(ArrayList<EmbeddedExpression> expressions, Token token) {
-    String lexeme = token.getLexeme();
-    int startIndex = lexeme.indexOf(OPENING_DELIMITER);
-    while (startIndex >= 0) {
-      int endIndex = lexeme.indexOf(CLOSING_DELIMITER, startIndex + 2);
-      if (endIndex < 0) {
-        // TODO(brianwilkerson) Should we report this error or will it be reported by something else?
-        return;
-      } else if (startIndex + 2 < endIndex) {
-        int offset = token.getOffset();
-        expressions.add(new EmbeddedExpression(startIndex, parseEmbeddedExpression(
-            lexeme.substring(startIndex + 2, endIndex),
-            offset + startIndex), endIndex));
-      }
-      startIndex = lexeme.indexOf(OPENING_DELIMITER, endIndex + 2);
-    }
   }
 
   /**
@@ -261,8 +183,8 @@ public class HtmlParser extends XmlParser {
       return false;
     }
     for (XmlAttributeNode attribute : attributes) {
-      if (attribute.getName().getLexeme().equals(TYPE)) {
-        Token valueToken = attribute.getValue();
+      if (attribute.getName().equals(TYPE)) {
+        Token valueToken = attribute.getValueToken();
         if (valueToken != null) {
           String value = valueToken.getLexeme();
           if (value.equals(APPLICATION_DART_IN_DOUBLE_QUOTES)
@@ -273,25 +195,5 @@ public class HtmlParser extends XmlParser {
       }
     }
     return false;
-  }
-
-  /**
-   * Given the contents of an embedded expression that occurs at the given offset, parse it as a
-   * Dart expression. The contents should not include the expression's delimiters.
-   * 
-   * @param contents the contents of the expression
-   * @param contentOffset the offset of the expression in the larger file
-   * @return the Dart expression that was parsed
-   */
-  private Expression parseEmbeddedExpression(String contents, int contentOffset) {
-    Location location = lineInfo.getLocation(contentOffset);
-    Scanner scanner = new Scanner(
-        getSource(),
-        new SubSequenceReader(contents, contentOffset),
-        errorListener);
-    scanner.setSourceStart(location.getLineNumber(), location.getColumnNumber());
-    com.google.dart.engine.scanner.Token firstToken = scanner.tokenize();
-    Parser parser = new Parser(getSource(), errorListener);
-    return parser.parseExpression(firstToken);
   }
 }

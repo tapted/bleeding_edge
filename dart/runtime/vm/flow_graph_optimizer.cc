@@ -6,6 +6,7 @@
 
 #include "vm/bit_vector.h"
 #include "vm/cha.h"
+#include "vm/cpu.h"
 #include "vm/dart_entry.h"
 #include "vm/flow_graph_builder.h"
 #include "vm/flow_graph_compiler.h"
@@ -23,6 +24,8 @@ namespace dart {
 
 DEFINE_FLAG(bool, array_bounds_check_elimination, true,
     "Eliminate redundant bounds checks.");
+DEFINE_FLAG(int, getter_setter_ratio, 13,
+    "Ratio of getter/setter usage used for double field unboxing heuristics");
 DEFINE_FLAG(bool, load_cse, true, "Use redundant load elimination.");
 DEFINE_FLAG(int, max_polymorphic_checks, 4,
     "Maximum number of polymorphic check, otherwise it is megamorphic.");
@@ -32,29 +35,20 @@ DEFINE_FLAG(int, max_equality_polymorphic_checks, 32,
 DEFINE_FLAG(bool, remove_redundant_phis, true, "Remove redundant phis.");
 DEFINE_FLAG(bool, trace_constant_propagation, false,
     "Print constant propagation and useless code elimination.");
+DEFINE_FLAG(bool, trace_load_optimization, false,
+    "Print live sets for load optimization pass.");
 DEFINE_FLAG(bool, trace_optimization, false, "Print optimization details.");
 DEFINE_FLAG(bool, trace_range_analysis, false, "Trace range analysis progress");
 DEFINE_FLAG(bool, truncating_left_shift, true,
     "Optimize left shift to truncate if possible");
 DEFINE_FLAG(bool, use_cha, true, "Use class hierarchy analysis.");
-DEFINE_FLAG(bool, trace_load_optimization, false,
-    "Print live sets for load optimization pass.");
-DEFINE_FLAG(bool, enable_simd_inline, true,
-    "Enable inlining of SIMD related method calls.");
-DEFINE_FLAG(int, getter_setter_ratio, 10,
-    "Ratio of getter/setter usage used for double field unboxing heuristics");
 DECLARE_FLAG(bool, eliminate_type_checks);
 DECLARE_FLAG(bool, enable_type_checks);
 DECLARE_FLAG(bool, trace_type_check_elimination);
 
 
 static bool ShouldInlineSimd() {
-#if defined(TARGET_ARCH_MIPS)
-  return false;
-#elif defined(TARGET_ARCH_ARM)
-  return CPUFeatures::neon_supported() && FLAG_enable_simd_inline;
-#endif
-  return FLAG_enable_simd_inline;
+  return FlowGraphCompiler::SupportsUnboxedFloat32x4();
 }
 
 
@@ -124,7 +118,7 @@ bool FlowGraphOptimizer::TryCreateICData(InstanceCallInstr* call) {
 
   const Token::Kind op_kind = call->token_kind();
   if (Token::IsRelationalOperator(op_kind) ||
-      Token::IsRelationalOperator(op_kind) ||
+      Token::IsEqualityOperator(op_kind) ||
       Token::IsBinaryOperator(op_kind)) {
     // Guess cid: if one of the inputs is a number assume that the other
     // is a number of same type.
@@ -178,7 +172,7 @@ bool FlowGraphOptimizer::TryCreateICData(InstanceCallInstr* call) {
 }
 
 
-static const ICData& SpecializeICData(const ICData& ic_data, intptr_t cid) {
+static const ICData& TrySpecializeICData(const ICData& ic_data, intptr_t cid) {
   ASSERT(ic_data.num_args_tested() == 1);
 
   if ((ic_data.NumberOfChecks() == 1) &&
@@ -186,21 +180,23 @@ static const ICData& SpecializeICData(const ICData& ic_data, intptr_t cid) {
     return ic_data;  // Nothing to do
   }
 
-  const ICData& new_ic_data = ICData::ZoneHandle(ICData::New(
-      Function::Handle(ic_data.function()),
-      String::Handle(ic_data.target_name()),
-      Object::empty_array(),  // Dummy argument descriptor.
-      ic_data.deopt_id(),
-      ic_data.num_args_tested()));
-  new_ic_data.set_deopt_reason(ic_data.deopt_reason());
-
   const Function& function =
       Function::Handle(ic_data.GetTargetForReceiverClassId(cid));
+  // TODO(fschneider): Try looking up the function on the class if it is
+  // not found in the ICData.
   if (!function.IsNull()) {
+    const ICData& new_ic_data = ICData::ZoneHandle(ICData::New(
+        Function::Handle(ic_data.function()),
+        String::Handle(ic_data.target_name()),
+        Object::empty_array(),  // Dummy argument descriptor.
+        ic_data.deopt_id(),
+        ic_data.num_args_tested()));
+    new_ic_data.set_deopt_reason(ic_data.deopt_reason());
     new_ic_data.AddReceiverCheck(cid, function);
+    return new_ic_data;
   }
 
-  return new_ic_data;
+  return ic_data;
 }
 
 
@@ -216,7 +212,11 @@ void FlowGraphOptimizer::SpecializePolymorphicInstanceCall(
     return;  // No information about receiver was infered.
   }
 
-  const ICData& ic_data = SpecializeICData(call->ic_data(), receiver_cid);
+  const ICData& ic_data = TrySpecializeICData(call->ic_data(), receiver_cid);
+  if (ic_data.raw() == call->ic_data().raw()) {
+    // No specialization.
+    return;
+  }
 
   const bool with_checks = false;
   PolymorphicInstanceCallInstr* specialized =
@@ -291,15 +291,15 @@ void FlowGraphOptimizer::AppendLoadIndexedForMerged(Definition* instr,
                                                     intptr_t ix,
                                                     intptr_t cid) {
   const intptr_t index_scale = FlowGraphCompiler::ElementSizeFor(cid);
-  ConstantInstr* index_instr = new ConstantInstr(Smi::Handle(Smi::New(ix)));
-  flow_graph()->InsertAfter(instr, index_instr, NULL, Definition::kValue);
+  ConstantInstr* index_instr =
+      flow_graph()->GetConstant(Smi::Handle(Smi::New(ix)));
   LoadIndexedInstr* load = new LoadIndexedInstr(new Value(instr),
                                                 new Value(index_instr),
                                                 index_scale,
                                                 cid,
                                                 Isolate::kNoDeoptId);
   instr->ReplaceUsesWith(load);
-  flow_graph()->InsertAfter(index_instr, load, NULL, Definition::kValue);
+  flow_graph()->InsertAfter(instr, load, NULL, Definition::kValue);
 }
 
 
@@ -348,10 +348,12 @@ void FlowGraphOptimizer::TryMergeTruncDivMod(
           (other_binop->right()->definition() == right_def)) {
         (*merge_candidates)[k] = NULL;  // Clear it.
         // Append a LoadIndexed behind TRUNC_DIV and MOD.
+        ASSERT(curr_instr->HasUses());
         AppendLoadIndexedForMerged(
             curr_instr,
             MergedMathInstr::ResultIndexOf(curr_instr->op_kind()),
             kArrayCid);
+        ASSERT(other_binop->HasUses());
         AppendLoadIndexedForMerged(
             other_binop,
             MergedMathInstr::ResultIndexOf(other_binop->op_kind()),
@@ -369,6 +371,10 @@ void FlowGraphOptimizer::TryMergeTruncDivMod(
         curr_instr->ReplaceWith(div_mod, current_iterator());
         other_binop->ReplaceUsesWith(div_mod);
         other_binop->RemoveFromGraph();
+        // Only one merge possible. Because canonicalization happens later,
+        // more candidates are possible.
+        // TODO(srdjan): Allow merging of trunc-div/mod into truncDivMod.
+        break;
       }
     }
   }
@@ -404,10 +410,12 @@ void FlowGraphOptimizer::TryMergeMathUnary(
           (other_op->value()->definition() == def)) {
         (*merge_candidates)[k] = NULL;  // Clear it.
         // Append a LoadIndexed behind SIN and COS.
+        ASSERT(curr_instr->HasUses());
         AppendLoadIndexedForMerged(
             curr_instr,
             MergedMathInstr::ResultIndexOf(curr_instr->kind()),
             kTypedDataFloat64ArrayCid);
+        ASSERT(other_op->HasUses());
         AppendLoadIndexedForMerged(
             other_op,
             MergedMathInstr::ResultIndexOf(other_op->kind()),
@@ -415,14 +423,18 @@ void FlowGraphOptimizer::TryMergeMathUnary(
         ZoneGrowableArray<Value*>* args = new ZoneGrowableArray<Value*>(1);
         args->Add(new Value(curr_instr->value()->definition()));
 
-        // Replace with TruncDivMod.
-        MergedMathInstr* div_mod = new MergedMathInstr(
+        // Replace with SinCos.
+        MergedMathInstr* sin_cos = new MergedMathInstr(
             args,
             curr_instr->DeoptimizationTarget(),
             MergedMathInstr::kSinCos);
-        curr_instr->ReplaceWith(div_mod, current_iterator());
-        other_op->ReplaceUsesWith(div_mod);
+        curr_instr->ReplaceWith(sin_cos, current_iterator());
+        other_op->ReplaceUsesWith(sin_cos);
         other_op->RemoveFromGraph();
+        // Only one merge possible. Because canonicalization happens later,
+        // more candidates are possible.
+        // TODO(srdjan): Allow merging of sin/cos into sincos.
+        break;
       }
     }
   }
@@ -453,7 +465,9 @@ void FlowGraphOptimizer::TryOptimizePatterns() {
                                        binop->right()->definition());
         } else if ((binop->op_kind() == Token::kTRUNCDIV) ||
                    (binop->op_kind() == Token::kMOD)) {
-          div_mod_merge.Add(binop);
+          if (binop->HasUses()) {
+            div_mod_merge.Add(binop);
+          }
         }
       } else if (it.Current()->IsBinaryMintOp()) {
         BinaryMintOpInstr* mintop = it.Current()->AsBinaryMintOp();
@@ -466,7 +480,9 @@ void FlowGraphOptimizer::TryOptimizePatterns() {
         MathUnaryInstr* math_unary = it.Current()->AsMathUnary();
         if ((math_unary->kind() == MethodRecognizer::kMathSin) ||
             (math_unary->kind() == MethodRecognizer::kMathCos)) {
-          sin_cos_merge.Add(math_unary);
+          if (math_unary->HasUses()) {
+            sin_cos_merge.Add(math_unary);
+          }
         }
       }
     }
@@ -538,8 +554,20 @@ bool FlowGraphOptimizer::Canonicalize() {
 void FlowGraphOptimizer::InsertConversion(Representation from,
                                           Representation to,
                                           Value* use,
-                                          Instruction* insert_before,
-                                          Instruction* deopt_target) {
+                                          bool is_environment_use) {
+  Instruction* insert_before;
+  Instruction* deopt_target;
+  PhiInstr* phi = use->instruction()->AsPhi();
+  if (phi != NULL) {
+    ASSERT(phi->is_alive());
+    // For phis conversions have to be inserted in the predecessor.
+    insert_before =
+        phi->block()->PredecessorAt(use->use_index())->last_instruction();
+    deopt_target = NULL;
+  } else {
+    deopt_target = insert_before = use->instruction();
+  }
+
   Definition* converted = NULL;
   if ((from == kTagged) && (to == kUnboxedMint)) {
     ASSERT((deopt_target != NULL) ||
@@ -595,6 +623,13 @@ void FlowGraphOptimizer::InsertConversion(Representation from,
     converted = new UnboxInt32x4Instr(use->CopyWithType(), deopt_id);
   } else if ((from == kUnboxedInt32x4) && (to == kTagged)) {
     converted = new BoxInt32x4Instr(use->CopyWithType());
+  } else if ((from == kTagged) && (to == kUnboxedFloat64x2)) {
+    ASSERT((deopt_target != NULL) || (use->Type()->ToCid() == kFloat64x2Cid));
+    const intptr_t deopt_id = (deopt_target != NULL) ?
+        deopt_target->DeoptimizationTarget() : Isolate::kNoDeoptId;
+    converted = new UnboxFloat64x2Instr(use->CopyWithType(), deopt_id);
+  } else if ((from == kUnboxedFloat64x2) && (to == kTagged)) {
+    converted = new BoxFloat64x2Instr(use->CopyWithType());
   } else {
     // We have failed to find a suitable conversion instruction.
     // Insert two "dummy" conversion instructions with the correct
@@ -613,6 +648,8 @@ void FlowGraphOptimizer::InsertConversion(Representation from,
       boxed = new BoxFloat32x4Instr(use->CopyWithType());
     } else if (from == kUnboxedMint) {
       boxed = new BoxIntegerInstr(use->CopyWithType());
+    } else if (from == kUnboxedFloat64x2) {
+      boxed = new BoxFloat64x2Instr(use->CopyWithType());
     } else {
       UNIMPLEMENTED();
     }
@@ -627,14 +664,20 @@ void FlowGraphOptimizer::InsertConversion(Representation from,
       converted = new UnboxFloat32x4Instr(to_value, deopt_id);
     } else if (to == kUnboxedMint) {
       converted = new UnboxIntegerInstr(to_value, deopt_id);
+    } else if (to == kUnboxedFloat64x2) {
+      converted = new UnboxFloat64x2Instr(to_value, deopt_id);
     } else {
       UNIMPLEMENTED();
     }
   }
   ASSERT(converted != NULL);
-  use->BindTo(converted);
   InsertBefore(insert_before, converted, use->instruction()->env(),
                Definition::kValue);
+  if (is_environment_use) {
+    use->BindToEnvironment(converted);
+  } else {
+    use->BindTo(converted);
+  }
 }
 
 
@@ -644,21 +687,17 @@ void FlowGraphOptimizer::ConvertUse(Value* use, Representation from_rep) {
   if (from_rep == to_rep || to_rep == kNoRepresentation) {
     return;
   }
+  InsertConversion(from_rep, to_rep, use, /*is_environment_use=*/ false);
+}
 
-  Instruction* insert_before;
-  Instruction* deopt_target;
-  PhiInstr* phi = use->instruction()->AsPhi();
-  if (phi != NULL) {
-    ASSERT(phi->is_alive());
-    // For phis conversions have to be inserted in the predecessor.
-    insert_before =
-        phi->block()->PredecessorAt(use->use_index())->last_instruction();
-    deopt_target = NULL;
-  } else {
-    deopt_target = insert_before = use->instruction();
+
+void FlowGraphOptimizer::ConvertEnvironmentUse(Value* use,
+                                               Representation from_rep) {
+  const Representation to_rep = kTagged;
+  if (from_rep == to_rep || to_rep == kNoRepresentation) {
+    return;
   }
-
-  InsertConversion(from_rep, to_rep, use, insert_before, deopt_target);
+  InsertConversion(from_rep, to_rep, use, /*is_environment_use=*/ true);
 }
 
 
@@ -669,6 +708,18 @@ void FlowGraphOptimizer::InsertConversionsFor(Definition* def) {
        !it.Done();
        it.Advance()) {
     ConvertUse(it.Current(), from_rep);
+  }
+
+  for (Value::Iterator it(def->env_use_list());
+       !it.Done();
+       it.Advance()) {
+    Value* use = it.Current();
+    if (use->instruction()->MayThrow() &&
+        use->instruction()->GetBlock()->InsideTryBlock()) {
+      // Environment uses at calls inside try-blocks must be converted to
+      // tagged representation.
+      ConvertEnvironmentUse(it.Current(), from_rep);
+    }
   }
 }
 
@@ -1011,6 +1062,10 @@ static intptr_t MethodKindToCid(MethodRecognizer::Kind kind) {
     case MethodRecognizer::kInt32x4ArraySetIndexed:
       return kTypedDataInt32x4ArrayCid;
 
+    case MethodRecognizer::kFloat64x2ArrayGetIndexed:
+    case MethodRecognizer::kFloat64x2ArraySetIndexed:
+      return kTypedDataFloat64x2ArrayCid;
+
     default:
       break;
   }
@@ -1136,6 +1191,13 @@ bool FlowGraphOptimizer::InlineSetIndexed(
         ASSERT(value_type.IsInstantiated());
         break;
       }
+      case kTypedDataFloat64x2ArrayCid: {
+        type_args = instantiator = flow_graph_->constant_null();
+        ASSERT((array_cid != kTypedDataFloat64x2ArrayCid) ||
+               value_type.IsFloat64x2Type());
+        ASSERT(value_type.IsInstantiated());
+        break;
+      }
       default:
         // TODO(fschneider): Add support for other array types.
         UNREACHABLE();
@@ -1181,6 +1243,15 @@ bool FlowGraphOptimizer::InlineSetIndexed(
                                     Definition::kEffect);
   }
 
+  if (array_cid == kTypedDataFloat32ArrayCid) {
+    stored_value =
+        new DoubleToFloatInstr(new Value(stored_value), call->deopt_id());
+    cursor = flow_graph()->AppendTo(cursor,
+                                    stored_value,
+                                    NULL,
+                                    Definition::kValue);
+  }
+
   intptr_t index_scale = FlowGraphCompiler::ElementSizeFor(array_cid);
   *last = new StoreIndexedInstr(new Value(array),
                                 new Value(index),
@@ -1223,7 +1294,10 @@ bool FlowGraphOptimizer::TryInlineRecognizedMethod(intptr_t receiver_cid,
     case MethodRecognizer::kUint16ArrayGetIndexed:
       return InlineGetIndexed(kind, call, receiver, ic_data, entry, last);
     case MethodRecognizer::kFloat32x4ArrayGetIndexed:
-      if (!ShouldInlineSimd()) return false;
+    case MethodRecognizer::kFloat64x2ArrayGetIndexed:
+      if (!ShouldInlineSimd()) {
+        return false;
+      }
       return InlineGetIndexed(kind, call, receiver, ic_data, entry, last);
     case MethodRecognizer::kInt32ArrayGetIndexed:
     case MethodRecognizer::kUint32ArrayGetIndexed:
@@ -1245,13 +1319,17 @@ bool FlowGraphOptimizer::TryInlineRecognizedMethod(intptr_t receiver_cid,
     case MethodRecognizer::kExternalUint8ClampedArraySetIndexed:
     case MethodRecognizer::kInt16ArraySetIndexed:
     case MethodRecognizer::kUint16ArraySetIndexed:
-      if (!ArgIsAlways(kSmiCid, ic_data, 2)) return false;
+      if (!ArgIsAlways(kSmiCid, ic_data, 2)) {
+        return false;
+      }
       value_check = ic_data.AsUnaryClassChecksForArgNr(2);
       return InlineSetIndexed(kind, target, call, receiver, token_pos,
                               &ic_data, value_check, entry, last);
     case MethodRecognizer::kInt32ArraySetIndexed:
     case MethodRecognizer::kUint32ArraySetIndexed:
-      if (!CanUnboxInt32()) return false;
+      if (!CanUnboxInt32()) {
+        return false;
+      }
       // Check that value is always smi or mint, if the platform has unboxed
       // mints (ia32 with at least SSE 4.1).
       value_check = ic_data.AsUnaryClassChecksForArgNr(2);
@@ -1267,14 +1345,31 @@ bool FlowGraphOptimizer::TryInlineRecognizedMethod(intptr_t receiver_cid,
     case MethodRecognizer::kFloat32ArraySetIndexed:
     case MethodRecognizer::kFloat64ArraySetIndexed:
       // Check that value is always double.
-      if (!ArgIsAlways(kDoubleCid, ic_data, 2)) return false;
+      if (!ArgIsAlways(kDoubleCid, ic_data, 2)) {
+        return false;
+      }
       value_check = ic_data.AsUnaryClassChecksForArgNr(2);
       return InlineSetIndexed(kind, target, call, receiver, token_pos,
                               &ic_data, value_check, entry, last);
     case MethodRecognizer::kFloat32x4ArraySetIndexed:
-      if (!ShouldInlineSimd()) return false;
+      if (!ShouldInlineSimd()) {
+        return false;
+      }
       // Check that value is always a Float32x4.
-      if (!ArgIsAlways(kFloat32x4Cid, ic_data, 2)) return false;
+      if (!ArgIsAlways(kFloat32x4Cid, ic_data, 2)) {
+        return false;
+      }
+      value_check = ic_data.AsUnaryClassChecksForArgNr(2);
+      return InlineSetIndexed(kind, target, call, receiver, token_pos,
+                              &ic_data, value_check, entry, last);
+    case MethodRecognizer::kFloat64x2ArraySetIndexed:
+      if (!ShouldInlineSimd()) {
+        return false;
+      }
+      // Check that value is always a Float32x4.
+      if (!ArgIsAlways(kFloat64x2Cid, ic_data, 2)) {
+        return false;
+      }
       value_check = ic_data.AsUnaryClassChecksForArgNr(2);
       return InlineSetIndexed(kind, target, call, receiver, token_pos,
                               &ic_data, value_check, entry, last);
@@ -1295,12 +1390,16 @@ bool FlowGraphOptimizer::TryInlineRecognizedMethod(intptr_t receiver_cid,
                                      kTypedDataUint16ArrayCid,
                                      ic_data, entry, last);
     case MethodRecognizer::kByteArrayBaseGetInt32:
-      if (!CanUnboxInt32()) return false;
+      if (!CanUnboxInt32()) {
+        return false;
+      }
       return InlineByteArrayViewLoad(call, receiver, receiver_cid,
                                      kTypedDataInt32ArrayCid,
                                      ic_data, entry, last);
     case MethodRecognizer::kByteArrayBaseGetUint32:
-      if (!CanUnboxInt32()) return false;
+      if (!CanUnboxInt32()) {
+        return false;
+      }
       return InlineByteArrayViewLoad(call, receiver, receiver_cid,
                                      kTypedDataUint32ArrayCid,
                                      ic_data, entry, last);
@@ -1313,15 +1412,75 @@ bool FlowGraphOptimizer::TryInlineRecognizedMethod(intptr_t receiver_cid,
                                      kTypedDataFloat64ArrayCid,
                                      ic_data, entry, last);
     case MethodRecognizer::kByteArrayBaseGetFloat32x4:
-      if (!ShouldInlineSimd()) return false;
+      if (!ShouldInlineSimd()) {
+        return false;
+      }
       return InlineByteArrayViewLoad(call, receiver, receiver_cid,
                                      kTypedDataFloat32x4ArrayCid,
                                      ic_data, entry, last);
     case MethodRecognizer::kByteArrayBaseGetInt32x4:
-      if (!ShouldInlineSimd()) return false;
+      if (!ShouldInlineSimd()) {
+        return false;
+      }
       return InlineByteArrayViewLoad(call, receiver, receiver_cid,
                                      kTypedDataInt32x4ArrayCid,
                                      ic_data, entry, last);
+    case MethodRecognizer::kByteArrayBaseSetInt8:
+      return InlineByteArrayViewStore(target, call, receiver, receiver_cid,
+                                      kTypedDataInt8ArrayCid,
+                                      ic_data, entry, last);
+    case MethodRecognizer::kByteArrayBaseSetUint8:
+      return InlineByteArrayViewStore(target, call, receiver, receiver_cid,
+                                      kTypedDataUint8ArrayCid,
+                                      ic_data, entry, last);
+    case MethodRecognizer::kByteArrayBaseSetInt16:
+      return InlineByteArrayViewStore(target, call, receiver, receiver_cid,
+                                      kTypedDataInt16ArrayCid,
+                                      ic_data, entry, last);
+    case MethodRecognizer::kByteArrayBaseSetUint16:
+      return InlineByteArrayViewStore(target, call, receiver, receiver_cid,
+                                      kTypedDataUint16ArrayCid,
+                                      ic_data, entry, last);
+    case MethodRecognizer::kByteArrayBaseSetInt32:
+      if (!CanUnboxInt32()) {
+        return false;
+      }
+      return InlineByteArrayViewStore(target, call, receiver, receiver_cid,
+                                      kTypedDataInt32ArrayCid,
+                                      ic_data, entry, last);
+    case MethodRecognizer::kByteArrayBaseSetUint32:
+      if (!CanUnboxInt32()) {
+        return false;
+      }
+      return InlineByteArrayViewStore(target, call, receiver, receiver_cid,
+                                      kTypedDataUint32ArrayCid,
+                                      ic_data, entry, last);
+    case MethodRecognizer::kByteArrayBaseSetFloat32:
+      return InlineByteArrayViewStore(target, call, receiver, receiver_cid,
+                                      kTypedDataFloat32ArrayCid,
+                                      ic_data, entry, last);
+    case MethodRecognizer::kByteArrayBaseSetFloat64:
+      return InlineByteArrayViewStore(target, call, receiver, receiver_cid,
+                                      kTypedDataFloat64ArrayCid,
+                                      ic_data, entry, last);
+    case MethodRecognizer::kByteArrayBaseSetFloat32x4:
+      if (!ShouldInlineSimd()) {
+        return false;
+      }
+      return InlineByteArrayViewStore(target, call, receiver, receiver_cid,
+                                      kTypedDataFloat32x4ArrayCid,
+                                      ic_data, entry, last);
+    case MethodRecognizer::kByteArrayBaseSetInt32x4:
+      if (!ShouldInlineSimd()) {
+        return false;
+      }
+      return InlineByteArrayViewStore(target, call, receiver, receiver_cid,
+                                      kTypedDataInt32x4ArrayCid,
+                                      ic_data, entry, last);
+    case MethodRecognizer::kStringBaseCodeUnitAt:
+      return InlineStringCodeUnitAt(call, receiver_cid, entry, last);
+    case MethodRecognizer::kStringBaseCharAt:
+      return InlineStringBaseCharAt(call, receiver_cid, entry, last);
     default:
       return false;
   }
@@ -1429,10 +1588,19 @@ bool FlowGraphOptimizer::InlineGetIndexed(MethodRecognizer::Kind kind,
                                index_scale,
                                array_cid,
                                deopt_id);
-  flow_graph()->AppendTo(cursor,
-                         *last,
-                         deopt_id != Isolate::kNoDeoptId ? call->env() : NULL,
-                         Definition::kValue);
+  cursor = flow_graph()->AppendTo(
+      cursor,
+      *last,
+      deopt_id != Isolate::kNoDeoptId ? call->env() : NULL,
+      Definition::kValue);
+
+  if (array_cid == kTypedDataFloat32ArrayCid) {
+    *last = new FloatToDoubleInstr(new Value(*last), deopt_id);
+    flow_graph()->AppendTo(cursor,
+                           *last,
+                           deopt_id != Isolate::kNoDeoptId ? call->env() : NULL,
+                           Definition::kValue);
+  }
   return true;
 }
 
@@ -1481,6 +1649,111 @@ bool FlowGraphOptimizer::TryReplaceWithLoadIndexed(InstanceCallInstr* call) {
 }
 
 
+// Return true if d is a string of length one (a constant or result from
+// from string-from-char-code instruction.
+static bool IsLengthOneString(Definition* d) {
+  if (d->IsConstant()) {
+    const Object& obj = d->AsConstant()->value();
+    if (obj.IsString()) {
+      return String::Cast(obj).Length() == 1;
+    } else {
+      return false;
+    }
+  } else {
+    return d->IsStringFromCharCode();
+  }
+}
+
+
+// Returns true if the string comparison was converted into char-code
+// comparison. Conversion is only possible for strings of length one.
+// E.g., detect str[x] == "x"; and use an integer comparison of char-codes.
+// TODO(srdjan): Expand for two-byte and external strings.
+bool FlowGraphOptimizer::TryStringLengthOneEquality(InstanceCallInstr* call,
+                                                    Token::Kind op_kind) {
+  ASSERT(HasOnlyTwoOf(*call->ic_data(), kOneByteStringCid));
+  // Check that left and right are length one strings (either string constants
+  // or results of string-from-char-code.
+  Definition* left = call->ArgumentAt(0);
+  Definition* right = call->ArgumentAt(1);
+  Value* left_val = NULL;
+  Definition* to_remove_left = NULL;
+  if (IsLengthOneString(right)) {
+    // Swap, since we know that both arguments are strings
+    Definition* temp = left;
+    left = right;
+    right = temp;
+  }
+  if (IsLengthOneString(left)) {
+    // Optimize if left is a string with length one (either constant or
+    // result of string-from-char-code.
+    if (left->IsConstant()) {
+      ConstantInstr* left_const = left->AsConstant();
+      const String& str = String::Cast(left_const->value());
+      ASSERT(str.Length() == 1);
+      ConstantInstr* char_code_left =
+          flow_graph()->GetConstant(Smi::ZoneHandle(Smi::New(str.CharAt(0))));
+      left_val = new Value(char_code_left);
+    } else if (left->IsStringFromCharCode()) {
+      // Use input of string-from-charcode as left value.
+      StringFromCharCodeInstr* instr = left->AsStringFromCharCode();
+      left_val = new Value(instr->char_code()->definition());
+      to_remove_left = instr;
+    } else {
+      // IsLengthOneString(left) should have been false.
+      UNREACHABLE();
+    }
+
+    Definition* to_remove_right = NULL;
+    Value* right_val = NULL;
+    if (right->IsStringFromCharCode()) {
+      // Skip string-from-char-code, and use its input as right value.
+      StringFromCharCodeInstr* right_instr = right->AsStringFromCharCode();
+      right_val = new Value(right_instr->char_code()->definition());
+      to_remove_right = right_instr;
+    } else {
+      const ICData& unary_checks_1 =
+          ICData::ZoneHandle(call->ic_data()->AsUnaryClassChecksForArgNr(1));
+      AddCheckClass(right,
+                    unary_checks_1,
+                    call->deopt_id(),
+                    call->env(),
+                    call);
+      // String-to-char-code instructions returns -1 (illegal charcode) if
+      // string is not of length one.
+      StringToCharCodeInstr* char_code_right =
+          new StringToCharCodeInstr(new Value(right), kOneByteStringCid);
+      InsertBefore(call, char_code_right, call->env(), Definition::kValue);
+      right_val = new Value(char_code_right);
+    }
+
+    // Comparing char-codes instead of strings.
+    EqualityCompareInstr* comp =
+        new EqualityCompareInstr(call->token_pos(),
+                                 op_kind,
+                                 left_val,
+                                 right_val,
+                                 kSmiCid,
+                                 call->deopt_id());
+    ReplaceCall(call, comp);
+
+    // Remove dead instructions.
+    if ((to_remove_left != NULL) &&
+        (to_remove_left->input_use_list() == NULL)) {
+      to_remove_left->ReplaceUsesWith(flow_graph()->constant_null());
+      to_remove_left->RemoveFromGraph();
+    }
+    if ((to_remove_right != NULL) &&
+        (to_remove_right->input_use_list() == NULL)) {
+      to_remove_right->ReplaceUsesWith(flow_graph()->constant_null());
+      to_remove_right->RemoveFromGraph();
+    }
+    return true;
+  }
+  return false;
+}
+
+
 static bool SmiFitsInDouble() { return kSmiBits < 53; }
 
 bool FlowGraphOptimizer::TryReplaceWithEqualityOp(InstanceCallInstr* call,
@@ -1493,7 +1766,13 @@ bool FlowGraphOptimizer::TryReplaceWithEqualityOp(InstanceCallInstr* call,
   Definition* right = call->ArgumentAt(1);
 
   intptr_t cid = kIllegalCid;
-  if (HasOnlyTwoOf(ic_data, kSmiCid)) {
+  if (HasOnlyTwoOf(ic_data, kOneByteStringCid)) {
+    if (TryStringLengthOneEquality(call, op_kind)) {
+      return true;
+    } else {
+      return false;
+    }
+  } else if (HasOnlyTwoOf(ic_data, kSmiCid)) {
     InsertBefore(call,
                  new CheckSmiInstr(new Value(left), call->deopt_id()),
                  call->env(),
@@ -1937,10 +2216,9 @@ void FlowGraphOptimizer::InlineImplicitInstanceGetter(InstanceCallInstr* call) {
   }
   LoadFieldInstr* load = new LoadFieldInstr(
       new Value(call->ArgumentAt(0)),
-      field.Offset(),
+      &field,
       AbstractType::ZoneHandle(field.type()),
       field.is_final());
-  load->set_field(&field);
   if (field.guarded_cid() != kIllegalCid) {
     if (!field.is_nullable() || (field.guarded_cid() == kNullCid)) {
       load->set_result_cid(field.guarded_cid());
@@ -2219,42 +2497,139 @@ bool FlowGraphOptimizer::TryInlineInstanceGetter(InstanceCallInstr* call) {
 }
 
 
-LoadIndexedInstr* FlowGraphOptimizer::BuildStringCodeUnitAt(
-    InstanceCallInstr* call,
-    intptr_t cid) {
+bool FlowGraphOptimizer::TryReplaceInstanceCallWithInline(
+    InstanceCallInstr* call) {
+  ASSERT(call->HasICData());
+  Function& target = Function::Handle();
+  GrowableArray<intptr_t> class_ids;
+  call->ic_data()->GetCheckAt(0, &class_ids, &target);
+  const intptr_t receiver_cid = class_ids[0];
+
+  TargetEntryInstr* entry;
+  Definition* last;
+  if (!TryInlineRecognizedMethod(receiver_cid,
+                                 target,
+                                 call,
+                                 call->ArgumentAt(0),
+                                 call->token_pos(),
+                                 *call->ic_data(),
+                                 &entry, &last)) {
+    return false;
+  }
+
+  // Insert receiver class check.
+  AddReceiverCheck(call);
+  // Remove the original push arguments.
+  for (intptr_t i = 0; i < call->ArgumentCount(); ++i) {
+    PushArgumentInstr* push = call->PushArgumentAt(i);
+    push->ReplaceUsesWith(push->value()->definition());
+    push->RemoveFromGraph();
+  }
+  // Replace all uses of this definition with the result.
+  call->ReplaceUsesWith(last);
+  // Finally insert the sequence other definition in place of this one in the
+  // graph.
+  call->previous()->LinkTo(entry->next());
+  entry->UnuseAllInputs();  // Entry block is not in the graph.
+  last->LinkTo(call);
+  // Remove through the iterator.
+  ASSERT(current_iterator()->Current() == call);
+  current_iterator()->RemoveCurrentFromGraph();
+  call->set_previous(NULL);
+  call->set_next(NULL);
+  return true;
+}
+
+
+// Returns the LoadIndexedInstr.
+Definition* FlowGraphOptimizer::PrepareInlineStringIndexOp(
+    Instruction* call,
+    intptr_t cid,
+    Definition* str,
+    Definition* index,
+    Instruction* cursor) {
+
+  cursor = flow_graph()->AppendTo(cursor,
+                                  new CheckSmiInstr(new Value(index),
+                                                    call->deopt_id()),
+                                  call->env(),
+                                  Definition::kEffect);
+
+  // Load the length of the string.
+  LoadFieldInstr* length = BuildLoadStringLength(str);
+  cursor = flow_graph()->AppendTo(cursor, length, NULL, Definition::kValue);
+  // Bounds check.
+  cursor = flow_graph()->AppendTo(cursor,
+                                   new CheckArrayBoundInstr(new Value(length),
+                                                            new Value(index),
+                                                            call->deopt_id()),
+                                   call->env(),
+                                   Definition::kEffect);
+
+  LoadIndexedInstr* load_indexed = new LoadIndexedInstr(
+      new Value(str),
+      new Value(index),
+      FlowGraphCompiler::ElementSizeFor(cid),
+      cid,
+      Isolate::kNoDeoptId);
+
+  cursor = flow_graph()->AppendTo(cursor,
+                                  load_indexed,
+                                  NULL,
+                                  Definition::kValue);
+  ASSERT(cursor == load_indexed);
+  return load_indexed;
+}
+
+
+bool FlowGraphOptimizer::InlineStringCodeUnitAt(
+    Instruction* call,
+    intptr_t cid,
+    TargetEntryInstr** entry,
+    Definition** last) {
+  // TODO(johnmccutchan): Handle external strings in PrepareInlineStringIndexOp.
+  if (RawObject::IsExternalStringClassId(cid)) {
+    return false;
+  }
+
   Definition* str = call->ArgumentAt(0);
   Definition* index = call->ArgumentAt(1);
-  AddReceiverCheck(call);
-  InsertBefore(call,
-               new CheckSmiInstr(new Value(index), call->deopt_id()),
-               call->env(),
-               Definition::kEffect);
-  // If both index and string are constants, then do a compile-time check.
-  // TODO(srdjan): Remove once constant propagation handles bounds checks.
-  bool skip_check = false;
-  if (str->IsConstant() && index->IsConstant()) {
-    const String& constant_string =
-        String::Cast(str->AsConstant()->value());
-    const Object& constant_index = index->AsConstant()->value();
-    skip_check = constant_index.IsSmi() &&
-        (Smi::Cast(constant_index).Value() < constant_string.Length());
+
+  *entry = new TargetEntryInstr(flow_graph()->allocate_block_id(),
+                                call->GetBlock()->try_index());
+  (*entry)->InheritDeoptTarget(call);
+
+  *last = PrepareInlineStringIndexOp(call, cid, str, index, *entry);
+
+  return true;
+}
+
+
+bool FlowGraphOptimizer::InlineStringBaseCharAt(
+    Instruction* call,
+    intptr_t cid,
+    TargetEntryInstr** entry,
+    Definition** last) {
+  // TODO(johnmccutchan): Handle external strings in PrepareInlineStringIndexOp.
+  if (RawObject::IsExternalStringClassId(cid) || cid != kOneByteStringCid) {
+    return false;
   }
-  if (!skip_check) {
-    // Insert bounds check.
-    LoadFieldInstr* length = BuildLoadStringLength(str);
-    InsertBefore(call, length, NULL, Definition::kValue);
-    InsertBefore(call,
-                 new CheckArrayBoundInstr(new Value(length),
-                                          new Value(index),
-                                          call->deopt_id()),
-                 call->env(),
-                 Definition::kEffect);
-  }
-  return new LoadIndexedInstr(new Value(str),
-                              new Value(index),
-                              FlowGraphCompiler::ElementSizeFor(cid),
-                              cid,
-                              Isolate::kNoDeoptId);  // Can't deoptimize.
+  Definition* str = call->ArgumentAt(0);
+  Definition* index = call->ArgumentAt(1);
+
+  *entry = new TargetEntryInstr(flow_graph()->allocate_block_id(),
+                                call->GetBlock()->try_index());
+  (*entry)->InheritDeoptTarget(call);
+
+  *last = PrepareInlineStringIndexOp(call, cid, str, index, *entry);
+
+  StringFromCharCodeInstr* char_at =
+          new StringFromCharCodeInstr(new Value(*last), cid);
+
+  flow_graph()->AppendTo(*last, char_at, NULL, Definition::kValue);
+  *last = char_at;
+
+  return true;
 }
 
 
@@ -2316,11 +2691,11 @@ bool FlowGraphOptimizer::TryInlineInstanceMethod(InstanceCallInstr* call) {
     // This is an internal method, no need to check argument types.
     Definition* array = call->ArgumentAt(0);
     Definition* value = call->ArgumentAt(1);
-    StoreVMFieldInstr* store = new StoreVMFieldInstr(
-        new Value(array),
+    StoreInstanceFieldInstr* store = new StoreInstanceFieldInstr(
         GrowableObjectArray::data_offset(),
+        new Value(array),
         new Value(value),
-        Type::ZoneHandle());
+        kEmitStoreBarrier);
     ReplaceCall(call, store);
     return true;
   }
@@ -2332,35 +2707,24 @@ bool FlowGraphOptimizer::TryInlineInstanceMethod(InstanceCallInstr* call) {
     // range.
     Definition* array = call->ArgumentAt(0);
     Definition* value = call->ArgumentAt(1);
-    StoreVMFieldInstr* store = new StoreVMFieldInstr(
-        new Value(array),
+    StoreInstanceFieldInstr* store = new StoreInstanceFieldInstr(
         GrowableObjectArray::length_offset(),
+        new Value(array),
         new Value(value),
-        Type::ZoneHandle());
+        kEmitStoreBarrier);
     ReplaceCall(call, store);
     return true;
   }
 
-  if ((recognized_kind == MethodRecognizer::kStringBaseCodeUnitAt) &&
+  if (((recognized_kind == MethodRecognizer::kStringBaseCodeUnitAt) ||
+       (recognized_kind == MethodRecognizer::kStringBaseCharAt)) &&
       (ic_data.NumberOfChecks() == 1) &&
       ((class_ids[0] == kOneByteStringCid) ||
        (class_ids[0] == kTwoByteStringCid))) {
-    LoadIndexedInstr* instr = BuildStringCodeUnitAt(call, class_ids[0]);
-    ReplaceCall(call, instr);
-    return true;
+    return TryReplaceInstanceCallWithInline(call);
   }
+
   if ((class_ids[0] == kOneByteStringCid) && (ic_data.NumberOfChecks() == 1)) {
-    if (recognized_kind == MethodRecognizer::kStringBaseCharAt) {
-      // TODO(fschneider): Handle TwoByteString.
-      LoadIndexedInstr* load_char_code =
-          BuildStringCodeUnitAt(call, class_ids[0]);
-      InsertBefore(call, load_char_code, NULL, Definition::kValue);
-      StringFromCharCodeInstr* char_at =
-          new StringFromCharCodeInstr(new Value(load_char_code),
-                                      kOneByteStringCid);
-      ReplaceCall(call, char_at);
-      return true;
-    }
     if (recognized_kind == MethodRecognizer::kOneByteStringSetAt) {
       // This is an internal method, no need to check argument types nor
       // range.
@@ -2414,7 +2778,7 @@ bool FlowGraphOptimizer::TryInlineInstanceMethod(InstanceCallInstr* call) {
       case MethodRecognizer::kDoubleTruncate:
       case MethodRecognizer::kDoubleFloor:
       case MethodRecognizer::kDoubleCeil:
-        if (!CPUFeatures::double_truncate_round_supported()) {
+        if (!TargetCPUFeatures::double_truncate_round_supported()) {
           ReplaceWithMathCFunction(call, recognized_kind);
         } else {
           AddReceiverCheck(call);
@@ -2881,12 +3245,156 @@ bool FlowGraphOptimizer::InlineByteArrayViewLoad(Instruction* call,
                                1,
                                view_cid,
                                deopt_id);
-  flow_graph()->AppendTo(cursor,
-                         *last,
-                         deopt_id != Isolate::kNoDeoptId ? call->env() : NULL,
-                         Definition::kValue);
+  cursor = flow_graph()->AppendTo(
+      cursor,
+      *last,
+      deopt_id != Isolate::kNoDeoptId ? call->env() : NULL,
+      Definition::kValue);
+
+  if (view_cid == kTypedDataFloat32ArrayCid) {
+    *last = new FloatToDoubleInstr(new Value(*last), deopt_id);
+    flow_graph()->AppendTo(cursor,
+                           *last,
+                           deopt_id != Isolate::kNoDeoptId ? call->env() : NULL,
+                           Definition::kValue);
+  }
   return true;
 }
+
+
+bool FlowGraphOptimizer::InlineByteArrayViewStore(const Function& target,
+                                                  Instruction* call,
+                                                  Definition* receiver,
+                                                  intptr_t array_cid,
+                                                  intptr_t view_cid,
+                                                  const ICData& ic_data,
+                                                  TargetEntryInstr** entry,
+                                                  Definition** last) {
+  ASSERT(array_cid != kIllegalCid);
+  Definition* array = receiver;
+  Definition* index = call->ArgumentAt(1);
+  *entry = new TargetEntryInstr(flow_graph()->allocate_block_id(),
+                                call->GetBlock()->try_index());
+  (*entry)->InheritDeoptTarget(call);
+  Instruction* cursor = *entry;
+
+  array_cid = PrepareInlineByteArrayViewOp(call,
+                                           array_cid,
+                                           view_cid,
+                                           &array,
+                                           index,
+                                           &cursor);
+
+  // Extract the instance call so we can use the function_name in the stored
+  // value check ICData.
+  InstanceCallInstr* i_call = NULL;
+  if (call->IsPolymorphicInstanceCall()) {
+    i_call = call->AsPolymorphicInstanceCall()->instance_call();
+  } else {
+    ASSERT(call->IsInstanceCall());
+    i_call = call->AsInstanceCall();
+  }
+  ASSERT(i_call != NULL);
+  ICData& value_check = ICData::ZoneHandle();
+  switch (view_cid) {
+    case kTypedDataInt8ArrayCid:
+    case kTypedDataUint8ArrayCid:
+    case kTypedDataUint8ClampedArrayCid:
+    case kExternalTypedDataUint8ArrayCid:
+    case kExternalTypedDataUint8ClampedArrayCid:
+    case kTypedDataInt16ArrayCid:
+    case kTypedDataUint16ArrayCid: {
+      // Check that value is always smi.
+      value_check = ICData::New(flow_graph_->parsed_function().function(),
+                                i_call->function_name(),
+                                Object::empty_array(),  // Dummy args. descr.
+                                Isolate::kNoDeoptId,
+                                1);
+      value_check.AddReceiverCheck(kSmiCid, target);
+      break;
+    }
+    case kTypedDataInt32ArrayCid:
+    case kTypedDataUint32ArrayCid:
+      // We don't have ICData for the value stored, so we optimistically assume
+      // smis first. If we ever deoptimized here, we require to unbox the value
+      // before storing to handle the mint case, too.
+      if (i_call->ic_data()->deopt_reason() == kDeoptUnknown) {
+        value_check = ICData::New(flow_graph_->parsed_function().function(),
+                                  i_call->function_name(),
+                                  Object::empty_array(),  // Dummy args. descr.
+                                  Isolate::kNoDeoptId,
+                                  1);
+        value_check.AddReceiverCheck(kSmiCid, target);
+      }
+      break;
+    case kTypedDataFloat32ArrayCid:
+    case kTypedDataFloat64ArrayCid: {
+      // Check that value is always double.
+      value_check = ICData::New(flow_graph_->parsed_function().function(),
+                                i_call->function_name(),
+                                Object::empty_array(),  // Dummy args. descr.
+                                Isolate::kNoDeoptId,
+                                1);
+      value_check.AddReceiverCheck(kDoubleCid, target);
+      break;
+    }
+    case kTypedDataInt32x4ArrayCid: {
+      // Check that value is always Int32x4.
+      value_check = ICData::New(flow_graph_->parsed_function().function(),
+                                i_call->function_name(),
+                                Object::empty_array(),  // Dummy args. descr.
+                                Isolate::kNoDeoptId,
+                                1);
+      value_check.AddReceiverCheck(kInt32x4Cid, target);
+      break;
+    }
+    case kTypedDataFloat32x4ArrayCid: {
+      // Check that value is always Float32x4.
+      value_check = ICData::New(flow_graph_->parsed_function().function(),
+                                i_call->function_name(),
+                                Object::empty_array(),  // Dummy args. descr.
+                                Isolate::kNoDeoptId,
+                                1);
+      value_check.AddReceiverCheck(kFloat32x4Cid, target);
+      break;
+    }
+    default:
+      // Array cids are already checked in the caller.
+      UNREACHABLE();
+  }
+
+  Definition* stored_value = call->ArgumentAt(2);
+  if (!value_check.IsNull()) {
+    AddCheckClass(stored_value, value_check, call->deopt_id(), call->env(),
+                  call);
+  }
+
+  if (view_cid == kTypedDataFloat32ArrayCid) {
+    stored_value =
+        new DoubleToFloatInstr(new Value(stored_value), call->deopt_id());
+    cursor = flow_graph()->AppendTo(cursor,
+                                    stored_value,
+                                    NULL,
+                                    Definition::kValue);
+  }
+
+  StoreBarrierType needs_store_barrier = kNoStoreBarrier;
+  *last = new StoreIndexedInstr(new Value(array),
+                                new Value(index),
+                                new Value(stored_value),
+                                needs_store_barrier,
+                                1,  // Index scale
+                                view_cid,
+                                call->deopt_id());
+
+  flow_graph()->AppendTo(cursor,
+                         *last,
+                         call->deopt_id() != Isolate::kNoDeoptId ?
+                            call->env() : NULL,
+                         Definition::kEffect);
+  return true;
+}
+
 
 
 intptr_t FlowGraphOptimizer::PrepareInlineByteArrayViewOp(
@@ -2979,46 +3487,7 @@ bool FlowGraphOptimizer::BuildByteArrayViewLoad(InstanceCallInstr* call,
   if (simd_view && !ShouldInlineSimd()) {
     return false;
   }
-
-  ASSERT(call->HasICData());
-  Function& target = Function::Handle();
-  GrowableArray<intptr_t> class_ids;
-  call->ic_data()->GetCheckAt(0, &class_ids, &target);
-  const intptr_t receiver_cid = class_ids[0];
-
-  TargetEntryInstr* entry;
-  Definition* last;
-  if (!TryInlineRecognizedMethod(receiver_cid,
-                                 target,
-                                 call,
-                                 call->ArgumentAt(0),
-                                 call->token_pos(),
-                                 *call->ic_data(),
-                                 &entry, &last)) {
-    return false;
-  }
-
-  // Insert receiver class check.
-  AddReceiverCheck(call);
-  // Remove the original push arguments.
-  for (intptr_t i = 0; i < call->ArgumentCount(); ++i) {
-    PushArgumentInstr* push = call->PushArgumentAt(i);
-    push->ReplaceUsesWith(push->value()->definition());
-    push->RemoveFromGraph();
-  }
-  // Replace all uses of this definition with the result.
-  call->ReplaceUsesWith(last);
-  // Finally insert the sequence other definition in place of this one in the
-  // graph.
-  call->previous()->LinkTo(entry->next());
-  entry->UnuseAllInputs();  // Entry block is not in the graph.
-  last->LinkTo(call);
-  // Remove through the iterator.
-  ASSERT(current_iterator()->Current() == call);
-  current_iterator()->RemoveCurrentFromGraph();
-  call->set_previous(NULL);
-  call->set_next(NULL);
-  return true;
+  return TryReplaceInstanceCallWithInline(call);
 }
 
 
@@ -3029,165 +3498,7 @@ bool FlowGraphOptimizer::BuildByteArrayViewStore(InstanceCallInstr* call,
   if (simd_view && !ShouldInlineSimd()) {
     return false;
   }
-  ASSERT(call->HasICData());
-  Function& target = Function::Handle();
-  GrowableArray<intptr_t> class_ids;
-  call->ic_data()->GetCheckAt(0, &class_ids, &target);
-  const intptr_t receiver_cid = class_ids[0];
-
-  Definition* array = call->ArgumentAt(0);
-  PrepareByteArrayViewOp(call, receiver_cid, view_cid, &array);
-  ICData& value_check = ICData::ZoneHandle();
-  switch (view_cid) {
-    case kTypedDataInt8ArrayCid:
-    case kTypedDataUint8ArrayCid:
-    case kTypedDataUint8ClampedArrayCid:
-    case kExternalTypedDataUint8ArrayCid:
-    case kExternalTypedDataUint8ClampedArrayCid:
-    case kTypedDataInt16ArrayCid:
-    case kTypedDataUint16ArrayCid: {
-      // Check that value is always smi.
-      value_check = ICData::New(flow_graph_->parsed_function().function(),
-                                call->function_name(),
-                                Object::empty_array(),  // Dummy args. descr.
-                                Isolate::kNoDeoptId,
-                                1);
-      value_check.AddReceiverCheck(kSmiCid, target);
-      break;
-    }
-    case kTypedDataInt32ArrayCid:
-    case kTypedDataUint32ArrayCid:
-      // We don't have ICData for the value stored, so we optimistically assume
-      // smis first. If we ever deoptimized here, we require to unbox the value
-      // before storing to handle the mint case, too.
-      if (call->ic_data()->deopt_reason() == kDeoptUnknown) {
-        value_check = ICData::New(flow_graph_->parsed_function().function(),
-                                  call->function_name(),
-                                  Object::empty_array(),  // Dummy args. descr.
-                                  Isolate::kNoDeoptId,
-                                  1);
-        value_check.AddReceiverCheck(kSmiCid, target);
-      }
-      break;
-    case kTypedDataFloat32ArrayCid:
-    case kTypedDataFloat64ArrayCid: {
-      // Check that value is always double.
-      value_check = ICData::New(flow_graph_->parsed_function().function(),
-                                call->function_name(),
-                                Object::empty_array(),  // Dummy args. descr.
-                                Isolate::kNoDeoptId,
-                                1);
-      value_check.AddReceiverCheck(kDoubleCid, target);
-      break;
-    }
-    case kTypedDataInt32x4ArrayCid: {
-      // Check that value is always Int32x4.
-      value_check = ICData::New(flow_graph_->parsed_function().function(),
-                                call->function_name(),
-                                Object::empty_array(),  // Dummy args. descr.
-                                Isolate::kNoDeoptId,
-                                1);
-      value_check.AddReceiverCheck(kInt32x4Cid, target);
-      break;
-    }
-    case kTypedDataFloat32x4ArrayCid: {
-      // Check that value is always Float32x4.
-      value_check = ICData::New(flow_graph_->parsed_function().function(),
-                                call->function_name(),
-                                Object::empty_array(),  // Dummy args. descr.
-                                Isolate::kNoDeoptId,
-                                1);
-      value_check.AddReceiverCheck(kFloat32x4Cid, target);
-      break;
-    }
-    default:
-      // Array cids are already checked in the caller.
-      UNREACHABLE();
-  }
-
-  Definition* index = call->ArgumentAt(1);
-  Definition* stored_value = call->ArgumentAt(2);
-  if (!value_check.IsNull()) {
-    AddCheckClass(stored_value, value_check, call->deopt_id(), call->env(),
-                  call);
-  }
-  StoreBarrierType needs_store_barrier = kNoStoreBarrier;
-  StoreIndexedInstr* array_op = new StoreIndexedInstr(new Value(array),
-                                                      new Value(index),
-                                                      new Value(stored_value),
-                                                      needs_store_barrier,
-                                                      1,  // Index scale
-                                                      view_cid,
-                                                      call->deopt_id());
-  ReplaceCall(call, array_op);
-  return true;
-}
-
-
-void FlowGraphOptimizer::PrepareByteArrayViewOp(
-    InstanceCallInstr* call,
-    intptr_t receiver_cid,
-    intptr_t view_cid,
-    Definition** array) {
-  Definition* byte_index = call->ArgumentAt(1);
-
-  AddReceiverCheck(call);
-  const bool is_immutable = true;
-  LoadFieldInstr* length = new LoadFieldInstr(
-      new Value(*array),
-      CheckArrayBoundInstr::LengthOffsetFor(receiver_cid),
-      Type::ZoneHandle(Type::SmiType()),
-      is_immutable);
-  length->set_result_cid(kSmiCid);
-  length->set_recognized_kind(
-      LoadFieldInstr::RecognizedKindFromArrayCid(receiver_cid));
-  InsertBefore(call, length, NULL, Definition::kValue);
-
-  // len_in_bytes = length * kBytesPerElement(receiver)
-  intptr_t element_size = FlowGraphCompiler::ElementSizeFor(receiver_cid);
-  ConstantInstr* bytes_per_element =
-      flow_graph()->GetConstant(Smi::Handle(Smi::New(element_size)));
-  BinarySmiOpInstr* len_in_bytes =
-      new BinarySmiOpInstr(Token::kMUL,
-                           new Value(length),
-                           new Value(bytes_per_element),
-                           call->deopt_id());
-  InsertBefore(call, len_in_bytes, call->env(), Definition::kValue);
-
-  ConstantInstr* length_adjustment =
-      flow_graph()->GetConstant(Smi::Handle(Smi::New(
-          FlowGraphCompiler::ElementSizeFor(view_cid) - 1)));
-  // adjusted_length = len_in_bytes - (element_size - 1).
-  BinarySmiOpInstr* adjusted_length =
-      new BinarySmiOpInstr(Token::kSUB,
-                           new Value(len_in_bytes),
-                           new Value(length_adjustment),
-                           call->deopt_id());
-  InsertBefore(call, adjusted_length, call->env(), Definition::kValue);
-  // Check adjusted_length > 0.
-  ConstantInstr* zero = flow_graph()->GetConstant(Smi::Handle(Smi::New(0)));
-  InsertBefore(call,
-               new CheckArrayBoundInstr(new Value(adjusted_length),
-                                        new Value(zero),
-                                        call->deopt_id()),
-               call->env(),
-               Definition::kEffect);
-  // Check 0 <= byte_index < adjusted_length.
-  InsertBefore(call,
-               new CheckArrayBoundInstr(new Value(adjusted_length),
-                                        new Value(byte_index),
-                                        call->deopt_id()),
-               call->env(),
-               Definition::kEffect);
-
-  // Insert load of elements for external typed arrays.
-  if (RawObject::IsExternalTypedDataClassId(receiver_cid)) {
-    LoadUntaggedInstr* elements =
-        new LoadUntaggedInstr(new Value(*array),
-                              ExternalTypedData::data_offset());
-    InsertBefore(call, elements, NULL, Definition::kValue);
-    *array = elements;
-  }
+  return TryReplaceInstanceCallWithInline(call);
 }
 
 
@@ -3207,8 +3518,8 @@ RawBool* FlowGraphOptimizer::InstanceOfAsBool(const ICData& ic_data,
     // arguments.
     const intptr_t num_type_params = type_class.NumTypeParameters();
     const intptr_t from_index = num_type_args - num_type_params;
-    const AbstractTypeArguments& type_arguments =
-        AbstractTypeArguments::Handle(type.arguments());
+    const TypeArguments& type_arguments =
+        TypeArguments::Handle(type.arguments());
     const bool is_raw_type = type_arguments.IsNull() ||
         type_arguments.IsRaw(from_index, num_type_params);
     if (!is_raw_type) {
@@ -3248,6 +3559,35 @@ static Definition* OriginalDefinition(Definition* defn) {
 }
 
 
+// Returns true if checking against this type is a direct class id comparison.
+static bool TypeCheckAsClassEquality(const AbstractType& type) {
+  ASSERT(type.IsFinalized() && !type.IsMalformedOrMalbounded());
+  // Requires CHA.
+  if (!FLAG_use_cha) return false;
+  if (!type.IsInstantiated()) return false;
+  const Class& type_class = Class::Handle(type.type_class());
+  // Signature classes have different type checking rules.
+  if (type_class.IsSignatureClass()) return false;
+  // Could be an interface check?
+  if (type_class.is_implemented()) return false;
+  const intptr_t type_cid = type_class.id();
+  if (CHA::HasSubclasses(type_cid)) return false;
+  const intptr_t num_type_args = type_class.NumTypeArguments();
+  if (num_type_args > 0) {
+    // Only raw types can be directly compared, thus disregarding type
+    // arguments.
+    const intptr_t num_type_params = type_class.NumTypeParameters();
+    const intptr_t from_index = num_type_args - num_type_params;
+    const TypeArguments& type_arguments =
+        TypeArguments::Handle(type.arguments());
+    const bool is_raw_type = type_arguments.IsNull() ||
+        type_arguments.IsRaw(from_index, num_type_params);
+    return is_raw_type;
+  }
+  return true;
+}
+
+
 // TODO(srdjan): Use ICData to check if always true or false.
 void FlowGraphOptimizer::ReplaceWithInstanceOf(InstanceCallInstr* call) {
   ASSERT(Token::IsTypeTestOperator(call->token_kind()));
@@ -3279,6 +3619,27 @@ void FlowGraphOptimizer::ReplaceWithInstanceOf(InstanceCallInstr* call) {
       return;
     }
   }
+
+  if (TypeCheckAsClassEquality(type)) {
+    LoadClassIdInstr* left_cid = new LoadClassIdInstr(new Value(left));
+    InsertBefore(call,
+                 left_cid,
+                 NULL,
+                 Definition::kValue);
+    const intptr_t type_cid = Class::Handle(type.type_class()).id();
+    ConstantInstr* cid =
+        flow_graph()->GetConstant(Smi::Handle(Smi::New(type_cid)));
+
+    StrictCompareInstr* check_cid =
+        new StrictCompareInstr(call->token_pos(),
+                               negate ? Token::kNE_STRICT : Token::kEQ_STRICT,
+                               new Value(left_cid),
+                               new Value(cid),
+                               false);  // No number check.
+    ReplaceCall(call, check_cid);
+    return;
+  }
+
   InstanceOfInstr* instance_of =
       new InstanceOfInstr(call->token_pos(),
                           new Value(left),
@@ -3313,7 +3674,8 @@ void FlowGraphOptimizer::ReplaceWithTypeCast(InstanceCallInstr* call) {
       }
       // Remove call, replace it with 'left'.
       call->ReplaceUsesWith(left);
-      call->RemoveFromGraph();
+      ASSERT(current_iterator()->Current() == call);
+      current_iterator()->RemoveCurrentFromGraph();
       return;
     }
   }
@@ -3530,6 +3892,31 @@ void FlowGraphOptimizer::VisitStaticCall(StaticCallInstr* call) {
     ConstantInstr* cid_instr = new ConstantInstr(Smi::Handle(Smi::New(cid)));
     ReplaceCall(call, cid_instr);
   }
+
+  if (call->function().IsFactory()) {
+    const Class& function_class = Class::Handle(call->function().Owner());
+    if ((function_class.library() == Library::CoreLibrary()) ||
+        (function_class.library() == Library::TypedDataLibrary())) {
+      intptr_t cid = FactoryRecognizer::ResultCid(call->function());
+      switch (cid) {
+        case kArrayCid: {
+          Value* type = new Value(call->ArgumentAt(0));
+          Value* num_elements = new Value(call->ArgumentAt(1));
+          if (num_elements->BindsToConstant() &&
+              num_elements->BoundConstant().IsSmi()) {
+            intptr_t length = Smi::Cast(num_elements->BoundConstant()).Value();
+            if (length >= 0 && length <= Array::kMaxElements) {
+              CreateArrayInstr* create_array =
+                  new CreateArrayInstr(call->token_pos(), type, num_elements);
+              ReplaceCall(call, create_array);
+            }
+          }
+        }
+        default:
+          break;
+      }
+    }
+  }
 }
 
 
@@ -3555,6 +3942,9 @@ void FlowGraphOptimizer::VisitStoreInstanceField(
                && (FLAG_getter_setter_ratio * setter.usage_counter() >
                    getter.usage_counter());
     if (!result) {
+      if (FLAG_trace_optimization) {
+        OS::Print("Disabling unboxing of %s\n", field.ToCString());
+      }
       field.set_is_unboxing_candidate(false);
       field.DeoptimizeDependentCode();
     } else {
@@ -4314,6 +4704,9 @@ LICM::LICM(FlowGraph* flow_graph) : flow_graph_(flow_graph) {
 void LICM::Hoist(ForwardInstructionIterator* it,
                  BlockEntryInstr* pre_header,
                  Instruction* current) {
+  if (current->IsCheckClass()) {
+    current->AsCheckClass()->set_licm_hoisted(true);
+  }
   // TODO(fschneider): Avoid repeated deoptimization when
   // speculatively hoisting checks.
   if (FLAG_trace_optimization) {
@@ -4401,6 +4794,12 @@ static bool IsLoopInvariantLoad(ZoneGrowableArray<BitVector*>* sets,
 
 
 void LICM::Optimize() {
+  if (!flow_graph()->parsed_function().function().
+          allows_hoisting_check_class()) {
+    // Do not hoist any.
+    return;
+  }
+
   const ZoneGrowableArray<BlockEntryInstr*>& loop_headers =
       flow_graph()->loop_headers();
 
@@ -4436,12 +4835,9 @@ void LICM::Optimize() {
           }
           if (inputs_loop_invariant &&
               !current->IsAssertAssignable() &&
-              !current->IsAssertBoolean() &&
-              !current->IsGuardField()) {
+              !current->IsAssertBoolean()) {
             // TODO(fschneider): Enable hoisting of Assert-instructions
             // if it safe to do.
-            // TODO(15652): Hoisting guard-field instructions causes the
-            // optimizing compiler to crash.
             Hoist(&it, pre_header, current);
           } else if (current->IsCheckSmi() &&
                      current->InputAt(0)->definition()->IsPhi()) {
@@ -4474,29 +4870,34 @@ class Alias : public ValueObject {
   // TODO(vegorov): incorporate type of array into alias to disambiguate
   // different typed data and normal arrays.
   static Alias Indexes() {
-    return Alias(kIndexesAlias);
+    return Alias(kIndexesAlias, 0);
+  }
+
+  static Alias ConstantIndex(intptr_t id) {
+    ASSERT(id != 0);
+    return Alias(kConstantIndex, id);
   }
 
   // Field load/stores alias each other only when they access the same field.
   // AliasedSet assigns ids to a combination of instance and field during
   // the optimization phase.
   static Alias Field(intptr_t id) {
-    ASSERT(id >= kFirstFieldAlias);
-    return Alias(id * 2 + 1);
+    ASSERT(id != 0);
+    return Alias(kFieldAlias, id);
   }
 
   // VMField load/stores alias each other when field offset matches.
   // TODO(vegorov) storing a context variable does not alias loading array
   // length.
   static Alias VMField(intptr_t offset_in_bytes) {
+    ASSERT(offset_in_bytes >= 0);
     const intptr_t idx = offset_in_bytes / kWordSize;
-    ASSERT(idx >= kFirstFieldAlias);
-    return Alias(idx * 2);
+    return Alias(kVMFieldAlias, idx);
   }
 
   // Current context load/stores alias each other.
   static Alias CurrentContext() {
-    return Alias(kCurrentContextAlias);
+    return Alias(kCurrentContextAlias, 0);
   }
 
   // Operation does not alias anything.
@@ -4511,19 +4912,44 @@ class Alias : public ValueObject {
   // Convert this alias to a positive array index.
   intptr_t ToIndex() const {
     ASSERT(!IsNone());
-    return alias_ - kAliasBase;
+    return alias_;
   }
 
  private:
+  enum {
+    // Number of bits required to encode Kind value.
+    // The payload occupies the rest of the bits, but leaves the MSB (sign bit)
+    // empty so that the resulting encoded value is always a positive integer.
+    kBitsForKind = 3,
+    kBitsForPayload = kWordSize * kBitsPerByte - kBitsForKind - 1,
+  };
+
+  enum Kind {
+    kNoneAlias = -1,
+    kCurrentContextAlias = 0,
+    kIndexesAlias = 1,
+    kFieldAlias = 2,
+    kVMFieldAlias = 3,
+    kConstantIndex = 4,
+    kNumKinds = kConstantIndex + 1
+  };
+  COMPILE_ASSERT(kNumKinds < ((1 << kBitsForKind) - 1), InvalidBitFieldSize);
+
   explicit Alias(intptr_t alias) : alias_(alias) { }
 
-  enum {
-    kNoneAlias = -2,
-    kCurrentContextAlias = -1,
-    kIndexesAlias = 0,
-    kFirstFieldAlias = kIndexesAlias + 1,
-    kAliasBase = kCurrentContextAlias
-  };
+  Alias(Kind kind, uword payload)
+      : alias_(KindField::encode(kind) | PayloadField::encode(payload)) { }
+
+  uword payload() const {
+    return PayloadField::decode(alias_);
+  }
+
+  Kind kind() const {
+    return IsNone() ? kNoneAlias : KindField::decode(alias_);
+  }
+
+  typedef BitField<Kind, 0, kBitsForKind> KindField;
+  typedef BitField<uword, kBitsForKind, kBitsForPayload> PayloadField;
 
   const intptr_t alias_;
 };
@@ -4586,24 +5012,18 @@ class Place : public ValueObject {
       }
 
       case Instruction::kStoreInstanceField: {
-        StoreInstanceFieldInstr* store_instance_field =
+        StoreInstanceFieldInstr* store =
             instr->AsStoreInstanceField();
-        kind_ = kField;
-        representation_ = store_instance_field->
-            RequiredInputRepresentation(StoreInstanceFieldInstr::kValuePos);
-        instance_ =
-            OriginalDefinition(store_instance_field->instance()->definition());
-        field_ = &store_instance_field->field();
-        break;
-      }
-
-      case Instruction::kStoreVMField: {
-        StoreVMFieldInstr* store_vm_field = instr->AsStoreVMField();
-        kind_ = kVMField;
-        representation_ = store_vm_field->
-            RequiredInputRepresentation(StoreVMFieldInstr::kValuePos);
-        instance_ = OriginalDefinition(store_vm_field->dest()->definition());
-        offset_in_bytes_ = store_vm_field->offset_in_bytes();
+        representation_ = store->RequiredInputRepresentation(
+            StoreInstanceFieldInstr::kValuePos);
+        instance_ = OriginalDefinition(store->instance()->definition());
+        if (!store->field().IsNull()) {
+          kind_ = kField;
+          field_ = &store->field();
+        } else {
+          kind_ = kVMField;
+          offset_in_bytes_ = store->offset_in_bytes();
+        }
         break;
       }
 
@@ -4842,11 +5262,19 @@ class AliasedSet : public ZoneAllocated {
         sets_(),
         aliased_by_effects_(new BitVector(places->length())),
         max_field_id_(0),
-        field_ids_() { }
+        field_ids_(),
+        max_index_id_(0),
+        index_ids_() { }
 
   Alias ComputeAlias(Place* place) {
     switch (place->kind()) {
       case Place::kIndexed:
+        if (place->index()->IsConstant()) {
+          const Object& index = place->index()->AsConstant()->value();
+          if (index.IsSmi()) {
+            return Alias::ConstantIndex(GetIndexId(Smi::Cast(index).Value()));
+          }
+        }
         return Alias::Indexes();
       case Place::kField:
         return Alias::Field(
@@ -4864,7 +5292,15 @@ class AliasedSet : public ZoneAllocated {
   }
 
   Alias ComputeAliasForStore(Instruction* instr) {
-    if (instr->IsStoreIndexed()) {
+    StoreIndexedInstr* store_indexed = instr->AsStoreIndexed();
+    if (store_indexed != NULL) {
+      if (store_indexed->index()->definition()->IsConstant()) {
+        const Object& index =
+            store_indexed->index()->definition()->AsConstant()->value();
+        if (index.IsSmi()) {
+          return Alias::ConstantIndex(GetIndexId(Smi::Cast(index).Value()));
+        }
+      }
       return Alias::Indexes();
     }
 
@@ -4872,13 +5308,11 @@ class AliasedSet : public ZoneAllocated {
         instr->AsStoreInstanceField();
     if (store_instance_field != NULL) {
       Definition* instance = store_instance_field->instance()->definition();
-      return Alias::Field(GetInstanceFieldId(instance,
-                                             store_instance_field->field()));
-    }
-
-    StoreVMFieldInstr* store_vm_field = instr->AsStoreVMField();
-    if (store_vm_field != NULL) {
-      return Alias::VMField(store_vm_field->offset_in_bytes());
+      if (!store_instance_field->field().IsNull()) {
+        return Alias::Field(GetInstanceFieldId(instance,
+                                               store_instance_field->field()));
+      }
+      return Alias::VMField(store_instance_field->offset_in_bytes());
     }
 
     if (instr->IsStoreContext()) {
@@ -4895,7 +5329,8 @@ class AliasedSet : public ZoneAllocated {
 
   BitVector* Get(const Alias alias) {
     const intptr_t idx = alias.ToIndex();
-    return (idx < sets_.length()) ? sets_[idx] : NULL;
+    BitVector* ret = (idx < sets_.length()) ? sets_[idx] : NULL;
+    return ret;
   }
 
   void AddRepresentative(Place* place) {
@@ -4907,9 +5342,33 @@ class AliasedSet : public ZoneAllocated {
     }
   }
 
+  void EnsureAliasingForIndexes() {
+    BitVector* indexes = Get(Alias::Indexes());
+    if (indexes == NULL) {
+      return;
+    }
+
+    // Constant indexes alias all non-constant indexes.
+    // Non-constant indexes alias all constant indexes.
+    // First update alias set for const-indices, then
+    // update set for all indices. Ids start at 1.
+    for (intptr_t id = 1; id <= max_index_id_; id++) {
+      BitVector* const_indexes = Get(Alias::ConstantIndex(id));
+      if (const_indexes != NULL) {
+        const_indexes->AddAll(indexes);
+      }
+    }
+
+    for (intptr_t id = 1; id <= max_index_id_; id++) {
+      BitVector* const_indexes = Get(Alias::ConstantIndex(id));
+      if (const_indexes != NULL) {
+        indexes->AddAll(const_indexes);
+      }
+    }
+  }
+
   void AddIdForAlias(const Alias alias, intptr_t place_id) {
     const intptr_t idx = alias.ToIndex();
-
     while (sets_.length() <= idx) {
       sets_.Add(NULL);
     }
@@ -4945,8 +5404,8 @@ class AliasedSet : public ZoneAllocated {
 
   const PhiPlaceMoves* phi_moves() const { return phi_moves_; }
 
-  // Returns true if the result of AllocateObject can be aliased by some
-  // other SSA variable and false otherwise. Currently simply checks if
+  // Returns true if the result of an allocation instruction can be aliased by
+  // some other SSA variable and false otherwise. Currently simply checks if
   // this value is stored in a field, escapes to another function or
   // participates in a phi.
   static bool CanBeAliased(AllocateObjectInstr* alloc) {
@@ -4957,8 +5416,10 @@ class AliasedSet : public ZoneAllocated {
            use = use->next_use()) {
         Instruction* instr = use->instruction();
         if (instr->IsPushArgument() ||
-            (instr->IsStoreVMField() && (use->use_index() != 1)) ||
-            (instr->IsStoreInstanceField() && (use->use_index() != 0)) ||
+            (instr->IsStoreInstanceField()
+             && (use->use_index() != StoreInstanceFieldInstr::kInstancePos)) ||
+            (instr->IsStoreIndexed()
+             && (use->use_index() == StoreIndexedInstr::kValuePos)) ||
             instr->IsStoreStaticField() ||
             instr->IsPhi() ||
             instr->IsAssertAssignable() ||
@@ -4983,6 +5444,16 @@ class AliasedSet : public ZoneAllocated {
     if (id == 0) {
       id = ++max_field_id_;
       field_ids_.Insert(FieldIdPair(FieldIdPair::Key(instance_id, &field), id));
+    }
+    return id;
+  }
+
+  intptr_t GetIndexId(intptr_t index) {
+    intptr_t id = index_ids_.Lookup(index);
+    if (id == 0) {
+      // Zero is used to indicate element not found. The first id is one.
+      id = ++max_index_id_;
+      index_ids_.Insert(IndexIdPair(index, id));
     }
     return id;
   }
@@ -5089,6 +5560,35 @@ class AliasedSet : public ZoneAllocated {
     Value value_;
   };
 
+  class IndexIdPair {
+   public:
+    typedef intptr_t Key;
+    typedef intptr_t Value;
+    typedef IndexIdPair Pair;
+
+    IndexIdPair(Key key, Value value) : key_(key), value_(value) { }
+
+    static Key KeyOf(IndexIdPair kv) {
+      return kv.key_;
+    }
+
+    static Value ValueOf(IndexIdPair kv) {
+      return kv.value_;
+    }
+
+    static intptr_t Hashcode(Key key) {
+      return key;
+    }
+
+    static inline bool IsKeyEqual(IndexIdPair kv, Key key) {
+      return KeyOf(kv) == key;
+    }
+
+   private:
+    Key key_;
+    Value value_;
+  };
+
   const ZoneGrowableArray<Place*>& places_;
 
   const PhiPlaceMoves* phi_moves_;
@@ -5102,6 +5602,9 @@ class AliasedSet : public ZoneAllocated {
   // Table mapping static field to their id used during optimization pass.
   intptr_t max_field_id_;
   DirectChainedHashMap<FieldIdPair> field_ids_;
+
+  intptr_t max_index_id_;
+  DirectChainedHashMap<IndexIdPair> index_ids_;
 };
 
 
@@ -5113,11 +5616,6 @@ static Definition* GetStoredValue(Instruction* instr) {
   StoreInstanceFieldInstr* store_instance_field = instr->AsStoreInstanceField();
   if (store_instance_field != NULL) {
     return store_instance_field->value()->definition();
-  }
-
-  StoreVMFieldInstr* store_vm_field = instr->AsStoreVMField();
-  if (store_vm_field != NULL) {
-    return store_vm_field->value()->definition();
   }
 
   StoreStaticFieldInstr* store_static_field = instr->AsStoreStaticField();
@@ -5178,7 +5676,6 @@ static PhiPlaceMoves* ComputePhiMoves(
                       result->id());
           }
         }
-
         phi_moves->CreateOutgoingMove(block->PredecessorAt(j),
                                       result->id(),
                                       place->id());
@@ -5242,19 +5739,9 @@ static AliasedSet* NumberPlaces(
     aliased_set->AddRepresentative(place);
   }
 
+  aliased_set->EnsureAliasingForIndexes();
+
   return aliased_set;
-}
-
-
-static bool HasSimpleTypeArguments(AllocateObjectInstr* alloc) {
-  if (alloc->ArgumentCount() == 0) return true;
-  ASSERT(alloc->ArgumentCount() == 2);
-  Value* arg1 = alloc->PushArgumentAt(1)->value();
-  if (!arg1->BindsToConstant()) return false;
-
-  const Object& obj = arg1->BoundConstant();
-  return obj.IsSmi()
-      && (Smi::Cast(obj).Value() == StubCode::kNoInstantiator);
 }
 
 
@@ -5334,8 +5821,6 @@ class LoadOptimizer : public ValueObject {
   // Loads that are locally redundant will be replaced as we go through
   // instructions.
   void ComputeInitialSets() {
-    BitVector* forwarded_loads = new BitVector(aliased_set_->max_place_id());
-
     for (BlockIterator block_it = graph_->reverse_postorder_iterator();
          !block_it.Done();
          block_it.Advance()) {
@@ -5373,6 +5858,7 @@ class LoadOptimizer : public ValueObject {
           if ((array_store == NULL) ||
               (array_store->class_id() == kArrayCid) ||
               (array_store->class_id() == kTypedDataFloat64ArrayCid) ||
+              (array_store->class_id() == kTypedDataFloat32ArrayCid) ||
               (array_store->class_id() == kTypedDataFloat32x4ArrayCid)) {
             bool is_load = false;
             Place store_place(instr, &is_load);
@@ -5420,9 +5906,7 @@ class LoadOptimizer : public ValueObject {
         // TODO(vegorov): record null-values at least for not final fields of
         // escaping object.
         AllocateObjectInstr* alloc = instr->AsAllocateObject();
-        if ((alloc != NULL) &&
-            !AliasedSet::CanBeAliased(alloc) &&
-            HasSimpleTypeArguments(alloc)) {
+        if ((alloc != NULL) && !AliasedSet::CanBeAliased(alloc)) {
           for (Value* use = alloc->input_use_list();
                use != NULL;
                use = use->next_use()) {
@@ -5439,7 +5923,7 @@ class LoadOptimizer : public ValueObject {
               if (out_values == NULL) out_values = CreateBlockOutValues();
 
               if (alloc->ArgumentCount() > 0) {
-                ASSERT(alloc->ArgumentCount() == 2);
+                ASSERT(alloc->ArgumentCount() == 1);
                 intptr_t type_args_offset =
                     alloc->cls().type_arguments_field_offset();
                 if (load->offset_in_bytes() == type_args_offset) {
@@ -5495,12 +5979,6 @@ class LoadOptimizer : public ValueObject {
         (*out_values)[place_id] = defn;
       }
 
-      PhiPlaceMoves::MovesList phi_moves =
-          aliased_set_->phi_moves()->GetOutgoingMoves(block);
-      if (phi_moves != NULL) {
-        PerformPhiMoves(phi_moves, gen, forwarded_loads);
-      }
-
       exposed_values_[preorder_number] = exposed_values;
       out_values_[preorder_number] = out_values;
     }
@@ -5537,6 +6015,7 @@ class LoadOptimizer : public ValueObject {
   void ComputeOutSets() {
     BitVector* temp = new BitVector(aliased_set_->max_place_id());
     BitVector* forwarded_loads = new BitVector(aliased_set_->max_place_id());
+    BitVector* temp_out = new BitVector(aliased_set_->max_place_id());
 
     bool changed = true;
     while (changed) {
@@ -5564,9 +6043,17 @@ class LoadOptimizer : public ValueObject {
           for (intptr_t i = 0; i < block->PredecessorCount(); i++) {
             BlockEntryInstr* pred = block->PredecessorAt(i);
             BitVector* pred_out = out_[pred->preorder_number()];
-            if (pred_out != NULL) {
-              temp->Intersect(pred_out);
+            if (pred_out == NULL) continue;
+            PhiPlaceMoves::MovesList phi_moves =
+                aliased_set_->phi_moves()->GetOutgoingMoves(pred);
+            if (phi_moves != NULL) {
+              // If there are phi moves, perform intersection with
+              // a copy of pred_out where the phi moves are applied.
+              temp_out->CopyFrom(pred_out);
+              PerformPhiMoves(phi_moves, temp_out, forwarded_loads);
+              pred_out = temp_out;
             }
+            temp->Intersect(pred_out);
           }
         }
 
@@ -5576,12 +6063,6 @@ class LoadOptimizer : public ValueObject {
 
           temp->RemoveAll(block_kill);
           temp->AddAll(block_gen);
-
-          PhiPlaceMoves::MovesList phi_moves =
-              aliased_set_->phi_moves()->GetOutgoingMoves(block);
-          if (phi_moves != NULL) {
-            PerformPhiMoves(phi_moves, temp, forwarded_loads);
-          }
 
           if ((block_out == NULL) || !block_out->Equals(*temp)) {
             if (block_out == NULL) {
@@ -6658,10 +7139,41 @@ void ConstantPropagator::VisitNativeCall(NativeCallInstr* instr) {
 }
 
 
+void ConstantPropagator::VisitDebugStepCheck(DebugStepCheckInstr* instr) {
+  // Nothing to do.
+}
+
+
 void ConstantPropagator::VisitStringFromCharCode(
     StringFromCharCodeInstr* instr) {
-  SetValue(instr, non_constant_);
+  const Object& o = instr->char_code()->definition()->constant_value();
+  if (o.IsNull() || IsNonConstant(o)) {
+    SetValue(instr, non_constant_);
+  } else if (IsConstant(o)) {
+    const intptr_t ch_code = Smi::Cast(o).Value();
+    ASSERT(ch_code >= 0);
+    if (ch_code < Symbols::kMaxOneCharCodeSymbol) {
+      RawString** table = Symbols::PredefinedAddress();
+      SetValue(instr, String::ZoneHandle(table[ch_code]));
+    } else {
+      SetValue(instr, non_constant_);
+    }
+  }
 }
+
+
+void ConstantPropagator::VisitStringToCharCode(StringToCharCodeInstr* instr) {
+  const Object& o = instr->str()->definition()->constant_value();
+  if (o.IsNull() || IsNonConstant(o)) {
+    SetValue(instr, non_constant_);
+  } else if (IsConstant(o)) {
+    const String& str = String::Cast(o);
+    const intptr_t result = (str.Length() == 1) ? str.CharAt(0) : -1;
+    SetValue(instr, Smi::ZoneHandle(Smi::New(result)));
+  }
+}
+
+
 
 
 void ConstantPropagator::VisitStringInterpolate(StringInterpolateInstr* instr) {
@@ -6671,7 +7183,37 @@ void ConstantPropagator::VisitStringInterpolate(StringInterpolateInstr* instr) {
 
 
 void ConstantPropagator::VisitLoadIndexed(LoadIndexedInstr* instr) {
-  SetValue(instr, non_constant_);
+  const Object& array_obj = instr->array()->definition()->constant_value();
+  const Object& index_obj = instr->index()->definition()->constant_value();
+  if (IsNonConstant(array_obj) || IsNonConstant(index_obj)) {
+    SetValue(instr, non_constant_);
+  } else if (IsConstant(array_obj) && IsConstant(index_obj)) {
+    // Need index to be Smi and array to be either String or an immutable array.
+    if (!index_obj.IsSmi()) {
+      // Should not occur.
+      SetValue(instr, non_constant_);
+      return;
+    }
+    const intptr_t index = Smi::Cast(index_obj).Value();
+    if (index >= 0) {
+      if (array_obj.IsString()) {
+        const String& str = String::Cast(array_obj);
+        if (str.Length() > index) {
+          SetValue(instr, Smi::Handle(Smi::New(str.CharAt(index))));
+          return;
+        }
+      } else if (array_obj.IsArray()) {
+        const Array& a = Array::Cast(array_obj);
+        if ((a.Length() > index) && a.IsImmutable()) {
+          Instance& result = Instance::Handle();
+          result ^= a.At(index);
+          SetValue(instr, result);
+          return;
+        }
+      }
+    }
+    SetValue(instr, non_constant_);
+  }
 }
 
 
@@ -6751,19 +7293,7 @@ void ConstantPropagator::VisitCreateArray(CreateArrayInstr* instr) {
 }
 
 
-void ConstantPropagator::VisitCreateClosure(CreateClosureInstr* instr) {
-  // TODO(kmillikin): Treat closures as constants.
-  SetValue(instr, non_constant_);
-}
-
-
 void ConstantPropagator::VisitAllocateObject(AllocateObjectInstr* instr) {
-  SetValue(instr, non_constant_);
-}
-
-
-void ConstantPropagator::VisitAllocateObjectWithBoundsCheck(
-    AllocateObjectWithBoundsCheckInstr* instr) {
   SetValue(instr, non_constant_);
 }
 
@@ -6791,11 +7321,15 @@ void ConstantPropagator::VisitLoadClassId(LoadClassIdInstr* instr) {
 void ConstantPropagator::VisitLoadField(LoadFieldInstr* instr) {
   if ((instr->recognized_kind() == MethodRecognizer::kObjectArrayLength) &&
       (instr->instance()->definition()->IsCreateArray())) {
-    const intptr_t length =
+    Value* num_elements =
         instr->instance()->definition()->AsCreateArray()->num_elements();
-    const Object& result = Smi::ZoneHandle(Smi::New(length));
-    SetValue(instr, result);
-    return;
+    if (num_elements->BindsToConstant() &&
+        num_elements->BoundConstant().IsSmi()) {
+      intptr_t length = Smi::Cast(num_elements->BoundConstant()).Value();
+      const Object& result = Smi::ZoneHandle(Smi::New(length));
+      SetValue(instr, result);
+      return;
+    }
   }
 
   if (instr->IsImmutableLengthLoad()) {
@@ -6814,11 +7348,6 @@ void ConstantPropagator::VisitLoadField(LoadFieldInstr* instr) {
     }
   }
   SetValue(instr, non_constant_);
-}
-
-
-void ConstantPropagator::VisitStoreVMField(StoreVMFieldInstr* instr) {
-  SetValue(instr, instr->value()->definition()->constant_value());
 }
 
 
@@ -6866,18 +7395,6 @@ void ConstantPropagator::VisitInstantiateTypeArguments(
     }
     SetValue(instr, non_constant_);
   }
-}
-
-
-void ConstantPropagator::VisitExtractConstructorTypeArguments(
-    ExtractConstructorTypeArgumentsInstr* instr) {
-  SetValue(instr, non_constant_);
-}
-
-
-void ConstantPropagator::VisitExtractConstructorInstantiator(
-    ExtractConstructorInstantiatorInstr* instr) {
-  SetValue(instr, non_constant_);
 }
 
 
@@ -7038,6 +7555,18 @@ void ConstantPropagator::VisitDoubleToSmi(DoubleToSmiInstr* instr) {
 
 
 void ConstantPropagator::VisitDoubleToDouble(DoubleToDoubleInstr* instr) {
+  // TODO(kmillikin): Handle conversion.
+  SetValue(instr, non_constant_);
+}
+
+
+void ConstantPropagator::VisitDoubleToFloat(DoubleToFloatInstr* instr) {
+  // TODO(kmillikin): Handle conversion.
+  SetValue(instr, non_constant_);
+}
+
+
+void ConstantPropagator::VisitFloatToDouble(FloatToDoubleInstr* instr) {
   // TODO(kmillikin): Handle conversion.
   SetValue(instr, non_constant_);
 }
@@ -7273,6 +7802,28 @@ void ConstantPropagator::VisitBoxFloat32x4(BoxFloat32x4Instr* instr) {
 }
 
 
+void ConstantPropagator::VisitUnboxFloat64x2(UnboxFloat64x2Instr* instr) {
+  const Object& value = instr->value()->definition()->constant_value();
+  if (IsNonConstant(value)) {
+    SetValue(instr, non_constant_);
+  } else if (IsConstant(value)) {
+    // TODO(kmillikin): Handle conversion.
+    SetValue(instr, non_constant_);
+  }
+}
+
+
+void ConstantPropagator::VisitBoxFloat64x2(BoxFloat64x2Instr* instr) {
+  const Object& value = instr->value()->definition()->constant_value();
+  if (IsNonConstant(value)) {
+    SetValue(instr, non_constant_);
+  } else if (IsConstant(value)) {
+    // TODO(kmillikin): Handle conversion.
+    SetValue(instr, non_constant_);
+  }
+}
+
+
 void ConstantPropagator::VisitUnboxInt32x4(UnboxInt32x4Instr* instr) {
   const Object& value = instr->value()->definition()->constant_value();
   if (IsNonConstant(value)) {
@@ -7455,8 +8006,7 @@ void ConstantPropagator::Transform() {
           !defn->IsPushArgument() &&
           !defn->IsStoreIndexed() &&
           !defn->IsStoreInstanceField() &&
-          !defn->IsStoreStaticField() &&
-          !defn->IsStoreVMField()) {
+          !defn->IsStoreStaticField()) {
         if (FLAG_trace_constant_propagation) {
           OS::Print("Constant v%" Pd " = %s\n",
                     defn->ssa_temp_index(),
@@ -7878,8 +8428,6 @@ void FlowGraphOptimizer::EliminateEnvironments() {
 // instructions that write into fields of the allocated object.
 // We do not support materialization of the object that has type arguments.
 static bool IsAllocationSinkingCandidate(AllocateObjectInstr* alloc) {
-  if (!HasSimpleTypeArguments(alloc)) return false;
-
   for (Value* use = alloc->input_use_list();
        use != NULL;
        use = use->next_use()) {
@@ -7917,7 +8465,7 @@ static void EliminateAllocation(AllocateObjectInstr* alloc) {
   ASSERT(alloc->input_use_list() == NULL);
   alloc->RemoveFromGraph();
   if (alloc->ArgumentCount() > 0) {
-    ASSERT(alloc->ArgumentCount() == 2);
+    ASSERT(alloc->ArgumentCount() == 1);
     for (intptr_t i = 0; i < alloc->ArgumentCount(); ++i) {
       alloc->PushArgumentAt(i)->RemoveFromGraph();
     }
@@ -7988,7 +8536,9 @@ void AllocationSinking::Optimize() {
     MaterializeObjectInstr* mat = materializations_[i];
     for (intptr_t j = 0; j < mat->InputCount(); j++) {
       Definition* defn = mat->InputAt(j)->definition();
-      if (defn->IsBoxDouble()) {
+      if (defn->IsBoxDouble() ||
+          defn->IsBoxFloat32x4() ||
+          defn->IsBoxInt32x4()) {
         mat->InputAt(j)->BindTo(defn->InputAt(0)->definition());
       }
     }
@@ -8046,9 +8596,8 @@ void AllocationSinking::CreateMaterializationAt(
   for (intptr_t i = 0; i < fields.length(); i++) {
     const Field* field = fields[i];
     LoadFieldInstr* load = new LoadFieldInstr(new Value(alloc),
-                                              field->Offset(),
+                                              field,
                                               AbstractType::ZoneHandle());
-    load->set_field(field);
     flow_graph_->InsertBefore(
         exit, load, NULL, Definition::kValue);
     values->Add(new Value(load));
@@ -8090,7 +8639,7 @@ void AllocationSinking::InsertMaterializations(AllocateObjectInstr* alloc) {
   }
 
   if (alloc->ArgumentCount() > 0) {
-    ASSERT(alloc->ArgumentCount() == 2);
+    ASSERT(alloc->ArgumentCount() == 1);
     const String& name = String::Handle(Symbols::New(":type_args"));
     const Field& type_args_field =
         Field::ZoneHandle(Field::New(

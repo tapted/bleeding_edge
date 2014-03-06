@@ -14,6 +14,7 @@
 
 package com.google.dart.tools.debug.core.dartium;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.dart.tools.core.DartCore;
 import com.google.dart.tools.debug.core.DartDebugCorePlugin;
 import com.google.dart.tools.debug.core.breakpoints.DartBreakpoint;
@@ -28,6 +29,7 @@ import org.eclipse.core.resources.IContainer;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IMarkerDelta;
 import org.eclipse.core.resources.IWorkspaceRoot;
+import org.eclipse.core.runtime.Path;
 import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.IBreakpointListener;
 import org.eclipse.debug.core.model.IBreakpoint;
@@ -41,8 +43,7 @@ import java.util.Map;
 /**
  * Handle adding a removing breakpoints to the WebKit connection for the DartiumDebugTarget class.
  */
-class BreakpointManager implements IBreakpointListener {
-
+public class BreakpointManager implements IBreakpointListener, DartBreakpointManager {
   private static String PACKAGES_DIRECTORY_PATH = "/packages/";
   private static String LIB_DIRECTORY_PATH = "/lib/";
 
@@ -106,6 +107,7 @@ class BreakpointManager implements IBreakpointListener {
     }
   }
 
+  @Override
   public void connect() throws IOException {
     IBreakpoint[] breakpoints = DebugPlugin.getDefault().getBreakpointManager().getBreakpoints(
         DartDebugCorePlugin.DEBUG_MODEL_ID);
@@ -119,6 +121,7 @@ class BreakpointManager implements IBreakpointListener {
     DebugPlugin.getDefault().getBreakpointManager().addBreakpointListener(this);
   }
 
+  @Override
   public void dispose(boolean deleteAll) {
     // Null check for when the editor is shutting down.
     if (DebugPlugin.getDefault() != null) {
@@ -142,6 +145,7 @@ class BreakpointManager implements IBreakpointListener {
     }
   }
 
+  @Override
   public DartBreakpoint getBreakpointFor(WebkitLocation location) {
     IBreakpoint[] breakpoints = DebugPlugin.getDefault().getBreakpointManager().getBreakpoints(
         DartDebugCorePlugin.DEBUG_MODEL_ID);
@@ -173,21 +177,32 @@ class BreakpointManager implements IBreakpointListener {
     return null;
   }
 
-  void addToBreakpointMap(IBreakpoint breakpoint, String id, boolean trackChanges) {
-    synchronized (breakpointToIdMap) {
-      if (breakpointToIdMap.get(breakpoint) == null) {
-        breakpointToIdMap.put(breakpoint, new ArrayList<String>());
+  @VisibleForTesting
+  public String getPackagePath(String regex, IFile resource) {
+    Path path = new Path(regex);
+    int i = 0;
+    if (regex.indexOf(LIB_DIRECTORY_PATH) != -1) {
+      // remove all segments after "lib", they show path in the package
+      while (i < path.segmentCount() && !path.segment(i).equals("lib")) {
+        i++;
       }
-
-      breakpointToIdMap.get(breakpoint).add(id);
-
-      if (trackChanges) {
-        breakpointsToUpdateMap.put(id, (DartBreakpoint) breakpoint);
-      }
+    } else {
+      i = 1;
     }
+    String filePath = regex;
+    if (path.segmentCount() > i + 1) {
+      filePath = new Path(regex).removeLastSegments(path.segmentCount() - (i + 1)).toString();
+    }
+
+    String packagePath = resolvePathToPackage(resource, filePath);
+    if (packagePath != null) {
+      packagePath += "/" + path.removeFirstSegments(i + 1);
+    }
+    return packagePath;
   }
 
-  void handleBreakpointResolved(WebkitBreakpoint webkitBreakpoint) {
+  @Override
+  public void handleBreakpointResolved(WebkitBreakpoint webkitBreakpoint) {
     DartBreakpoint breakpoint = breakpointsToUpdateMap.get(webkitBreakpoint.getBreakpointId());
 
     if (breakpoint != null) {
@@ -205,8 +220,28 @@ class BreakpointManager implements IBreakpointListener {
     }
   }
 
-  void handleGlobalObjectCleared() {
+  @Override
+  public void handleGlobalObjectCleared() {
 
+  }
+
+  @VisibleForTesting
+  protected String resolvePathToPackage(IFile resource, String filePath) {
+    return DartCore.getProjectManager().resolvePathToPackage(resource, filePath);
+  }
+
+  void addToBreakpointMap(IBreakpoint breakpoint, String id, boolean trackChanges) {
+    synchronized (breakpointToIdMap) {
+      if (breakpointToIdMap.get(breakpoint) == null) {
+        breakpointToIdMap.put(breakpoint, new ArrayList<String>());
+      }
+
+      breakpointToIdMap.get(breakpoint).add(id);
+
+      if (trackChanges) {
+        breakpointsToUpdateMap.put(id, (DartBreakpoint) breakpoint);
+      }
+    }
   }
 
   private void addBreakpoint(final DartBreakpoint breakpoint) throws IOException {
@@ -249,6 +284,13 @@ class BreakpointManager implements IBreakpointListener {
                 }
               });
         }
+      }
+
+      // check if it is a file in a package, if so replace regex with package uri path
+      // TODO(keertip): revisit when moved to calling pub for package info
+      String packagePath = getPackagePath(regex, breakpoint.getFile());
+      if (packagePath != null) {
+        regex = packagePath;
       }
 
       debugTarget.getWebkitConnection().getDebugger().setBreakpointByUrl(
@@ -332,5 +374,50 @@ class BreakpointManager implements IBreakpointListener {
 
     return isPubLib(container.getParent());
   }
+}
 
+interface DartBreakpointManager {
+
+  public void connect() throws IOException;
+
+  public void dispose(boolean deleteAll);
+
+  public DartBreakpoint getBreakpointFor(WebkitLocation location);
+
+  public void handleBreakpointResolved(WebkitBreakpoint breakpoint);
+
+  public void handleGlobalObjectCleared();
+
+}
+
+class NullBreakpointManager implements DartBreakpointManager {
+
+  public NullBreakpointManager() {
+
+  }
+
+  @Override
+  public void connect() throws IOException {
+
+  }
+
+  @Override
+  public void dispose(boolean deleteAll) {
+
+  }
+
+  @Override
+  public DartBreakpoint getBreakpointFor(WebkitLocation location) {
+    return null;
+  }
+
+  @Override
+  public void handleBreakpointResolved(WebkitBreakpoint breakpoint) {
+
+  }
+
+  @Override
+  public void handleGlobalObjectCleared() {
+
+  }
 }

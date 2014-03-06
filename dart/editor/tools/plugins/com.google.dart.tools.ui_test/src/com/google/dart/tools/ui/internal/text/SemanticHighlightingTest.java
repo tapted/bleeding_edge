@@ -55,10 +55,15 @@ public class SemanticHighlightingTest extends
     preparePositions(
         "// filler filler filler filler filler filler filler filler filler filler",
         "const myAnnotation = 0;",
+        "class MyAnno { const MyAnno(p); }",
         "@myAnnotation // marker",
-        "var topLevelVar;",
+        "var topA;",
+        "@MyAnno(42) // marker",
+        "var topB;",
         "");
-    assertHasWordPosition(SemanticHighlightings.ANNOTATION, "myAnnotation // marker");
+    assertHasWordPosition(SemanticHighlightings.ANNOTATION, "@myAnnotation // marker");
+    assertHasWordPosition(SemanticHighlightings.ANNOTATION, "@MyAnno(");
+    assertHasWordPosition(SemanticHighlightings.ANNOTATION, ") // marker");
   }
 
   public void test_builtIn_abstract_class() throws Exception {
@@ -465,38 +470,6 @@ public class SemanticHighlightingTest extends
     assertHasPosition(SemanticHighlightings.DEPRECATED_ELEMENT, findOffset(search), search.length());
   }
 
-  public void test_directive_export() throws Exception {
-    setFileContent(
-        "Lib.dart",
-        makeSource(
-            "// filler filler filler filler filler filler filler filler filler filler",
-            "library lib;",
-            "class A {}",
-            "class B {}",
-            "class C {}",
-            "class D {}"));
-    preparePositions(
-        "// filler filler filler filler filler filler filler filler filler filler",
-        "export 'Lib.dart' show A, B hide C, D;",
-        "");
-    assertHasPosition(SemanticHighlightings.DIRECTIVE, findOffset("export "), "export".length());
-    assertHasPosition(SemanticHighlightings.DIRECTIVE, findOffset("show A, B"), "show".length());
-    assertHasPosition(SemanticHighlightings.DIRECTIVE, findOffset("hide C, D"), "hide".length());
-  }
-
-  public void test_directive_import() throws Exception {
-    setFileContent(
-        "Lib.dart",
-        makeSource(
-            "// filler filler filler filler filler filler filler filler filler filler",
-            "library lib;"));
-    preparePositions(
-        "// filler filler filler filler filler filler filler filler filler filler",
-        "import 'Lib.dart';",
-        "");
-    assertHasWordPosition(SemanticHighlightings.DIRECTIVE, "import 'Lib.dart';");
-  }
-
   public void test_directive_import_variableName() throws Exception {
     preparePositions(
         "// filler filler filler filler filler filler filler filler filler filler",
@@ -827,6 +800,40 @@ public class SemanticHighlightingTest extends
     assertHasWordPosition(SemanticHighlightings.TYPE_VARIABLE, "T value");
     assertHasWordPosition(SemanticHighlightings.TYPE_VARIABLE, "T foo");
     assertHasWordPosition(SemanticHighlightings.TYPE_VARIABLE, "T t)");
+  }
+
+  public void xtest_directive_export() throws Exception {
+    // Timing out on build-bot; runs fine locally
+    setFileContent(
+        "Lib.dart",
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "library lib;",
+            "class A {}",
+            "class B {}",
+            "class C {}",
+            "class D {}"));
+    preparePositions(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "export 'Lib.dart' show A, B hide C, D;",
+        "");
+    assertHasPosition(SemanticHighlightings.DIRECTIVE, findOffset("export "), "export".length());
+    assertHasPosition(SemanticHighlightings.DIRECTIVE, findOffset("show A, B"), "show".length());
+    assertHasPosition(SemanticHighlightings.DIRECTIVE, findOffset("hide C, D"), "hide".length());
+  }
+
+  public void xtest_directive_import() throws Exception {
+    // Timing out on build-bot; runs fine locally
+    setFileContent(
+        "Lib.dart",
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "library lib;"));
+    preparePositions(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "import 'Lib.dart';",
+        "");
+    assertHasWordPosition(SemanticHighlightings.DIRECTIVE, "import 'Lib.dart';");
   }
 
   /**

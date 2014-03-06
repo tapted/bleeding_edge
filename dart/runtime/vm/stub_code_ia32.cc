@@ -25,8 +25,9 @@ namespace dart {
 DEFINE_FLAG(bool, inline_alloc, true, "Inline allocation of objects.");
 DEFINE_FLAG(bool, use_slow_path, false,
     "Set to true for debugging & verifying the slow paths.");
-DECLARE_FLAG(int, optimization_counter_threshold);
 DECLARE_FLAG(bool, trace_optimized_ic_calls);
+DECLARE_FLAG(int, optimization_counter_threshold);
+
 
 // Input parameters:
 //   ESP : points to return address.
@@ -163,8 +164,18 @@ void StubCode::GenerateCallNativeCFunctionStub(Assembler* assembler) {
   __ movl(Address(ESP, retval_offset), EAX);  // Set retval in NativeArguments.
   __ leal(EAX, Address(ESP, 2 * kWordSize));  // Pointer to the NativeArguments.
   __ movl(Address(ESP, 0), EAX);  // Pass the pointer to the NativeArguments.
+
+  // Call native function (setsup scope if not leaf function).
+  Label leaf_call;
+  Label done;
+  __ testl(EDX, Immediate(NativeArguments::AutoSetupScopeMask()));
+  __ j(ZERO, &leaf_call, Assembler::kNearJump);
   __ movl(Address(ESP, kWordSize), ECX);  // Function to call.
   __ call(&NativeEntry::NativeCallWrapperLabel());
+  __ jmp(&done);
+  __ Bind(&leaf_call);
+  __ call(ECX);
+  __ Bind(&done);
 
   // Reset exit frame information in Isolate structure.
   __ movl(Address(CTX, Isolate::top_exit_frame_info_offset()), Immediate(0));
@@ -588,6 +599,10 @@ void StubCode::GenerateAllocateArrayStub(Assembler* assembler) {
     // EDI: Points to new space object.
     __ movl(Address(EDI, Scavenger::top_offset()), EBX);
     __ addl(EAX, Immediate(kHeapObjectTag));
+    // EDI: Size of allocation in bytes.
+    __ movl(EDI, EBX);
+    __ subl(EDI, EAX);
+    __ UpdateAllocationStatsWithSize(kArrayCid, EDI, kNoRegister);
 
     // EAX: new object start as a tagged pointer.
     // EBX: new object end address.
@@ -930,6 +945,9 @@ void StubCode::GenerateAllocateContextStub(Assembler* assembler) {
     // EDX: number of context variables.
     __ movl(Address::Absolute(heap->TopAddress()), EBX);
     __ addl(EAX, Immediate(kHeapObjectTag));
+    // EBX: Size of allocation in bytes.
+    __ subl(EBX, EAX);
+    __ UpdateAllocationStatsWithSize(context_class.id(), EBX, kNoRegister);
 
     // Calculate the size tag.
     // EAX: new object.
@@ -1084,14 +1102,12 @@ void StubCode::GenerateUpdateStoreBufferStub(Assembler* assembler) {
 
 // Called for inline allocation of objects.
 // Input parameters:
-//   ESP + 8 : type arguments object (only if class is parameterized).
-//   ESP + 4 : type arguments of instantiator (only if class is parameterized).
+//   ESP + 4 : type arguments object (only if class is parameterized).
 //   ESP : points to return address.
 // Uses EAX, EBX, ECX, EDX, EDI as temporary registers.
 void StubCode::GenerateAllocationStubForClass(Assembler* assembler,
                                               const Class& cls) {
-  const intptr_t kObjectTypeArgumentsOffset = 2 * kWordSize;
-  const intptr_t kInstantiatorTypeArgumentsOffset = 1 * kWordSize;
+  const intptr_t kObjectTypeArgumentsOffset = 1 * kWordSize;
   const Immediate& raw_null =
       Immediate(reinterpret_cast<intptr_t>(Object::null()));
   // The generated code is different if the class is parameterized.
@@ -1101,29 +1117,21 @@ void StubCode::GenerateAllocationStubForClass(Assembler* assembler,
   // kInlineInstanceSize is a constant used as a threshold for determining
   // when the object initialization should be done as a loop or as
   // straight line code.
-  const int kInlineInstanceSize = 12;
+  const int kInlineInstanceSize = 12;  // In words.
   const intptr_t instance_size = cls.instance_size();
   ASSERT(instance_size > 0);
-  const intptr_t type_args_size = InstantiatedTypeArguments::InstanceSize();
-  if (FLAG_inline_alloc &&
-      Heap::IsAllocatableInNewSpace(instance_size + type_args_size)) {
+  if (is_cls_parameterized) {
+    __ movl(EDX, Address(ESP, kObjectTypeArgumentsOffset));
+    // EDX: instantiated type arguments.
+  }
+  if (FLAG_inline_alloc && Heap::IsAllocatableInNewSpace(instance_size)) {
     Label slow_case;
+    // Allocate the object and update top to point to
+    // next object start and initialize the allocated object.
+    // EDX: instantiated type arguments (if is_cls_parameterized).
     Heap* heap = Isolate::Current()->heap();
     __ movl(EAX, Address::Absolute(heap->TopAddress()));
     __ leal(EBX, Address(EAX, instance_size));
-    if (is_cls_parameterized) {
-      __ movl(ECX, EBX);
-      // A new InstantiatedTypeArguments object only needs to be allocated if
-      // the instantiator is provided (not kNoInstantiator, but may be null).
-      Label no_instantiator;
-      __ cmpl(Address(ESP, kInstantiatorTypeArgumentsOffset),
-              Immediate(Smi::RawValue(StubCode::kNoInstantiator)));
-      __ j(EQUAL, &no_instantiator, Assembler::kNearJump);
-      __ addl(EBX, Immediate(type_args_size));
-      __ Bind(&no_instantiator);
-      // ECX: potential new object end and, if ECX != EBX, potential new
-      // InstantiatedTypeArguments object start.
-    }
     // Check if the allocation fits into the remaining space.
     // EAX: potential new object start.
     // EBX: potential next object start.
@@ -1131,52 +1139,14 @@ void StubCode::GenerateAllocationStubForClass(Assembler* assembler,
     if (FLAG_use_slow_path) {
       __ jmp(&slow_case);
     } else {
-      __ j(ABOVE_EQUAL, &slow_case, Assembler::kNearJump);
+      __ j(ABOVE_EQUAL, &slow_case);
     }
-
-    // Successfully allocated the object(s), now update top to point to
-    // next object start and initialize the object.
     __ movl(Address::Absolute(heap->TopAddress()), EBX);
-
-    if (is_cls_parameterized) {
-      // Initialize the type arguments field in the object.
-      // EAX: new object start.
-      // ECX: potential new object end and, if ECX != EBX, potential new
-      // InstantiatedTypeArguments object start.
-      // EBX: next object start.
-      Label type_arguments_ready;
-      __ movl(EDI, Address(ESP, kObjectTypeArgumentsOffset));
-      __ cmpl(ECX, EBX);
-      __ j(EQUAL, &type_arguments_ready, Assembler::kNearJump);
-      // Initialize InstantiatedTypeArguments object at ECX.
-      __ movl(Address(ECX,
-          InstantiatedTypeArguments::uninstantiated_type_arguments_offset()),
-              EDI);
-      __ movl(EDX, Address(ESP, kInstantiatorTypeArgumentsOffset));
-      __ movl(Address(ECX,
-          InstantiatedTypeArguments::instantiator_type_arguments_offset()),
-              EDX);
-      const Class& ita_cls =
-          Class::ZoneHandle(Object::instantiated_type_arguments_class());
-      // Set the tags.
-      uword tags = 0;
-      tags = RawObject::SizeTag::update(type_args_size, tags);
-      tags = RawObject::ClassIdTag::update(ita_cls.id(), tags);
-      __ movl(Address(ECX, Instance::tags_offset()), Immediate(tags));
-      // Set the new InstantiatedTypeArguments object (ECX) as the type
-      // arguments (EDI) of the new object (EAX).
-      __ movl(EDI, ECX);
-      __ addl(EDI, Immediate(kHeapObjectTag));
-      // Set EBX to new object end.
-      __ movl(EBX, ECX);
-      __ Bind(&type_arguments_ready);
-      // EAX: new object.
-      // EDI: new object type arguments.
-    }
+    __ UpdateAllocationStats(cls.id(), ECX);
 
     // EAX: new object start.
     // EBX: next object start.
-    // EDI: new object type arguments (if is_cls_parameterized).
+    // EDX: new object type arguments (if is_cls_parameterized).
     // Set the tags.
     uword tags = 0;
     tags = RawObject::SizeTag::update(instance_size, tags);
@@ -1190,7 +1160,7 @@ void StubCode::GenerateAllocationStubForClass(Assembler* assembler,
 
     // EAX: new object start.
     // EBX: next object start.
-    // EDI: new object type arguments (if is_cls_parameterized).
+    // EDX: new object type arguments (if is_cls_parameterized).
     // First try inlining the initialization without a loop.
     if (instance_size < (kInlineInstanceSize * kWordSize)) {
       // Check if the object contains any non-header fields.
@@ -1206,7 +1176,7 @@ void StubCode::GenerateAllocationStubForClass(Assembler* assembler,
       // EAX: new object.
       // EBX: next object start.
       // ECX: next word to be initialized.
-      // EDI: new object type arguments (if is_cls_parameterized).
+      // EDX: new object type arguments (if is_cls_parameterized).
       Label init_loop;
       Label done;
       __ Bind(&init_loop);
@@ -1218,9 +1188,9 @@ void StubCode::GenerateAllocationStubForClass(Assembler* assembler,
       __ Bind(&done);
     }
     if (is_cls_parameterized) {
-      // EDI: new object type arguments.
+      // EDX: new object type arguments.
       // Set the type arguments in the new object.
-      __ movl(Address(EAX, cls.type_arguments_field_offset()), EDI);
+      __ movl(Address(EAX, cls.type_arguments_field_offset()), EDX);
     }
     // Done allocating and initializing the instance.
     // EAX: new object.
@@ -1229,166 +1199,22 @@ void StubCode::GenerateAllocationStubForClass(Assembler* assembler,
 
     __ Bind(&slow_case);
   }
-  if (is_cls_parameterized) {
-    __ movl(EAX, Address(ESP, kObjectTypeArgumentsOffset));
-    __ movl(EDX, Address(ESP, kInstantiatorTypeArgumentsOffset));
-  }
+  // If is_cls_parameterized:
+  // EDX: new object type arguments.
   // Create a stub frame as we are pushing some objects on the stack before
   // calling into the runtime.
   __ EnterStubFrame();
   __ pushl(raw_null);  // Setup space on stack for return value.
   __ PushObject(cls);  // Push class of object to be allocated.
   if (is_cls_parameterized) {
-    __ pushl(EAX);  // Push type arguments of object to be allocated.
-    __ pushl(EDX);  // Push type arguments of instantiator.
+    __ pushl(EDX);  // Push type arguments of object to be allocated.
   } else {
     __ pushl(raw_null);  // Push null type arguments.
-    __ pushl(Immediate(Smi::RawValue(StubCode::kNoInstantiator)));
   }
-  __ CallRuntime(kAllocateObjectRuntimeEntry, 3);  // Allocate object.
-  __ popl(EAX);  // Pop argument (instantiator).
+  __ CallRuntime(kAllocateObjectRuntimeEntry, 2);  // Allocate object.
   __ popl(EAX);  // Pop argument (type arguments of object).
   __ popl(EAX);  // Pop argument (class of object).
   __ popl(EAX);  // Pop result (newly allocated object).
-  // EAX: new object
-  // Restore the frame pointer.
-  __ LeaveFrame();
-  __ ret();
-}
-
-
-// Called for inline allocation of closures.
-// Input parameters:
-//   ESP + 8 : receiver (null if not an implicit instance closure).
-//   ESP + 4 : type arguments object (null if class is no parameterized).
-//   ESP : points to return address.
-// Uses EAX, EBX, ECX, EDX as temporary registers.
-void StubCode::GenerateAllocationStubForClosure(Assembler* assembler,
-                                                const Function& func) {
-  const Immediate& raw_null =
-      Immediate(reinterpret_cast<intptr_t>(Object::null()));
-  ASSERT(func.IsClosureFunction());
-  ASSERT(!func.IsImplicitStaticClosureFunction());
-  const bool is_implicit_instance_closure =
-      func.IsImplicitInstanceClosureFunction();
-  const Class& cls = Class::ZoneHandle(func.signature_class());
-  const bool has_type_arguments = cls.NumTypeArguments() > 0;
-  const intptr_t kTypeArgumentsOffset = 1 * kWordSize;
-  const intptr_t kReceiverOffset = 2 * kWordSize;
-  const intptr_t closure_size = Closure::InstanceSize();
-  const intptr_t context_size = Context::InstanceSize(1);  // Captured receiver.
-  if (FLAG_inline_alloc &&
-      Heap::IsAllocatableInNewSpace(closure_size + context_size)) {
-    Label slow_case;
-    Heap* heap = Isolate::Current()->heap();
-    __ movl(EAX, Address::Absolute(heap->TopAddress()));
-    __ leal(EBX, Address(EAX, closure_size));
-    if (is_implicit_instance_closure) {
-      __ movl(ECX, EBX);  // ECX: new context address.
-      __ addl(EBX, Immediate(context_size));
-    }
-    // Check if the allocation fits into the remaining space.
-    // EAX: potential new closure object.
-    // ECX: potential new context object (only if is_implicit_closure).
-    // EBX: potential next object start.
-    __ cmpl(EBX, Address::Absolute(heap->EndAddress()));
-    if (FLAG_use_slow_path) {
-      __ jmp(&slow_case);
-    } else {
-      __ j(ABOVE_EQUAL, &slow_case, Assembler::kNearJump);
-    }
-
-    // Successfully allocated the object, now update top to point to
-    // next object start and initialize the object.
-    __ movl(Address::Absolute(heap->TopAddress()), EBX);
-
-    // EAX: new closure object.
-    // ECX: new context object (only if is_implicit_closure).
-    // Set the tags.
-    uword tags = 0;
-    tags = RawObject::SizeTag::update(closure_size, tags);
-    tags = RawObject::ClassIdTag::update(cls.id(), tags);
-    __ movl(Address(EAX, Instance::tags_offset()), Immediate(tags));
-
-    // Initialize the function field in the object.
-    // EAX: new closure object.
-    // ECX: new context object (only if is_implicit_closure).
-    // EBX: next object start.
-    __ LoadObject(EDX, func);  // Load function of closure to be allocated.
-    __ movl(Address(EAX, Closure::function_offset()), EDX);
-
-    // Setup the context for this closure.
-    if (is_implicit_instance_closure) {
-      // Initialize the new context capturing the receiver.
-      const Class& context_class = Class::ZoneHandle(Object::context_class());
-      // Set the tags.
-      uword tags = 0;
-      tags = RawObject::SizeTag::update(context_size, tags);
-      tags = RawObject::ClassIdTag::update(context_class.id(), tags);
-      __ movl(Address(ECX, Context::tags_offset()), Immediate(tags));
-
-      // Set number of variables field to 1 (for captured receiver).
-      __ movl(Address(ECX, Context::num_variables_offset()), Immediate(1));
-
-      // Set isolate field to isolate of current context.
-      __ movl(EDX, FieldAddress(CTX, Context::isolate_offset()));
-      __ movl(Address(ECX, Context::isolate_offset()), EDX);
-
-      // Set the parent to null.
-      __ movl(Address(ECX, Context::parent_offset()), raw_null);
-
-      // Initialize the context variable to the receiver.
-      __ movl(EDX, Address(ESP, kReceiverOffset));
-      __ movl(Address(ECX, Context::variable_offset(0)), EDX);
-
-      // Set the newly allocated context in the newly allocated closure.
-      __ addl(ECX, Immediate(kHeapObjectTag));
-      __ movl(Address(EAX, Closure::context_offset()), ECX);
-    } else {
-      __ movl(Address(EAX, Closure::context_offset()), CTX);
-    }
-
-    // Set the type arguments field in the newly allocated closure.
-    __ movl(EDX, Address(ESP, kTypeArgumentsOffset));
-    __ movl(Address(EAX, Closure::type_arguments_offset()), EDX);
-
-    // Done allocating and initializing the instance.
-    // EAX: new object.
-    __ addl(EAX, Immediate(kHeapObjectTag));
-    __ ret();
-
-    __ Bind(&slow_case);
-  }
-  if (has_type_arguments) {
-    __ movl(ECX, Address(ESP, kTypeArgumentsOffset));
-  }
-  if (is_implicit_instance_closure) {
-    __ movl(EAX, Address(ESP, kReceiverOffset));
-  }
-  // Create a stub frame as we are pushing some objects on the stack before
-  // calling into the runtime.
-  __ EnterStubFrame();
-  __ pushl(raw_null);  // Setup space on stack for return value.
-  __ PushObject(func);
-  if (is_implicit_instance_closure) {
-    __ pushl(EAX);  // Receiver.
-  }
-  if (has_type_arguments) {
-    __ pushl(ECX);  // Push type arguments of closure to be allocated.
-  } else {
-    __ pushl(raw_null);  // Push null type arguments.
-  }
-  if (is_implicit_instance_closure) {
-    __ CallRuntime(kAllocateImplicitInstanceClosureRuntimeEntry, 3);
-    __ popl(EAX);  // Pop argument (type arguments of object).
-    __ popl(EAX);  // Pop receiver.
-  } else {
-    ASSERT(func.IsNonImplicitClosureFunction());
-    __ CallRuntime(kAllocateClosureRuntimeEntry, 2);
-    __ popl(EAX);  // Pop argument (type arguments of object).
-  }
-  __ popl(EAX);  // Pop function object.
-  __ popl(EAX);
   // EAX: new object
   // Restore the frame pointer.
   __ LeaveFrame();
@@ -1851,80 +1677,20 @@ void StubCode::GenerateBreakpointRuntimeStub(Assembler* assembler) {
 }
 
 
-// ECX: ICData (unoptimized static call).
-// TOS(0): return address (Dart code).
-void StubCode::GenerateBreakpointStaticStub(Assembler* assembler) {
-  // Create a stub frame as we are pushing some objects on the stack before
-  // calling into the runtime.
+// Called only from unoptimized code.
+void StubCode::GenerateDebugStepCheckStub(Assembler* assembler) {
+  // Check single stepping.
+  Label not_stepping;
+  __ movl(EAX, FieldAddress(CTX, Context::isolate_offset()));
+  __ movzxb(EAX, Address(EAX, Isolate::single_step_offset()));
+  __ cmpl(EAX, Immediate(0));
+  __ j(EQUAL, &not_stepping, Assembler::kNearJump);
+
   __ EnterStubFrame();
-  __ pushl(ECX);  // Preserve ICData for unoptimized call.
-  const Immediate& raw_null =
-      Immediate(reinterpret_cast<intptr_t>(Object::null()));
-  __ pushl(raw_null);  // Room for result.
-  __ CallRuntime(kBreakpointStaticHandlerRuntimeEntry, 0);
-  __ popl(EAX);  // Code object.
-  __ popl(ECX);  // Restore ICData.
+  __ CallRuntime(kSingleStepHandlerRuntimeEntry, 0);
   __ LeaveFrame();
-
-  // Load arguments descriptor into EDX.
-  __ movl(EDX, FieldAddress(ECX, ICData::arguments_descriptor_offset()));
-  // Now call the static function. The breakpoint handler function
-  // ensures that the call target is compiled.
-  // Note that we can't just jump to the CallStatic function stub
-  // here since that stub would patch the call site with the
-  // static function address.
-  __ movl(ECX, FieldAddress(EAX, Code::instructions_offset()));
-  __ addl(ECX, Immediate(Instructions::HeaderSize() - kHeapObjectTag));
-  __ jmp(ECX);
-}
-
-
-//  TOS(0): return address (Dart code).
-void StubCode::GenerateBreakpointReturnStub(Assembler* assembler) {
-  // Create a stub frame as we are pushing some objects on the stack before
-  // calling into the runtime.
-  __ EnterStubFrame();
-  __ pushl(EAX);
-  __ CallRuntime(kBreakpointReturnHandlerRuntimeEntry, 0);
-  __ popl(EAX);
-  __ LeaveFrame();
-
-  // Instead of returning to the patched Dart function, emulate the
-  // smashed return code pattern and return to the function's caller.
-  __ popl(ECX);  // Discard return address to patched dart code.
-  // Execute function epilog code that was smashed in the Dart code.
-  __ LeaveFrame();
+  __ Bind(&not_stepping);
   __ ret();
-}
-
-
-//  ECX: Inline cache data array.
-//  TOS(0): return address (Dart code).
-void StubCode::GenerateBreakpointDynamicStub(Assembler* assembler) {
-  // Create a stub frame as we are pushing some objects on the stack before
-  // calling into the runtime.
-  __ EnterStubFrame();
-  __ pushl(ECX);
-  __ CallRuntime(kBreakpointDynamicHandlerRuntimeEntry, 0);
-  __ popl(ECX);
-  __ LeaveFrame();
-
-  // Find out which dispatch stub to call.
-  Label test_two, test_three, test_four;
-  __ movl(EBX, FieldAddress(ECX, ICData::num_args_tested_offset()));
-  __ cmpl(EBX, Immediate(1));
-  __ j(NOT_EQUAL, &test_two, Assembler::kNearJump);
-  __ jmp(&StubCode::OneArgCheckInlineCacheLabel());
-  __ Bind(&test_two);
-  __ cmpl(EBX, Immediate(2));
-  __ j(NOT_EQUAL, &test_three, Assembler::kNearJump);
-  __ jmp(&StubCode::TwoArgsCheckInlineCacheLabel());
-  __ Bind(&test_three);
-  __ cmpl(EBX, Immediate(3));
-  __ j(NOT_EQUAL, &test_four, Assembler::kNearJump);
-  __ jmp(&StubCode::ThreeArgsCheckInlineCacheLabel());
-  __ Bind(&test_four);
-  __ Stop("Unsupported number of arguments tested.");
 }
 
 

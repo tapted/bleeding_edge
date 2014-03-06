@@ -7,6 +7,7 @@ import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.context.AnalysisOptions;
 import com.google.dart.engine.context.AnalysisResult;
 import com.google.dart.engine.context.ChangeSet;
+import com.google.dart.engine.element.CompilationUnitElement;
 import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ElementLocation;
 import com.google.dart.engine.element.HtmlElement;
@@ -15,9 +16,12 @@ import com.google.dart.engine.error.AnalysisError;
 import com.google.dart.engine.html.ast.HtmlUnit;
 import com.google.dart.engine.internal.context.AnalysisErrorInfoImpl;
 import com.google.dart.engine.internal.context.AnalysisOptionsImpl;
+import com.google.dart.engine.internal.context.TimestampedData;
+import com.google.dart.engine.source.ContentCache;
 import com.google.dart.engine.source.DirectoryBasedSourceContainer;
 import com.google.dart.engine.source.FileBasedSource;
 import com.google.dart.engine.source.Source;
+import com.google.dart.engine.source.Source.ContentReceiver;
 import com.google.dart.engine.source.SourceContainer;
 import com.google.dart.engine.source.SourceFactory;
 import com.google.dart.engine.source.SourceKind;
@@ -52,9 +56,9 @@ public class MockContext implements AnalysisContext {
       }
       ChangeSet changes = (ChangeSet) args[0];
       ChangeSet otherChanges = (ChangeSet) otherArgs[0];
-      return equalArgument(changes.getAdded(), otherChanges.getAdded())
-          && equalArgument(changes.getChanged(), otherChanges.getChanged())
-          && equalArgument(changes.getRemoved(), otherChanges.getRemoved())
+      return equalArgument(changes.getAddedSources(), otherChanges.getAddedSources())
+          && equalArgument(changes.getChangedSources(), otherChanges.getChangedSources())
+          && equalArgument(changes.getRemovedSources(), otherChanges.getRemovedSources())
           && equalArgument(changes.getRemovedContainers(), otherChanges.getRemovedContainers());
     }
 
@@ -63,9 +67,9 @@ public class MockContext implements AnalysisContext {
       ChangeSet changes = (ChangeSet) args[0];
       writer.print(indent);
       writer.println("ChangeSet");
-      printCollection(writer, indent, "added", changes.getAdded());
-      printCollection(writer, indent, "changed", changes.getChanged());
-      printCollection(writer, indent, "removed", changes.getRemoved());
+      printCollection(writer, indent, "added", changes.getAddedSources());
+      printCollection(writer, indent, "changed", changes.getChangedSources());
+      printCollection(writer, indent, "removed", changes.getRemovedSources());
       printCollection(writer, indent, "removedContainers", changes.getRemovedContainers());
     }
 
@@ -102,7 +106,8 @@ public class MockContext implements AnalysisContext {
   private static final String SOURCE_DELETED = "sourceDeleted";
 
   private final CallList calls = new CallList();
-  private SourceFactory factory;
+  private final ContentCache contentCache = new ContentCache();
+  private SourceFactory factory = new SourceFactory();
 
   @Override
   public void applyChanges(ChangeSet changes) {
@@ -117,17 +122,17 @@ public class MockContext implements AnalysisContext {
     final ChangeSet expected = new ChangeSet();
     if (added != null) {
       for (File file : added) {
-        expected.added(new FileBasedSource(factory.getContentCache(), file));
+        expected.addedSource(new FileBasedSource(file));
       }
     }
     if (changed != null) {
       for (File file : changed) {
-        expected.changed(new FileBasedSource(factory.getContentCache(), file));
+        expected.changedSource(new FileBasedSource(file));
       }
     }
     if (removedFiles != null) {
       for (File file : removedFiles) {
-        expected.removed(new FileBasedSource(factory.getContentCache(), file));
+        expected.removedSource(new FileBasedSource(file));
       }
     }
     if (removedDirs != null) {
@@ -179,9 +184,7 @@ public class MockContext implements AnalysisContext {
 
   public void assertSourcesChanged(IResource... expected) {
     for (IResource resource : expected) {
-      Source source = new FileBasedSource(
-          factory.getContentCache(),
-          resource.getLocation().toFile());
+      Source source = new FileBasedSource(resource.getLocation().toFile());
       calls.assertCall(this, SOURCE_CHANGED, source);
     }
   }
@@ -190,7 +193,7 @@ public class MockContext implements AnalysisContext {
     for (IResource resource : expected) {
       File file = resource.getLocation().toFile();
       if (resource.getType() == IResource.FILE) {
-        Source source = new FileBasedSource(factory.getContentCache(), file);
+        Source source = new FileBasedSource(file);
         calls.assertCall(this, SOURCE_DELETED, source);
       } else {
         SourceContainer sourceContainer = new DirectoryBasedSourceContainer(file);
@@ -230,6 +233,17 @@ public class MockContext implements AnalysisContext {
   }
 
   @Override
+  public boolean exists(Source source) {
+    if (source == null) {
+      return false;
+    }
+    if (contentCache.getContents(source) != null) {
+      return true;
+    }
+    return source.exists();
+  }
+
+  @Override
   public AnalysisContext extractContext(SourceContainer container) {
     calls.add(this, EXTRACT_CONTEXT, container);
     return new MockContext();
@@ -238,6 +252,31 @@ public class MockContext implements AnalysisContext {
   @Override
   public AnalysisOptions getAnalysisOptions() {
     return options;
+  }
+
+  @Override
+  public CompilationUnitElement getCompilationUnitElement(Source unitSource, Source librarySource) {
+    return null;
+  }
+
+  @Override
+  public TimestampedData<CharSequence> getContents(Source source) throws Exception {
+    String contents = contentCache.getContents(source);
+    if (contents != null) {
+      return new TimestampedData<CharSequence>(contentCache.getModificationStamp(source), contents);
+    }
+    return source.getContents();
+  }
+
+  @Override
+  @SuppressWarnings("deprecation")
+  public void getContentsToReceiver(Source source, ContentReceiver receiver) throws Exception {
+    String contents = contentCache.getContents(source);
+    if (contents != null) {
+      receiver.accept(contents, contentCache.getModificationStamp(source));
+    } else {
+      source.getContentsToReceiver(receiver);
+    }
   }
 
   @Override
@@ -306,6 +345,15 @@ public class MockContext implements AnalysisContext {
   }
 
   @Override
+  public long getModificationStamp(Source source) {
+    Long stamp = contentCache.getModificationStamp(source);
+    if (stamp != null) {
+      return stamp.longValue();
+    }
+    return source.getModificationStamp();
+  }
+
+  @Override
   public Source[] getRefactoringUnsafeSources() {
     return Source.EMPTY_ARRAY;
   }
@@ -317,6 +365,11 @@ public class MockContext implements AnalysisContext {
 
   @Override
   public CompilationUnit getResolvedCompilationUnit(Source unitSource, Source librarySource) {
+    return null;
+  }
+
+  @Override
+  public HtmlUnit getResolvedHtmlUnit(Source htmlSource) {
     return null;
   }
 
@@ -397,11 +450,6 @@ public class MockContext implements AnalysisContext {
   @Override
   public void setSourceFactory(SourceFactory sourceFactory) {
     factory = sourceFactory;
-  }
-
-  @Override
-  public Iterable<Source> sourcesToResolve(Source[] changedSources) {
-    throw new UnsupportedOperationException();
   }
 
   private File[] asFiles(IResource[] resources) {

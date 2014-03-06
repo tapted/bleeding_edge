@@ -5,7 +5,7 @@
 part of types;
 
 /**
- * A type mask that wraps an other one, and delecate all its
+ * A type mask that wraps an other one, and delegate all its
  * implementation methods to it.
  */
 abstract class ForwardingTypeMask implements TypeMask {
@@ -20,6 +20,9 @@ abstract class ForwardingTypeMask implements TypeMask {
 
   bool get isUnion => false;
   bool get isContainer => false;
+  bool get isMap => false;
+  bool get isDictionary => false;
+  bool get isValue => false;
   bool get isForwarding => true;
 
   bool isInMask(TypeMask other, Compiler compiler) {
@@ -97,7 +100,13 @@ abstract class ForwardingTypeMask implements TypeMask {
     return forwardTo.locateSingleElement(selector, compiler);
   }
 
-  TypeMask simplify(Compiler compiler) => forwardTo.simplify(compiler);
-
   bool equalsDisregardNull(other);
+
+  bool operator==(other) {
+    return equalsDisregardNull(other) &&
+        isNullable == other.isNullable &&
+        forwardTo == other.forwardTo;
+  }
+
+  int get hashCode => throw "Subclass should implement hashCode getter";
 }

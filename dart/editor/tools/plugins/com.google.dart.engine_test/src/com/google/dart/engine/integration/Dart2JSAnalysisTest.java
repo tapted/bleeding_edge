@@ -42,9 +42,9 @@ public class Dart2JSAnalysisTest extends LibraryAnalysisTest {
     context.setSourceFactory(sourceFactory);
 
     long startTime = System.currentTimeMillis();
-    LibraryElement library = context.computeLibraryElement(new FileBasedSource(
-        sourceFactory.getContentCache(),
-        new File(svnRoot, "tests/utils/dart2js_test.dart")));
+    LibraryElement library = context.computeLibraryElement(new FileBasedSource(new File(
+        svnRoot,
+        "tests/utils/dart2js_test.dart")));
     verify(library);
     long endTime = System.currentTimeMillis();
     //
@@ -65,6 +65,6 @@ public class Dart2JSAnalysisTest extends LibraryAnalysisTest {
     //
     // Validate that there were no errors.
     //
-    assertValid();
+    assertValid(context);
   }
 }

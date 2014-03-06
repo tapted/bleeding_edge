@@ -135,15 +135,6 @@ class Label : public ValueObject {
 };
 
 
-class CPUFeatures : public AllStatic {
- public:
-  static void InitOnce() { }
-  static bool double_truncate_round_supported() {
-    return false;
-  }
-};
-
-
 class Assembler : public ValueObject {
  public:
   explicit Assembler(bool use_far_branches = false)
@@ -163,6 +154,13 @@ class Assembler : public ValueObject {
   // Misc. functionality
   intptr_t CodeSize() const { return buffer_.Size(); }
   intptr_t prologue_offset() const { return prologue_offset_; }
+
+  // Count the fixups that produce a pointer offset, without processing
+  // the fixups.
+  intptr_t CountPointerOffsets() const {
+    return buffer_.CountPointerOffsets();
+  }
+
   const ZoneGrowableArray<intptr_t>& GetPointerOffsets() const {
     return buffer_.pointer_offsets();
   }
@@ -197,13 +195,24 @@ class Assembler : public ValueObject {
   // See EnterDartFrame. There are 6 instructions before we know the PC.
   static const intptr_t kEntryPointToPcMarkerOffset = 6 * Instr::kInstrSize;
 
+  void UpdateAllocationStats(intptr_t cid,
+                             Register temp_reg,
+                             Heap::Space space = Heap::kNew);
+
+  void UpdateAllocationStatsWithSize(intptr_t cid,
+                                     Register size_reg,
+                                     Register temp_reg,
+                                     Heap::Space space = Heap::kNew);
+
+
   // Inlined allocation of an instance of class 'cls', code has no runtime
   // calls. Jump to 'failure' if the instance cannot be allocated here.
   // Allocated instance is returned in 'instance_reg'.
   // Only the tags field of the object is initialized.
   void TryAllocate(const Class& cls,
                    Label* failure,
-                   Register instance_reg);
+                   Register instance_reg,
+                   Register temp_reg);
 
   // Debugging and bringup support.
   void Stop(const char* message);
@@ -785,22 +794,22 @@ class Assembler : public ValueObject {
   void BranchPatchable(const ExternalLabel* label) {
     const uint16_t low = Utils::Low16Bits(label->address());
     const uint16_t high = Utils::High16Bits(label->address());
-    lui(TMP, Immediate(high));
-    ori(TMP, TMP, Immediate(low));
-    jr(TMP);
+    lui(T9, Immediate(high));
+    ori(T9, T9, Immediate(low));
+    jr(T9);
     delay_slot_available_ = false;  // CodePatcher expects a nop.
   }
 
   void BranchLink(const ExternalLabel* label) {
-    LoadImmediate(TMP, label->address());
-    jalr(TMP);
+    LoadImmediate(T9, label->address());
+    jalr(T9);
   }
 
   void BranchLinkPatchable(const ExternalLabel* label) {
     const int32_t offset =
         Array::data_offset() + 4*AddExternalLabel(label) - kHeapObjectTag;
-    LoadWordFromPoolOffset(TMP, offset);
-    jalr(TMP);
+    LoadWordFromPoolOffset(T9, offset);
+    jalr(T9);
     delay_slot_available_ = false;  // CodePatcher expects a nop.
   }
 

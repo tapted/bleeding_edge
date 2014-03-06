@@ -78,7 +78,7 @@ class _StreamSinkImpl<T> implements StreamSink<T> {
   bool _isBound = false;
   bool _hasError = false;
 
-  _StreamSinkImpl(StreamConsumer<T> this._target) {
+  _StreamSinkImpl(this._target) {
     _doneFuture = _doneCompleter.future;
   }
 
@@ -87,9 +87,8 @@ class _StreamSinkImpl<T> implements StreamSink<T> {
     _controller.add(data);
   }
 
-  void addError(error, [StackTrace stackTrace]) {
-    _controller.addError(error, stackTrace);
-  }
+  void addError(error, [StackTrace stackTrace]) =>
+      _controller.addError(error, stackTrace);
 
   Future addStream(Stream<T> stream) {
     if (_isBound) {
@@ -111,10 +110,18 @@ class _StreamSinkImpl<T> implements StreamSink<T> {
   }
 
   Future flush() {
+    if (_isBound) {
+      throw new StateError("StreamSink is bound to a stream");
+    }
+    if (_controllerInstance == null) return new Future.value(this);
     // Adding an empty stream-controller will return a future that will complete
     // when all data is done.
-    var controller = new StreamController()..close();
-    return addStream(controller.stream).then((_) => this);
+    _isBound = true;
+    var future = _controllerCompleter.future;
+    _controllerInstance.close();
+    return future.whenComplete(() {
+          _isBound = false;
+        });
   }
 
   Future close() {
@@ -166,7 +173,7 @@ class _StreamSinkImpl<T> implements StreamSink<T> {
               (_) {
                 if (_isBound) {
                   // A new stream takes over - forward values to that stream.
-                  _controllerCompleter.complete();
+                  _controllerCompleter.complete(this);
                   _controllerCompleter = null;
                   _controllerInstance = null;
                 } else {

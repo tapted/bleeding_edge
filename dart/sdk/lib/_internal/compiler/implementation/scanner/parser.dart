@@ -131,10 +131,11 @@ class Parser {
         token = parseShow(token);
       } else {
         listener.endCombinators(count);
-        return token;
+        break;
       }
       count++;
     }
+    return token;
   }
 
   /// hide identifierList
@@ -215,10 +216,14 @@ class Parser {
     return token;
   }
 
-  Token parseMetadataStar(Token token) {
+  Token parseMetadataStar(Token token, {bool forParameter: false}) {
+    listener.beginMetadataStar(token);
+    int count = 0;
     while (optional('@', token)) {
       token = parseMetadata(token);
+      count++;
     }
+    listener.endMetadataStar(count, forParameter);
     return token;
   }
 
@@ -326,6 +331,7 @@ class Parser {
   }
 
   Token parseFormalParameter(Token token, FormalParameterType type) {
+    token = parseMetadataStar(token, forParameter: true);
     listener.beginFormalParameter(token);
     token = parseModifiers(token);
     // TODO(ahe): Validate that there are formal parameters if void.
@@ -1846,6 +1852,7 @@ class Parser {
       return token.next;
     } else {
       listener.unexpected(token);
+      return null;
     }
   }
 

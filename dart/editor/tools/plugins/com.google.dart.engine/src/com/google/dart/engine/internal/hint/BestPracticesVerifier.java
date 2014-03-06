@@ -13,14 +13,17 @@
  */
 package com.google.dart.engine.internal.hint;
 
-import com.google.dart.engine.ast.ASTNode;
 import com.google.dart.engine.ast.AsExpression;
 import com.google.dart.engine.ast.AssignmentExpression;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.BinaryExpression;
+import com.google.dart.engine.ast.BlockFunctionBody;
 import com.google.dart.engine.ast.ClassDeclaration;
 import com.google.dart.engine.ast.ConstructorName;
 import com.google.dart.engine.ast.ExportDirective;
 import com.google.dart.engine.ast.Expression;
+import com.google.dart.engine.ast.FunctionBody;
+import com.google.dart.engine.ast.FunctionDeclaration;
 import com.google.dart.engine.ast.HideCombinator;
 import com.google.dart.engine.ast.Identifier;
 import com.google.dart.engine.ast.ImportDirective;
@@ -37,7 +40,8 @@ import com.google.dart.engine.ast.RedirectingConstructorInvocation;
 import com.google.dart.engine.ast.SimpleIdentifier;
 import com.google.dart.engine.ast.SuperConstructorInvocation;
 import com.google.dart.engine.ast.TypeName;
-import com.google.dart.engine.ast.visitor.RecursiveASTVisitor;
+import com.google.dart.engine.ast.VariableDeclaration;
+import com.google.dart.engine.ast.visitor.RecursiveAstVisitor;
 import com.google.dart.engine.element.ClassElement;
 import com.google.dart.engine.element.ConstructorElement;
 import com.google.dart.engine.element.Element;
@@ -47,6 +51,7 @@ import com.google.dart.engine.element.MethodElement;
 import com.google.dart.engine.element.PropertyAccessorElement;
 import com.google.dart.engine.error.HintCode;
 import com.google.dart.engine.internal.error.ErrorReporter;
+import com.google.dart.engine.internal.type.VoidTypeImpl;
 import com.google.dart.engine.scanner.Keyword;
 import com.google.dart.engine.scanner.TokenType;
 import com.google.dart.engine.type.InterfaceType;
@@ -59,7 +64,7 @@ import com.google.dart.engine.type.TypeParameterType;
  * 
  * @coverage dart.engine.resolver
  */
-public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
+public class BestPracticesVerifier extends RecursiveAstVisitor<Void> {
 
   private static final String GETTER = "getter";
 
@@ -123,6 +128,8 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
     TokenType operatorType = node.getOperator().getType();
     if (operatorType != TokenType.EQ) {
       checkForDeprecatedMemberUse(node.getBestElement(), node);
+    } else {
+      checkForUseOfVoidResult(node.getRightHandSide());
     }
     return super.visitAssignmentExpression(node);
   }
@@ -154,6 +161,12 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
   }
 
   @Override
+  public Void visitFunctionDeclaration(FunctionDeclaration node) {
+    checkForMissingReturn(node.getReturnType(), node.getFunctionExpression().getBody());
+    return super.visitFunctionDeclaration(node);
+  }
+
+  @Override
   public Void visitImportDirective(ImportDirective node) {
     checkForDeprecatedMemberUse(node.getUriElement(), node);
     return super.visitImportDirective(node);
@@ -179,7 +192,9 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
 
   @Override
   public Void visitMethodDeclaration(MethodDeclaration node) {
-    checkForOverridingPrivateMember(node);
+    // This was determined to not be a good hint, see: dartbug.com/16029
+    //checkForOverridingPrivateMember(node);
+    checkForMissingReturn(node.getReturnType(), node.getBody());
     return super.visitMethodDeclaration(node);
   }
 
@@ -203,7 +218,7 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
 
   @Override
   public Void visitSimpleIdentifier(SimpleIdentifier node) {
-    checkForDeprecatedMemberUse(node);
+    checkForDeprecatedMemberUseAtIdentifier(node);
     return super.visitSimpleIdentifier(node);
   }
 
@@ -211,6 +226,12 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
   public Void visitSuperConstructorInvocation(SuperConstructorInvocation node) {
     checkForDeprecatedMemberUse(node.getStaticElement(), node);
     return super.visitSuperConstructorInvocation(node);
+  }
+
+  @Override
+  public Void visitVariableDeclaration(VariableDeclaration node) {
+    checkForUseOfVoidResult(node.getInitializer());
+    return super.visitVariableDeclaration(node);
   }
 
   /**
@@ -237,10 +258,10 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
     if ((rhsType.isDynamic() && rhsNameStr.equals(Keyword.DYNAMIC.getSyntax()))) {
       if (node.getNotOperator() == null) {
         // the is case
-        errorReporter.reportError(HintCode.UNNECESSARY_TYPE_CHECK_TRUE, node);
+        errorReporter.reportErrorForNode(HintCode.UNNECESSARY_TYPE_CHECK_TRUE, node);
       } else {
         // the is not case
-        errorReporter.reportError(HintCode.UNNECESSARY_TYPE_CHECK_FALSE, node);
+        errorReporter.reportErrorForNode(HintCode.UNNECESSARY_TYPE_CHECK_FALSE, node);
       }
       return true;
     }
@@ -252,19 +273,19 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
           || (expression instanceof NullLiteral && rhsNameStr.equals(NULL_TYPE_NAME))) {
         if (node.getNotOperator() == null) {
           // the is case
-          errorReporter.reportError(HintCode.UNNECESSARY_TYPE_CHECK_TRUE, node);
+          errorReporter.reportErrorForNode(HintCode.UNNECESSARY_TYPE_CHECK_TRUE, node);
         } else {
           // the is not case
-          errorReporter.reportError(HintCode.UNNECESSARY_TYPE_CHECK_FALSE, node);
+          errorReporter.reportErrorForNode(HintCode.UNNECESSARY_TYPE_CHECK_FALSE, node);
         }
         return true;
       } else if (rhsNameStr.equals(NULL_TYPE_NAME)) {
         if (node.getNotOperator() == null) {
           // the is case
-          errorReporter.reportError(HintCode.TYPE_CHECK_IS_NULL, node);
+          errorReporter.reportErrorForNode(HintCode.TYPE_CHECK_IS_NULL, node);
         } else {
           // the is not case
-          errorReporter.reportError(HintCode.TYPE_CHECK_IS_NOT_NULL, node);
+          errorReporter.reportErrorForNode(HintCode.TYPE_CHECK_IS_NOT_NULL, node);
         }
         return true;
       }
@@ -281,7 +302,7 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
    * @return {@code true} if and only if a hint code is generated on the passed node
    * @see HintCode#DEPRECATED_MEMBER_USE
    */
-  private boolean checkForDeprecatedMemberUse(Element element, ASTNode node) {
+  private boolean checkForDeprecatedMemberUse(Element element, AstNode node) {
     if (element != null && element.isDeprecated()) {
       String displayName = element.getDisplayName();
       if (element instanceof ConstructorElement) {
@@ -293,14 +314,14 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
           displayName = displayName + '.' + constructorElement.getDisplayName();
         }
       }
-      errorReporter.reportError(HintCode.DEPRECATED_MEMBER_USE, node, displayName);
+      errorReporter.reportErrorForNode(HintCode.DEPRECATED_MEMBER_USE, node, displayName);
       return true;
     }
     return false;
   }
 
   /**
-   * For {@link SimpleIdentifier}s, only call {@link #checkForDeprecatedMemberUse(Element, ASTNode)}
+   * For {@link SimpleIdentifier}s, only call {@link #checkForDeprecatedMemberUse(Element, AstNode)}
    * if the node is not in a declaration context.
    * <p>
    * Also, if the identifier is a constructor name in a constructor invocation, then calls to the
@@ -313,11 +334,11 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
    * @return {@code true} if and only if a hint code is generated on the passed node
    * @see HintCode#DEPRECATED_MEMBER_USE
    */
-  private boolean checkForDeprecatedMemberUse(SimpleIdentifier identifier) {
+  private boolean checkForDeprecatedMemberUseAtIdentifier(SimpleIdentifier identifier) {
     if (identifier.inDeclarationContext()) {
       return false;
     }
-    ASTNode parent = identifier.getParent();
+    AstNode parent = identifier.getParent();
     if ((parent instanceof ConstructorName && identifier == ((ConstructorName) parent).getName())
         || (parent instanceof SuperConstructorInvocation && identifier == ((SuperConstructorInvocation) parent).getConstructorName())
         || parent instanceof HideCombinator) {
@@ -354,10 +375,49 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
         MethodInvocation methodInvocation = (MethodInvocation) parenthesizedExpression.getParent();
         if (TO_INT_METHOD_NAME.equals(methodInvocation.getMethodName().getName())
             && methodInvocation.getArgumentList().getArguments().isEmpty()) {
-          errorReporter.reportError(HintCode.DIVISION_OPTIMIZATION, methodInvocation);
+          errorReporter.reportErrorForNode(HintCode.DIVISION_OPTIMIZATION, methodInvocation);
           return true;
         }
       }
+    }
+    return false;
+  }
+
+  /**
+   * Generate a hint for functions or methods that have a return type, but do not have a return
+   * statement on all branches. At the end of blocks with no return, Dart implicitly returns
+   * {@code null}, avoiding these implicit returns is considered a best practice.
+   * 
+   * @param node the binary expression to check
+   * @param body the function body
+   * @return {@code true} if and only if a hint code is generated on the passed node
+   * @see HintCode#MISSING_RETURN
+   */
+  private boolean checkForMissingReturn(TypeName returnType, FunctionBody body) {
+    // Check that the method or function has a return type, and a function body
+    if (returnType == null || body == null) {
+      return false;
+    }
+
+    // Check that the body is a BlockFunctionBody
+    if (!(body instanceof BlockFunctionBody)) {
+      return false;
+    }
+
+    // Check that the type is resolvable, and is not "void"
+    Type returnTypeType = returnType.getType();
+    if (returnTypeType == null || returnTypeType.isVoid()) {
+      return false;
+    }
+
+    // Check the block for a return statement, if not, create the hint
+    BlockFunctionBody blockFunctionBody = (BlockFunctionBody) body;
+    if (!blockFunctionBody.accept(new ExitDetector())) {
+      errorReporter.reportErrorForNode(
+          HintCode.MISSING_RETURN,
+          returnType,
+          returnTypeType.getDisplayName());
+      return true;
     }
     return false;
   }
@@ -380,7 +440,7 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
     if (equalsOperatorMethodElement != null) {
       PropertyAccessorElement hashCodeElement = classElement.getGetter(HASHCODE_GETTER_NAME);
       if (hashCodeElement == null) {
-        errorReporter.reportError(
+        errorReporter.reportErrorForNode(
             HintCode.OVERRIDE_EQUALS_BUT_NOT_HASH_CODE,
             node.getName(),
             classElement.getDisplayName());
@@ -391,13 +451,14 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
   }
 
   /**
-   * Check for the passed class declaration for the
-   * {@link HintCode#OVERRIDE_EQUALS_BUT_NOT_HASH_CODE} hint code.
+   * Checks that if the passed method declaration is private, it does not override a private member
+   * in a superclass.
    * 
-   * @param node the class declaration to check
+   * @param node the method declaration to check
    * @return {@code true} if and only if a hint code is generated on the passed node
    * @see HintCode#OVERRIDDING_PRIVATE_MEMBER
    */
+  @SuppressWarnings("unused")
   private boolean checkForOverridingPrivateMember(MethodDeclaration node) {
     // If not in an enclosing class, return false
     if (enclosingClass == null) {
@@ -437,7 +498,7 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
           if (overriddenAccessor != null) {
             String memberType = ((PropertyAccessorElement) executableElement).isGetter() ? GETTER
                 : SETTER;
-            errorReporter.reportError(
+            errorReporter.reportErrorForNode(
                 HintCode.OVERRIDDING_PRIVATE_MEMBER,
                 node.getName(),
                 memberType,
@@ -448,7 +509,7 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
         } else {
           MethodElement overriddenMethod = classElement.getMethod(elementName);
           if (overriddenMethod != null) {
-            errorReporter.reportError(
+            errorReporter.reportErrorForNode(
                 HintCode.OVERRIDDING_PRIVATE_MEMBER,
                 node.getName(),
                 METHOD,
@@ -481,7 +542,31 @@ public class BestPracticesVerifier extends RecursiveASTVisitor<Void> {
     if (lhsType != null && rhsType != null && !lhsType.isDynamic() && !rhsType.isDynamic()
         && !(lhsType instanceof TypeParameterType) && !(rhsType instanceof TypeParameterType)
         && lhsType.isSubtypeOf(rhsType)) {
-      errorReporter.reportError(HintCode.UNNECESSARY_CAST, node);
+      errorReporter.reportErrorForNode(HintCode.UNNECESSARY_CAST, node);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check for situations where the result of a method or function is used, when it returns 'void'.
+   * <p>
+   * TODO(jwren) Many other situations of use could be covered. We currently cover the cases var x =
+   * m() and x = m(), but we could also cover cases such as m().x, m()[k], a + m(), f(m()), return
+   * m().
+   * 
+   * @param node expression on the RHS of some assignment
+   * @return {@code true} if and only if a hint code is generated on the passed node
+   * @see HintCode#USE_OF_VOID_RESULT
+   */
+  private boolean checkForUseOfVoidResult(Expression expression) {
+    if (expression == null || !(expression instanceof MethodInvocation)) {
+      return false;
+    }
+    MethodInvocation methodInvocation = (MethodInvocation) expression;
+    if (methodInvocation.getStaticType() == VoidTypeImpl.getInstance()) {
+      SimpleIdentifier methodName = methodInvocation.getMethodName();
+      errorReporter.reportErrorForNode(HintCode.USE_OF_VOID_RESULT, methodName, methodName.getName());
       return true;
     }
     return false;

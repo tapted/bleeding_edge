@@ -4,21 +4,22 @@
 
 library dart2js.ir_pickler;
 
-import 'ir_nodes.dart';
+import 'ir_nodes.dart' as ir;
 import '../dart2jslib.dart' show
     Constant, FalseConstant, TrueConstant, IntConstant, DoubleConstant,
     StringConstant, NullConstant, ListConstant, MapConstant,
-    InterceptorConstant, FunctionConstant, TypeConstant, ConstructedConstant,
+    InterceptorConstant, DummyConstant, FunctionConstant, TypeConstant,
+    ConstructedConstant,
     ConstantVisitor, ConstantSystem,
     Compiler;
 import 'dart:typed_data' show ByteData, Endianness, Uint8List;
 import 'dart:convert' show UTF8;
-import '../tree/tree.dart' show
+import '../tree/tree.dart' as ast show
     DartString, LiteralDartString, RawSourceDartString, EscapedSourceDartString,
     ConsDartString;
 import '../elements/elements.dart' show
     Element, LibraryElement, FunctionElement;
-import '../universe/universe.dart' show Selector;
+import '../universe/universe.dart' show Selector, TypedSelector, SelectorKind;
 
 part 'ir_unpickler.dart';
 
@@ -36,8 +37,8 @@ part 'ir_unpickler.dart';
  *                    int(namePosition) int(statements) {node(statement)}
  *              | byte(NODE_RETURN) position reference(value)
  *              | byte(NODE_CONST) position constant
- *              | byte(NODE_INVOKE_STATIC) position element int(arguments)
- *                    {reference(argument)}
+ *              | byte(NODE_INVOKE_STATIC) position element selector
+ *                    int(arguments) {reference(argument)}
  *
  * reference  ::= int(indexDelta)
  *
@@ -53,10 +54,17 @@ part 'ir_unpickler.dart';
  *              | byte(CONST_STRING_CONS) constant(left) constant(right)
  *              | byte(CONST_NULL)
  *
+ * selector   ::= byte(BACKREFERENCE) reference
+ *              | byte(SELECTOR_UNTYPED) int(kind) string(name) element(library)
+ *                    int(argumentsCount) int(namedArgumentsCount)
+ *                    {string(parameterName)}
+ *
  * element    ::= int(constantPoolIndex)
  */
 class Pickles {
-  static const int STRING_ASCII = 1;
+  static const int BACKREFERENCE = 1;
+
+  static const int STRING_ASCII = BACKREFERENCE + 1;
   static const int STRING_UTF8  = STRING_ASCII + 1;
 
   static const int BEGIN_STATEMENT_NODE = STRING_UTF8 + 1;
@@ -85,11 +93,31 @@ class Pickles {
   static const int CONST_NULL           = CONST_STRING_CONS + 1;
   static const int END_CONST            = CONST_NULL;
 
-  static const int END_TAG = END_CONST;
+  static const int BEGIN_SELECTOR   = END_CONST + 1;
+  static const int SELECTOR_UNTYPED = BEGIN_SELECTOR;
+  static const int END_SELECTOR     = SELECTOR_UNTYPED + 1;
+
+  static const int END_TAG = END_SELECTOR;
 
   static bool isExpressionTag(int tag) {
     return BEGIN_EXPRESSION_NODE <= tag && tag <= END_EXPRESSION_NODE;
   }
+
+  static final List<SelectorKind> selectorKindFromId = _selectorKindFromId();
+
+  static List<SelectorKind> _selectorKindFromId() {
+    List<SelectorKind> result = <SelectorKind>[
+        SelectorKind.GETTER,
+        SelectorKind.SETTER,
+        SelectorKind.CALL,
+        SelectorKind.OPERATOR,
+        SelectorKind.INDEX];
+    for (int i = 0; i < result.length; i++) {
+      assert(result[i].hashCode == i);
+    }
+    return result;
+  }
+
 }
 
 class IrConstantPool {
@@ -122,9 +150,9 @@ class IrConstantPool {
 }
 
 /**
- * The [Pickler] serializes [IrNode]s to a byte array.
+ * The [Pickler] serializes [ir.Node]s to a byte array.
  */
-class Pickler extends IrNodesVisitor {
+class Pickler extends ir.NodesVisitor {
   ConstantPickler constantPickler;
 
   IrConstantPool constantPool;
@@ -154,7 +182,7 @@ class Pickler extends IrNodesVisitor {
    */
   ByteData doubleData = new ByteData(8);
 
-  List<int> pickle(IrNode node) {
+  List<int> pickle(ir.Node node) {
     data = new Uint8List(INITIAL_SIZE);
     offset = 0;
     emitted = <Object, int>{};
@@ -254,21 +282,21 @@ class Pickler extends IrNodesVisitor {
   }
 
   /**
-   * This function records [IrExpression] nodes in the [emitted] table. It
-   * needs to be invoked for each visited expression node to enable pickling
-   * back references to the node in [writeBackReference].
+   * This function records [entry] in the [emitted] table. It needs to be
+   * invoked when pickling an object which might later on be used in a back
+   * reference, for example expression nodes or selectors.
    */
-  void recordForBackReference(IrExpression entry) {
+  void recordForBackReference(Object entry) {
     assert(emitted[entry] == null);
     emitted[entry] = index++;
   }
 
-  void writeBackReference(IrExpression entry) {
+  void writeBackReference(Object entry) {
     int entryIndex = emitted[entry];
     writeInt(index - entryIndex);
   }
 
-  void writeBackReferenceList(List<IrExpression> entries) {
+  void writeBackReferenceList(List entries) {
     writeInt(entries.length);
     for (int i = 0; i < entries.length; i++) {
       writeBackReference(entries[i]);
@@ -280,7 +308,7 @@ class Pickler extends IrNodesVisitor {
       writeByte(Pickles.POSITION_OFFSET);
       writeInt(position);
     } else {
-      PositionWithIdentifierName namedPosition = position;
+      ir.PositionWithIdentifierName namedPosition = position;
       writeByte(Pickles.POSITION_WITH_ID);
       writeString(namedPosition.sourceName);
       writeInt(namedPosition.offset);
@@ -305,19 +333,19 @@ class Pickler extends IrNodesVisitor {
     }
   }
 
-  void writeDartString(DartString s) {
-    if (s is LiteralDartString) {
+  void writeDartString(ast.DartString s) {
+    if (s is ast.LiteralDartString) {
       writeByte(Pickles.CONST_STRING_LITERAL);
       writeString(s.string);
-    } else if (s is RawSourceDartString) {
+    } else if (s is ast.RawSourceDartString) {
       writeByte(Pickles.CONST_STRING_RAW);
       writeString(s.source);
       writeInt(s.length);
-    } else if (s is EscapedSourceDartString) {
+    } else if (s is ast.EscapedSourceDartString) {
       writeByte(Pickles.CONST_STRING_ESCAPED);
       writeString(s.source);
       writeInt(s.length);
-    } else if (s is ConsDartString) {
+    } else if (s is ast.ConsDartString) {
       writeByte(Pickles.CONST_STRING_CONS);
       writeDartString(s.left);
       writeDartString(s.right);
@@ -335,17 +363,33 @@ class Pickler extends IrNodesVisitor {
   }
 
   void writeSelector(Selector selector) {
-    writeInt(constantPool.add(selector));
+    if (emitted.containsKey(selector)) {
+      writeByte(Pickles.BACKREFERENCE);
+      writeBackReference(selector);
+    } else {
+      recordForBackReference(selector);
+      assert(selector is !TypedSelector);
+      writeByte(Pickles.SELECTOR_UNTYPED);
+      writeInt(selector.kind.hashCode);
+      writeString(selector.name);
+      writeElement(selector.library);
+      writeInt(selector.argumentCount);
+      int namedArgumentsCount = selector.namedArguments.length;
+      writeInt(namedArgumentsCount);
+      for (int i = 0; i < namedArgumentsCount; i++) {
+        writeString(selector.namedArguments[i]);
+      }
+    }
   }
 
-  void writeNodeList(List<IrNode> nodes) {
+  void writeNodeList(List<ir.Node> nodes) {
     writeInt(nodes.length);
     for (int i = 0; i < nodes.length; i++) {
       nodes[i].accept(this);
     }
   }
 
-  void visitIrFunction(IrFunction node) {
+  void visitFunction(ir.Function node) {
     recordForBackReference(node);
     writeByte(Pickles.NODE_FUNCTION);
     writePosition(node.position);
@@ -354,20 +398,20 @@ class Pickler extends IrNodesVisitor {
     writeNodeList(node.statements);
   }
 
-  void visitIrReturn(IrReturn node) {
+  void visitReturn(ir.Return node) {
     writeByte(Pickles.NODE_RETURN);
     writePosition(node.position);
     writeBackReference(node.value);
   }
 
-  void visitIrConstant(IrConstant node) {
+  void visitConstant(ir.Constant node) {
     recordForBackReference(node);
     writeByte(Pickles.NODE_CONST);
     writePosition(node.position);
     node.value.accept(constantPickler);
   }
 
-  void visitIrInvokeStatic(IrInvokeStatic node) {
+  void visitInvokeStatic(ir.InvokeStatic node) {
     recordForBackReference(node);
     writeByte(Pickles.NODE_INVOKE_STATIC);
     writePosition(node.position);
@@ -378,7 +422,7 @@ class Pickler extends IrNodesVisitor {
     writeBackReferenceList(node.arguments);
   }
 
-  void visitIrNode(IrNode node) {
+  void visitNode(ir.Node node) {
     throw "Unexpected $node in pickler.";
   }
 }
@@ -418,6 +462,7 @@ class ConstantPickler extends ConstantVisitor {
   void visitList(ListConstant constant) => abort(constant);
   void visitMap(MapConstant constant) => abort(constant);
   void visitInterceptor(InterceptorConstant constant) => abort(constant);
+  void visitDummy(DummyConstant constant) => abort(constant);
   void visitFunction(FunctionConstant constant) => abort(constant);
   void visitType(TypeConstant constant) => abort(constant);
   void visitConstructed(ConstructedConstant constant) => abort(constant);

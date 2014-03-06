@@ -329,26 +329,11 @@ intptr_t RawMixinAppType::VisitMixinAppTypePointers(
 }
 
 
-intptr_t RawAbstractTypeArguments::VisitAbstractTypeArgumentsPointers(
-    RawAbstractTypeArguments* raw_obj, ObjectPointerVisitor* visitor) {
-  // RawAbstractTypeArguments is an abstract class.
-  UNREACHABLE();
-  return 0;
-}
-
-
 intptr_t RawTypeArguments::VisitTypeArgumentsPointers(
     RawTypeArguments* raw_obj, ObjectPointerVisitor* visitor) {
   intptr_t length = Smi::Value(raw_obj->ptr()->length_);
   visitor->VisitPointers(raw_obj->from(), raw_obj->to(length));
   return TypeArguments::InstanceSize(length);
-}
-
-
-intptr_t RawInstantiatedTypeArguments::VisitInstantiatedTypeArgumentsPointers(
-    RawInstantiatedTypeArguments* raw_obj, ObjectPointerVisitor* visitor) {
-  visitor->VisitPointers(raw_obj->from(), raw_obj->to());
-  return InstantiatedTypeArguments::InstanceSize();
 }
 
 
@@ -389,7 +374,7 @@ bool RawFunction::SkipCode(RawFunction* raw_fun) {
   if (!code.IsNull() &&  // The function may not have code.
       !code.is_optimized() &&
       (fn.CurrentCode() == fn.unoptimized_code()) &&
-      !fn.HasBreakpoint() &&
+      !code.HasBreakpoint() &&
       (fn.usage_counter() >= 0)) {
     fn.set_usage_counter(fn.usage_counter() / 2);
     if (FLAG_always_drop_code || (fn.usage_counter() == 0)) {
@@ -791,6 +776,13 @@ intptr_t RawInt32x4::VisitInt32x4Pointers(
     return Int32x4::InstanceSize();
 }
 
+
+intptr_t RawFloat64x2::VisitFloat64x2Pointers(
+    RawFloat64x2* raw_obj,
+    ObjectPointerVisitor* visitor) {
+    ASSERT(raw_obj->IsHeapObject());
+    return Float64x2::InstanceSize();
+}
 
 intptr_t RawTypedData::VisitTypedDataPointers(
     RawTypedData* raw_obj, ObjectPointerVisitor* visitor) {

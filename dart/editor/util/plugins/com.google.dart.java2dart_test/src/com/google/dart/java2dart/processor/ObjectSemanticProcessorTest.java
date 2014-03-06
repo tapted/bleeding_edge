@@ -505,6 +505,22 @@ public class ObjectSemanticProcessorTest extends SemanticProcessorTest {
         "}");
   }
 
+  public void test_Object_equals_implicitThis() throws Exception {
+    translateSingleFile(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "package test;",
+        "public class Test {",
+        "  public boolean equals(Object o) {",
+        "    return equals(o);",
+        "  }",
+        "}");
+    runProcessor();
+    assertFormattedSource(//
+        "class Test {",
+        "  bool operator ==(Object o) => this == o;",
+        "}");
+  }
+
   public void test_Object_equals2() throws Exception {
     setFileLines(
         "test/MyInterface.java",
@@ -1042,51 +1058,6 @@ public class ObjectSemanticProcessorTest extends SemanticProcessorTest {
     assertFormattedSource(
         "class Test {",
         "  bool main(String s, String prefix, int index) => JavaString.startsWithBefore(s, prefix, index);",
-        "}");
-  }
-
-  public void test_String_toCharSequence() throws Exception {
-    translateSingleFile(
-        "// filler filler filler filler filler filler filler filler filler filler",
-        "package test;",
-        "public class Test {",
-        "  class UseCS {",
-        "    UseCS(CharSequence cs) { ",
-        "    }",
-        "  }",
-        "  void testA(String s) {",
-        "    CharSequence cs;",
-        "    cs = s;",
-        "  }",
-        "  void testB(String s) {",
-        "    CharSequence cs = s;",
-        "  }",
-        "  void testC(String s) {",
-        "    useCS(s);",
-        "    new UseCS(s);",
-        "  }",
-        "  void useCS(CharSequence cs) {",
-        "  }",
-        "}");
-    runProcessor();
-    assertFormattedSource(
-        "class Test {",
-        "  void testA(String s) {",
-        "    CharSequence cs;",
-        "    cs = new CharSequence(s);",
-        "  }",
-        "  void testB(String s) {",
-        "    CharSequence cs = new CharSequence(s);",
-        "  }",
-        "  void testC(String s) {",
-        "    useCS(new CharSequence(s));",
-        "    new Test_UseCS(new CharSequence(s));",
-        "  }",
-        "  void useCS(CharSequence cs) {",
-        "  }",
-        "}",
-        "class Test_UseCS {",
-        "  Test_UseCS(CharSequence cs);",
         "}");
   }
 

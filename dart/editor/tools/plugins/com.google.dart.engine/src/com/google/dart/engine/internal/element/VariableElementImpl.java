@@ -14,6 +14,8 @@
 package com.google.dart.engine.internal.element;
 
 import com.google.dart.engine.ast.Identifier;
+import com.google.dart.engine.ast.VariableDeclaration;
+import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.element.ElementVisitor;
 import com.google.dart.engine.element.FunctionElement;
 import com.google.dart.engine.element.VariableElement;
@@ -64,8 +66,8 @@ public abstract class VariableElementImpl extends ElementImpl implements Variabl
 
   /**
    * Return the result of evaluating this variable's initializer as a compile-time constant
-   * expression, or {@code null} if this variable is not a 'const' variable or does not have an
-   * initializer.
+   * expression, or {@code null} if this variable is not a 'const' variable, if it does not have an
+   * initializer, or if the compilation unit containing the variable has not been resolved.
    * 
    * @return the result of evaluating this variable's initializer
    */
@@ -76,6 +78,11 @@ public abstract class VariableElementImpl extends ElementImpl implements Variabl
   @Override
   public FunctionElement getInitializer() {
     return initializer;
+  }
+
+  @Override
+  public VariableDeclaration getNode() throws AnalysisException {
+    return getNode(VariableDeclaration.class);
   }
 
   @Override
@@ -94,8 +101,9 @@ public abstract class VariableElementImpl extends ElementImpl implements Variabl
   }
 
   /**
-   * Return {@code true} if this variable is potentially mutated somewhere in closure. This
-   * information is only available for local variables (including parameters).
+   * Return {@code true} if this variable is potentially mutated somewhere in a closure. This
+   * information is only available for local variables (including parameters) and only after the
+   * compilation unit containing the variable has been resolved.
    * 
    * @return {@code true} if this variable is potentially mutated somewhere in closure
    */
@@ -105,7 +113,8 @@ public abstract class VariableElementImpl extends ElementImpl implements Variabl
 
   /**
    * Return {@code true} if this variable is potentially mutated somewhere in its scope. This
-   * information is only available for local variables (including parameters).
+   * information is only available for local variables (including parameters) and only after the
+   * compilation unit containing the variable has been resolved.
    * 
    * @return {@code true} if this variable is potentially mutated somewhere in its scope
    */

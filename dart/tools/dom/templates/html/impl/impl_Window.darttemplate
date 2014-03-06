@@ -27,7 +27,7 @@ $endif
    * [animationFrame] again for the animation to continue.
    */
   Future<num> get animationFrame {
-    var completer = new Completer<num>();
+    var completer = new Completer<num>.sync();
     requestAnimationFrame((time) {
       completer.complete(time);
     });
@@ -393,5 +393,14 @@ $endif
 
   String getEventType(EventTarget target) {
     return _eventType;
+  }
+
+  ElementStream<BeforeUnloadEvent> forElement(Element e, {bool useCapture: false}) {
+    return new _ElementEventStreamImpl(e, _eventType, useCapture);
+  }
+
+  ElementStream<BeforeUnloadEvent> _forElementList(ElementList e,
+      {bool useCapture: false}) {
+    return new _ElementListEventStreamImpl(e, _eventType, useCapture);
   }
 }

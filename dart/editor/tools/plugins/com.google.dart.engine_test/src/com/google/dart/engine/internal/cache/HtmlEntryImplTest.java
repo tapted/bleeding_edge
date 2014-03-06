@@ -15,6 +15,7 @@ package com.google.dart.engine.internal.cache;
 
 import com.google.dart.engine.EngineTestCase;
 import com.google.dart.engine.error.AnalysisError;
+import com.google.dart.engine.error.AngularCode;
 import com.google.dart.engine.error.HintCode;
 import com.google.dart.engine.error.HtmlWarningCode;
 import com.google.dart.engine.html.ast.HtmlUnit;
@@ -42,10 +43,14 @@ public class HtmlEntryImplTest extends EngineTestCase {
         source,
         HtmlWarningCode.INVALID_URI,
         "-")});
+    entry.setValue(HtmlEntry.ANGULAR_ERRORS, new AnalysisError[] {new AnalysisError(
+        source,
+        AngularCode.INVALID_REPEAT_SYNTAX,
+        "-")});
     entry.setValue(HtmlEntry.HINTS, new AnalysisError[] {new AnalysisError(
         source,
         HintCode.DEAD_CODE)});
-    assertLength(3, entry.getAllErrors());
+    assertLength(4, entry.getAllErrors());
   }
 
   public void test_getWritableCopy() {
@@ -58,6 +63,10 @@ public class HtmlEntryImplTest extends EngineTestCase {
   public void test_invalidateAllResolutionInformation() {
     HtmlEntryImpl entry = entryWithValidState();
     entry.invalidateAllResolutionInformation();
+    assertSame(CacheState.VALID, entry.getState(HtmlEntry.ANGULAR_APPLICATION));
+    assertSame(CacheState.VALID, entry.getState(HtmlEntry.ANGULAR_COMPONENT));
+    assertSame(CacheState.INVALID, entry.getState(HtmlEntry.ANGULAR_ENTRY));
+    assertSame(CacheState.INVALID, entry.getState(HtmlEntry.ANGULAR_ERRORS));
     assertSame(CacheState.INVALID, entry.getState(HtmlEntry.ELEMENT));
     assertSame(CacheState.INVALID, entry.getState(HtmlEntry.HINTS));
     assertSame(CacheState.VALID, entry.getState(SourceEntry.LINE_INFO));
@@ -65,6 +74,10 @@ public class HtmlEntryImplTest extends EngineTestCase {
     assertSame(CacheState.VALID, entry.getState(HtmlEntry.PARSED_UNIT));
     assertSame(CacheState.VALID, entry.getState(HtmlEntry.REFERENCED_LIBRARIES));
     assertSame(CacheState.INVALID, entry.getState(HtmlEntry.RESOLUTION_ERRORS));
+  }
+
+  public void test_setState_angularErrors() {
+    setState(HtmlEntry.ANGULAR_ERRORS);
   }
 
   public void test_setState_element() {
@@ -93,6 +106,13 @@ public class HtmlEntryImplTest extends EngineTestCase {
 
   public void test_setState_resolutionErrors() {
     setState(HtmlEntry.RESOLUTION_ERRORS);
+  }
+
+  public void test_setValue_angularErrors() {
+    setValue(HtmlEntry.ANGULAR_ERRORS, new AnalysisError[] {new AnalysisError(
+        null,
+        AngularCode.INVALID_REPEAT_SYNTAX,
+        "-")});
   }
 
   public void test_setValue_element() {
@@ -141,6 +161,7 @@ public class HtmlEntryImplTest extends EngineTestCase {
 
   private HtmlEntryImpl entryWithValidState() {
     HtmlEntryImpl entry = new HtmlEntryImpl();
+    entry.setValue(HtmlEntry.ANGULAR_ERRORS, null);
     entry.setValue(HtmlEntry.ELEMENT, null);
     entry.setValue(HtmlEntry.HINTS, null);
     entry.setValue(SourceEntry.LINE_INFO, null);
@@ -149,6 +170,7 @@ public class HtmlEntryImplTest extends EngineTestCase {
     entry.setValue(HtmlEntry.REFERENCED_LIBRARIES, null);
     entry.setValue(HtmlEntry.RESOLUTION_ERRORS, null);
 
+    assertSame(CacheState.VALID, entry.getState(HtmlEntry.ANGULAR_ERRORS));
     assertSame(CacheState.VALID, entry.getState(HtmlEntry.ELEMENT));
     assertSame(CacheState.VALID, entry.getState(HtmlEntry.HINTS));
     assertSame(CacheState.VALID, entry.getState(SourceEntry.LINE_INFO));

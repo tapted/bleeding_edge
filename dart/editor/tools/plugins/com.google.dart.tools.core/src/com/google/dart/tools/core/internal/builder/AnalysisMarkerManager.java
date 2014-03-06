@@ -79,6 +79,7 @@ public class AnalysisMarkerManager {
 
       resource.deleteMarkers(DartCore.DART_PROBLEM_MARKER_TYPE, true, IResource.DEPTH_ZERO);
       resource.deleteMarkers(DartCore.DART_TASK_MARKER_TYPE, true, IResource.DEPTH_ZERO);
+      resource.deleteMarkers(DartCore.ANGULAR_WARNING_MARKER_TYPE, true, IResource.DEPTH_ZERO);
 
       // Ignore if user requested to don't analyze resource.
       if (!DartCore.isAnalyzed(resource)) {
@@ -106,7 +107,10 @@ public class AnalysisMarkerManager {
 
         String markerType = DartCore.DART_PROBLEM_MARKER_TYPE;
 
-        if (errorCode.getType() == ErrorType.TODO) {
+        if (errorCode.getType() == ErrorType.ANGULAR) {
+          markerType = DartCore.ANGULAR_WARNING_MARKER_TYPE;
+          severity = IMarker.SEVERITY_WARNING;
+        } else if (errorCode.getType() == ErrorType.TODO) {
           markerType = DartCore.DART_TASK_MARKER_TYPE;
         } else if (isHint) {
           markerType = DartCore.DART_HINT_MARKER_TYPE;
@@ -314,10 +318,12 @@ public class AnalysisMarkerManager {
 
     //TODO(keertip): remove resource from queue
     try {
-      if (resource instanceof IContainer) {
-        resource.deleteMarkers(null, false, IResource.DEPTH_INFINITE);
-      } else {
-        resource.deleteMarkers(null, false, IResource.DEPTH_ZERO);
+      if (resource.isAccessible()) {
+        if (resource instanceof IContainer) {
+          resource.deleteMarkers(null, false, IResource.DEPTH_INFINITE);
+        } else {
+          resource.deleteMarkers(null, false, IResource.DEPTH_ZERO);
+        }
       }
     } catch (Exception e) {
       DartCore.logError(e);

@@ -63,26 +63,6 @@ class Label : public ValueObject {
   DISALLOW_COPY_AND_ASSIGN(Label);
 };
 
-
-class CPUFeatures : public AllStatic {
- public:
-  static void InitOnce();
-  static bool double_truncate_round_supported() { return false; }
-  static bool integer_division_supported();
-  static bool neon_supported();
-#if defined(USING_SIMULATOR)
-  static void set_integer_division_supported(bool supported);
-  static void set_neon_supported(bool supported);
-#endif
- private:
-  static bool integer_division_supported_;
-  static bool neon_supported_;
-#if defined(DEBUG)
-  static bool initialized_;
-#endif
-};
-
-
 // Encodes Addressing Mode 1 - Data-processing operands.
 class ShifterOperand : public ValueObject {
  public:
@@ -313,6 +293,11 @@ class Assembler : public ValueObject {
   // Misc. functionality
   intptr_t CodeSize() const { return buffer_.Size(); }
   intptr_t prologue_offset() const { return prologue_offset_; }
+
+  // Count the fixups that produce a pointer offset, without processing
+  // the fixups.  On ARM there are no pointers in code.
+  intptr_t CountPointerOffsets() const { return 0; }
+
   const ZoneGrowableArray<intptr_t>& GetPointerOffsets() const {
     ASSERT(buffer_.pointer_offsets().length() == 0);  // No pointers in code.
     return buffer_.pointer_offsets();
@@ -734,13 +719,23 @@ class Assembler : public ValueObject {
   // RawInstruction object corresponding to the code running in the frame.
   static const intptr_t kEntryPointToPcMarkerOffset = Instr::kPCReadOffset;
 
+  void UpdateAllocationStats(intptr_t cid,
+                             Register temp_reg,
+                             Heap::Space space = Heap::kNew);
+
+  void UpdateAllocationStatsWithSize(intptr_t cid,
+                                     Register size_reg,
+                                     Register temp_reg,
+                                     Heap::Space space = Heap::kNew);
+
   // Inlined allocation of an instance of class 'cls', code has no runtime
   // calls. Jump to 'failure' if the instance cannot be allocated here.
   // Allocated instance is returned in 'instance_reg'.
   // Only the tags field of the object is initialized.
   void TryAllocate(const Class& cls,
                    Label* failure,
-                   Register instance_reg);
+                   Register instance_reg,
+                   Register temp_reg);
 
   // Emit data (e.g encoded instruction or immediate) in instruction stream.
   void Emit(int32_t value);

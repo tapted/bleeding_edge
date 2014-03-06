@@ -31,8 +31,7 @@ DART_EXPORT bool Dart_PostCObject(Dart_Port port_id, Dart_CObject* message) {
 
   // Post the message at the given port.
   return PortMap::PostMessage(new Message(
-      port_id, Message::kIllegalPort, buffer, writer.BytesWritten(),
-      Message::kNormalPriority));
+      port_id, buffer, writer.BytesWritten(), Message::kNormalPriority));
 }
 
 
@@ -78,20 +77,6 @@ DART_EXPORT void Dart_InitPprofSupport() { }
 DART_EXPORT void Dart_GetPprofSymbolInfo(void** buffer, int* buffer_size) {
   *buffer = NULL;
   *buffer_size = 0;
-}
-
-
-// --- Heap Profiler ---
-
-DART_EXPORT Dart_Handle Dart_HeapProfile(Dart_FileWriteCallback callback,
-                                         void* stream) {
-  Isolate* isolate = Isolate::Current();
-  CHECK_ISOLATE(isolate);
-  if (callback == NULL) {
-    RETURN_NULL_ERROR(callback);
-  }
-  isolate->heap()->Profile(callback, stream);
-  return Api::Success();
 }
 
 

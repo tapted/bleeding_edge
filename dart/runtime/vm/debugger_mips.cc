@@ -5,6 +5,7 @@
 #include "vm/globals.h"
 #if defined(TARGET_ARCH_MIPS)
 
+#include "vm/code_patcher.h"
 #include "vm/cpu.h"
 #include "vm/debugger.h"
 #include "vm/instructions.h"
@@ -32,55 +33,56 @@ RawObject* ActivationFrame::GetClosureObject(intptr_t num_actual_args) {
 }
 
 
-void CodeBreakpoint::PatchFunctionReturn() {
-  Instr* instr1 = Instr::At(pc_ - 5 * Instr::kInstrSize);
-  Instr* instr2 = Instr::At(pc_ - 4 * Instr::kInstrSize);
-  Instr* instr3 = Instr::At(pc_ - 3 * Instr::kInstrSize);
-  Instr* instr4 = Instr::At(pc_ - 2 * Instr::kInstrSize);
-  Instr* instr5 = Instr::At(pc_ - 1 * Instr::kInstrSize);
-
-#if defined(DEBUG)
-  instr1->AssertIsImmInstr(LW, SP, RA, 2 * kWordSize);
-  instr2->AssertIsImmInstr(LW, SP, FP, 1 * kWordSize);
-  instr3->AssertIsImmInstr(LW, SP, PP, 0 * kWordSize);
-  instr4->AssertIsSpecialInstr(JR, RA, ZR, ZR);
-  instr5->AssertIsImmInstr(ADDIU, SP, SP, 4 * kWordSize);
-#endif  // defined(DEBUG)
-
-  // Smash code with call instruction and target address.
-  uword stub_addr = StubCode::BreakpointReturnEntryPoint();
-  uint16_t target_lo = stub_addr & 0xffff;
-  uint16_t target_hi = stub_addr >> 16;
-
-  // Unlike other architectures, the sequence we are patching in is shorter
-  // than the sequence we are replacing. We pad at the top with nops so that
-  // the end of the new sequence is lined up with the code descriptor.
-  instr1->SetInstructionBits(Instr::kNopInstruction);
-  instr2->SetImmInstrBits(LUI, ZR, TMP, target_hi);
-  instr3->SetImmInstrBits(ORI, TMP, TMP, target_lo);
-  instr4->SetSpecialInstrBits(JALR, TMP, ZR, RA);
-  instr5->SetInstructionBits(Instr::kNopInstruction);
-
-  CPU::FlushICache(pc_ - 5 * Instr::kInstrSize, 5 * Instr::kInstrSize);
+uword CodeBreakpoint::OrigStubAddress() const {
+  return saved_value_;
 }
 
 
-void CodeBreakpoint::RestoreFunctionReturn() {
-  Instr* instr1 = Instr::At(pc_ - 5 * Instr::kInstrSize);
-  Instr* instr2 = Instr::At(pc_ - 4 * Instr::kInstrSize);
-  Instr* instr3 = Instr::At(pc_ - 3 * Instr::kInstrSize);
-  Instr* instr4 = Instr::At(pc_ - 2 * Instr::kInstrSize);
-  Instr* instr5 = Instr::At(pc_ - 1 * Instr::kInstrSize);
+void CodeBreakpoint::PatchCode() {
+  ASSERT(!is_enabled_);
+  const Code& code = Code::Handle(code_);
+  const Instructions& instrs = Instructions::Handle(code.instructions());
+  {
+    WritableInstructionsScope writable(instrs.EntryPoint(), instrs.size());
+    switch (breakpoint_kind_) {
+      case PcDescriptors::kIcCall:
+      case PcDescriptors::kUnoptStaticCall:
+      case PcDescriptors::kRuntimeCall:
+      case PcDescriptors::kClosureCall:
+      case PcDescriptors::kReturn: {
+        saved_value_ = CodePatcher::GetStaticCallTargetAt(pc_, code);
+        CodePatcher::PatchStaticCallAt(pc_, code,
+                                       StubCode::BreakpointRuntimeEntryPoint());
+        break;
+      }
+      default:
+        UNREACHABLE();
+    }
+  }
+  is_enabled_ = true;
+}
 
-  ASSERT(instr2->OpcodeField() == LUI && instr2->RtField() == TMP);
 
-  instr1->SetImmInstrBits(LW, SP, RA, 2 * kWordSize);
-  instr2->SetImmInstrBits(LW, SP, FP, 1 * kWordSize);
-  instr3->SetImmInstrBits(LW, SP, PP, 0 * kWordSize);
-  instr4->SetSpecialInstrBits(JR, RA, ZR, ZR);
-  instr5->SetImmInstrBits(ADDIU, SP, SP, 4 * kWordSize);
-
-  CPU::FlushICache(pc_ - 5 * Instr::kInstrSize, 5 * Instr::kInstrSize);
+void CodeBreakpoint::RestoreCode() {
+  ASSERT(is_enabled_);
+  const Code& code = Code::Handle(code_);
+  const Instructions& instrs = Instructions::Handle(code.instructions());
+  {
+    WritableInstructionsScope writable(instrs.EntryPoint(), instrs.size());
+    switch (breakpoint_kind_) {
+      case PcDescriptors::kIcCall:
+      case PcDescriptors::kUnoptStaticCall:
+      case PcDescriptors::kClosureCall:
+      case PcDescriptors::kRuntimeCall:
+      case PcDescriptors::kReturn: {
+        CodePatcher::PatchStaticCallAt(pc_, code, saved_value_);
+        break;
+      }
+      default:
+        UNREACHABLE();
+    }
+  }
+  is_enabled_ = false;
 }
 
 }  // namespace dart

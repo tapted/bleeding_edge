@@ -107,8 +107,7 @@ class _RawReceivePortImpl implements RawReceivePort {
   }
 
   // Called from the VM to dispatch to the handler.
-  static void _handleMessage(
-      _RawReceivePortImpl port, int replyId, var message) {
+  static void _handleMessage(_RawReceivePortImpl port, var message) {
     assert(port != null);
     // TODO(floitsch): this relies on the fact that any exception aborts the
     // VM. Once we have non-fatal global exceptions we need to catch errors
@@ -228,7 +227,8 @@ void _startIsolate(Function entryPoint, bool isSpawnUri) {
 
 patch class Isolate {
   /* patch */ static Future<Isolate> spawn(
-      void entryPoint(message), var message) {
+      void entryPoint(message), var message, { bool paused: false }) {
+    // `paused` isn't handled yet.
     try {
       // The VM will invoke [_startIsolate] with entryPoint as argument.
       SendPort controlPort = _spawnFunction(entryPoint);
@@ -238,7 +238,7 @@ patch class Isolate {
       readyPort.handler = (readyMessage) {
         assert(readyMessage == 'started');
         readyPort.close();
-        completer.complete(new Isolate._fromControlPort(controlPort));
+        completer.complete(new Isolate(controlPort));
       };
       return completer.future;
     } catch (e, st) {
@@ -247,7 +247,8 @@ patch class Isolate {
   }
 
   /* patch */ static Future<Isolate> spawnUri(
-      Uri uri, List<String> args, var message) {
+      Uri uri, List<String> args, var message, { bool paused: false }) {
+    // `paused` isn't handled yet.
     try {
       // The VM will invoke [_startIsolate] and not `main`.
       SendPort controlPort = _spawnUri(uri.toString());
@@ -257,7 +258,7 @@ patch class Isolate {
       readyPort.handler = (readyMessage) {
         assert(readyMessage == 'started');
         readyPort.close();
-        completer.complete(new Isolate._fromControlPort(controlPort));
+        completer.complete(new Isolate(controlPort));
       };
       return completer.future;
     } catch (e, st) {
@@ -273,4 +274,10 @@ patch class Isolate {
       native "Isolate_spawnFunction";
 
   static SendPort _spawnUri(String uri) native "Isolate_spawnUri";
+}
+
+patch class Capability {
+  /* patch */ factory Capability() {
+    throw new UnimplementedError();
+  }
 }

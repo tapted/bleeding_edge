@@ -13,6 +13,10 @@
  */
 package com.google.dart.engine.source;
 
+import com.google.dart.engine.context.AnalysisContext;
+import com.google.dart.engine.internal.context.PerformanceStatistics;
+import com.google.dart.engine.internal.context.TimestampedData;
+import com.google.dart.engine.utilities.general.TimeCounter.TimeCounterHandle;
 import com.google.dart.engine.utilities.io.FileUtilities;
 
 import java.io.File;
@@ -32,12 +36,6 @@ import java.nio.charset.Charset;
  * @coverage dart.engine.source
  */
 public class FileBasedSource implements Source {
-  /**
-   * The content cache used to access the contents of this source if they have been overridden from
-   * what is on disk or cached.
-   */
-  private final ContentCache contentCache;
-
   /**
    * The file represented by this source.
    */
@@ -62,22 +60,19 @@ public class FileBasedSource implements Source {
    * Initialize a newly created source object. The source object is assumed to not be in a system
    * library.
    * 
-   * @param contentCache the content cache used to access the contents of this source
    * @param file the file represented by this source
    */
-  public FileBasedSource(ContentCache contentCache, File file) {
-    this(contentCache, file, UriKind.FILE_URI);
+  public FileBasedSource(File file) {
+    this(file, UriKind.FILE_URI);
   }
 
   /**
    * Initialize a newly created source object.
    * 
-   * @param contentCache the content cache used to access the contents of this source
    * @param file the file represented by this source
    * @param flags {@code true} if this source is in one of the system libraries
    */
-  public FileBasedSource(ContentCache contentCache, File file, UriKind uriKind) {
-    this.contentCache = contentCache;
+  public FileBasedSource(File file, UriKind uriKind) {
     this.file = file;
     this.uriKind = uriKind;
   }
@@ -90,23 +85,27 @@ public class FileBasedSource implements Source {
 
   @Override
   public boolean exists() {
-    return contentCache.getContents(this) != null || (file.exists() && !file.isDirectory());
+    return file.isFile();
   }
 
   @Override
-  public void getContents(ContentReceiver receiver) throws Exception {
-    //
-    // First check to see whether our content cache has an override for our contents.
-    //
-    String contents = contentCache.getContents(this);
-    if (contents != null) {
-      receiver.accept(contents, contentCache.getModificationStamp(this));
-      return;
+  public TimestampedData<CharSequence> getContents() throws Exception {
+    TimeCounterHandle handle = PerformanceStatistics.io.start();
+    try {
+      return getContentsFromFile();
+    } finally {
+      handle.stop();
     }
-    //
-    // If not, read the contents from the file using native I/O.
-    //
-    getContentsFromFile(receiver);
+  }
+
+  @Override
+  public void getContentsToReceiver(ContentReceiver receiver) throws Exception {
+    TimeCounterHandle handle = PerformanceStatistics.io.start();
+    try {
+      getContentsFromFileToReceiver(receiver);
+    } finally {
+      handle.stop();
+    }
   }
 
   @Override
@@ -124,10 +123,6 @@ public class FileBasedSource implements Source {
 
   @Override
   public long getModificationStamp() {
-    Long stamp = contentCache.getModificationStamp(this);
-    if (stamp != null) {
-      return stamp.longValue();
-    }
     return file.lastModified();
   }
 
@@ -155,7 +150,7 @@ public class FileBasedSource implements Source {
   public Source resolveRelative(URI containedUri) {
     try {
       URI resolvedUri = getFile().toURI().resolve(containedUri).normalize();
-      return new FileBasedSource(contentCache, new File(resolvedUri), uriKind);
+      return new FileBasedSource(new File(resolvedUri), uriKind);
     } catch (Exception exception) {
       // Fall through to return null
     }
@@ -171,23 +166,24 @@ public class FileBasedSource implements Source {
   }
 
   /**
-   * Get the contents of underlying file and pass it to the given receiver. Exactly one of the
-   * methods defined on the receiver will be invoked unless an exception is thrown. The method that
-   * will be invoked depends on which of the possible representations of the contents is the most
-   * efficient. Whichever method is invoked, it will be invoked before this method returns.
+   * Get the contents and timestamp of the underlying file.
+   * <p>
+   * Clients should consider using the the method {@link AnalysisContext#getContents(Source)}
+   * because contexts can have local overrides of the content of a source that the source is not
+   * aware of.
    * 
-   * @param receiver the content receiver to which the content of this source will be passed
+   * @return the contents of the source paired with the modification stamp of the source
    * @throws Exception if the contents of this source could not be accessed
-   * @see #getContents(com.google.dart.engine.source.Source.ContentReceiver)
+   * @see #getContents()
    */
-  protected void getContentsFromFile(ContentReceiver receiver) throws Exception {
+  protected TimestampedData<CharSequence> getContentsFromFile() throws Exception {
     String contents;
-    long modificationTime = this.file.lastModified();
-    RandomAccessFile file = new RandomAccessFile(this.file, "r");
+    long modificationTime = file.lastModified();
+    RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r");
     FileChannel channel = null;
     ByteBuffer byteBuffer = null;
     try {
-      channel = file.getChannel();
+      channel = randomAccessFile.getChannel();
       long size = channel.size();
       if (size > Integer.MAX_VALUE) {
         throw new IllegalStateException("File is too long to be read");
@@ -202,7 +198,65 @@ public class FileBasedSource implements Source {
       byteBuffer = null;
     } finally {
       try {
-        file.close();
+        randomAccessFile.close();
+      } catch (IOException closeException) {
+        // Ignored
+      }
+    }
+    if (byteBuffer != null) {
+      byteBuffer.rewind();
+      return new TimestampedData<CharSequence>(modificationTime, UTF_8_CHARSET.decode(byteBuffer));
+    }
+    //
+    // Eclipse appears to be interrupting the thread sometimes. If we couldn't read the file using
+    // the native I/O support, try using the non-native support.
+    //
+    InputStreamReader reader = null;
+    try {
+      reader = new InputStreamReader(new FileInputStream(file), "UTF-8");
+      contents = FileUtilities.getContents(reader);
+    } finally {
+      if (reader != null) {
+        try {
+          reader.close();
+        } catch (IOException closeException) {
+          // Ignored
+        }
+      }
+    }
+    return new TimestampedData<CharSequence>(modificationTime, contents);
+  }
+
+  /**
+   * Get the contents of underlying file and pass it to the given receiver.
+   * 
+   * @param receiver the content receiver to which the content of this source will be passed
+   * @throws Exception if the contents of this source could not be accessed
+   * @see #getContentsToReceiver(ContentReceiver)
+   */
+  protected void getContentsFromFileToReceiver(ContentReceiver receiver) throws Exception {
+    String contents;
+    long modificationTime = file.lastModified();
+    RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r");
+    FileChannel channel = null;
+    ByteBuffer byteBuffer = null;
+    try {
+      channel = randomAccessFile.getChannel();
+      long size = channel.size();
+      if (size > Integer.MAX_VALUE) {
+        throw new IllegalStateException("File is too long to be read");
+      }
+      int length = (int) size;
+      byte[] bytes = new byte[length];
+      byteBuffer = ByteBuffer.wrap(bytes);
+      byteBuffer.position(0);
+      byteBuffer.limit(length);
+      channel.read(byteBuffer);
+    } catch (ClosedByInterruptException exception) {
+      byteBuffer = null;
+    } finally {
+      try {
+        randomAccessFile.close();
       } catch (IOException closeException) {
         // Ignored
       }
@@ -218,7 +272,7 @@ public class FileBasedSource implements Source {
     //
     InputStreamReader reader = null;
     try {
-      reader = new InputStreamReader(new FileInputStream(this.file), "UTF-8");
+      reader = new InputStreamReader(new FileInputStream(file), "UTF-8");
       contents = FileUtilities.getContents(reader);
     } finally {
       if (reader != null) {
@@ -234,7 +288,7 @@ public class FileBasedSource implements Source {
 
   /**
    * Return the file represented by this source. This is an internal method that is only intended to
-   * be used by {@link UriResolver}.
+   * be used by subclasses of {@link UriResolver} that are designed to work with file-based sources.
    * 
    * @return the file represented by this source
    */

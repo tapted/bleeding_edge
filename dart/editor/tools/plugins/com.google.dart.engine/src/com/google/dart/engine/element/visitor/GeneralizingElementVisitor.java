@@ -39,9 +39,20 @@ import com.google.dart.engine.element.ParameterElement;
 import com.google.dart.engine.element.PrefixElement;
 import com.google.dart.engine.element.PropertyAccessorElement;
 import com.google.dart.engine.element.PropertyInducingElement;
+import com.google.dart.engine.element.ToolkitObjectElement;
 import com.google.dart.engine.element.TopLevelVariableElement;
 import com.google.dart.engine.element.TypeParameterElement;
 import com.google.dart.engine.element.VariableElement;
+import com.google.dart.engine.element.angular.AngularComponentElement;
+import com.google.dart.engine.element.angular.AngularControllerElement;
+import com.google.dart.engine.element.angular.AngularDirectiveElement;
+import com.google.dart.engine.element.angular.AngularElement;
+import com.google.dart.engine.element.angular.AngularFilterElement;
+import com.google.dart.engine.element.angular.AngularHasSelectorElement;
+import com.google.dart.engine.element.angular.AngularPropertyElement;
+import com.google.dart.engine.element.angular.AngularScopePropertyElement;
+import com.google.dart.engine.element.angular.AngularSelectorElement;
+import com.google.dart.engine.element.angular.AngularViewElement;
 
 /**
  * Instances of the class {@code GeneralizingElementVisitor} implement an element visitor that will
@@ -101,6 +112,54 @@ import com.google.dart.engine.element.VariableElement;
  * @coverage dart.engine.element
  */
 public class GeneralizingElementVisitor<R> implements ElementVisitor<R> {
+  @Override
+  public R visitAngularComponentElement(AngularComponentElement element) {
+    return visitAngularHasSelectorElement(element);
+  }
+
+  @Override
+  public R visitAngularControllerElement(AngularControllerElement element) {
+    return visitAngularHasSelectorElement(element);
+  }
+
+  @Override
+  public R visitAngularDirectiveElement(AngularDirectiveElement element) {
+    return visitAngularHasSelectorElement(element);
+  }
+
+  public R visitAngularElement(AngularElement element) {
+    return visitToolkitObjectElement(element);
+  }
+
+  @Override
+  public R visitAngularFilterElement(AngularFilterElement element) {
+    return visitAngularElement(element);
+  }
+
+  public R visitAngularHasSelectorElement(AngularHasSelectorElement element) {
+    return visitAngularElement(element);
+  }
+
+  @Override
+  public R visitAngularPropertyElement(AngularPropertyElement element) {
+    return visitAngularElement(element);
+  }
+
+  @Override
+  public R visitAngularScopePropertyElement(AngularScopePropertyElement element) {
+    return visitAngularElement(element);
+  }
+
+  @Override
+  public R visitAngularSelectorElement(AngularSelectorElement element) {
+    return visitAngularElement(element);
+  }
+
+  @Override
+  public R visitAngularViewElement(AngularViewElement element) {
+    return visitAngularElement(element);
+  }
+
   @Override
   public R visitClassElement(ClassElement element) {
     return visitElement(element);
@@ -227,6 +286,10 @@ public class GeneralizingElementVisitor<R> implements ElementVisitor<R> {
 
   public R visitPropertyInducingElement(PropertyInducingElement element) {
     return visitVariableElement(element);
+  }
+
+  public R visitToolkitObjectElement(ToolkitObjectElement element) {
+    return visitElement(element);
   }
 
   @Override

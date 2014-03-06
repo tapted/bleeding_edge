@@ -16,7 +16,7 @@
   },
   'target_defaults': {
     'configurations': {
-      'Dart_Base': {
+      'Dart_Macos_Base': {
         'abstract': 1,
         'xcode_settings': {
           'GCC_VERSION': '<(xcode_gcc_version)',
@@ -34,6 +34,8 @@
             '-Wtrigraphs', # Disable Xcode default.
             '-Wreturn-type',
             '-Werror=return-type',
+            # TODO(15922): Enable this flag by default.
+            # '-Wshorten-64-to-32',
           ],
 
           # Generate PIC code as Chrome is switching to this.
@@ -52,6 +54,24 @@
           'GCC_ENABLE_TRIGRAPHS': 'NO',
           'COMBINE_HIDPI_IMAGES': 'YES',
         },
+      },
+      'Dart_Macos_ia32_Base': {
+        'abstract': 1,
+      },
+      'Dart_Macos_x64_Base': {
+        'abstract': 1,
+      },
+      'Dart_Macos_simarm_Base': {
+        'abstract': 1,
+      },
+      'Dart_Macos_simmips_Base': {
+        'abstract': 1,
+      },
+      'Dart_Macos_Debug': {
+        'abstract': 1,
+      },
+      'Dart_Macos_Release': {
+        'abstract': 1,
       },
     },
   },

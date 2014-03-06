@@ -77,7 +77,7 @@ class ElementInfoNode implements InfoNode {
   final String kind;
 
   /// The static type of the represented [Element].
-  /// [null] if this kind of element has no type.
+  /// [:null:] if this kind of element has no type.
   final String type;
 
   /// Any extra information to display about the represented [Element].
@@ -121,7 +121,9 @@ class ElementInfoNode implements InfoNode {
         extraString].join(' ');
 
     if (contents != null) {
+      buffer.write('\n');
       buffer.write(div("+$describe", cls: "container"));
+      buffer.write('\n');
       buffer.write('<div class="contained">');
       if (contents.isEmpty) {
         buffer.writeln("No members");
@@ -131,7 +133,7 @@ class ElementInfoNode implements InfoNode {
       }
       buffer.write("</div>");
     } else {
-      buffer.writeln(describe);
+      buffer.writeln(div('$describe', cls: "element"));
     }
   }
 }
@@ -150,6 +152,7 @@ class CodeInfoNode implements InfoNode {
   CodeInfoNode({this.description: "", this.generatedCode});
 
   void emitHtml(ProgramInfo programInfo, StringBuffer buffer) {
+    buffer.write('\n');
     buffer.write(div(description + ' ' +
                      sizeDescription(generatedCode.length, programInfo),
                      cls: 'kind') +
@@ -175,10 +178,12 @@ class InferredInfoNode implements InfoNode {
   InferredInfoNode({this.name: "", this.description, this.type});
 
   void emitHtml(ProgramInfo programInfo, StringSink buffer) {
-    buffer.write(div('${span("Inferred " + description, cls: "kind")} '
-                     '${span(esc(name),
-                     cls: "name")} '
-        '${span(esc(type), cls: 'type')} '));
+    buffer.write('\n');
+    buffer.write(
+        div('${span("Inferred " + description, cls: "kind")} '
+            '${span(esc(name), cls: "name")} '
+            '${span(esc(type), cls: "type")} ',
+            cls: "attr"));
   }
 }
 
@@ -220,6 +225,7 @@ class InfoDumpVisitor extends ElementVisitor<InfoNode> {
     compiler.internalError("This element of kind ${element.kind} "
         "does not support --dump-info",
         token: element.position());
+    return null;
   }
 
   InfoNode visitLibraryElement(LibraryElement element) {
@@ -228,7 +234,12 @@ class InfoDumpVisitor extends ElementVisitor<InfoNode> {
         .getGeneratedSizeOf(element);
     if (size == 0) return null;
     stack.add(element);
-    element.forEachLocalMember((Element member) {
+    // For some reason the patch library contains the origin libraries members,
+    // but the origin library does not contain the patch members.
+    LibraryElement contentsLibrary = element.isPatched
+        ? element.patch
+        : element;
+    contentsLibrary.forEachLocalMember((Element member) {
       InfoNode info = member.accept(this);
       if (info != null) {
         contents.add(info);
@@ -261,14 +272,14 @@ class InfoDumpVisitor extends ElementVisitor<InfoNode> {
 
   InfoNode visitFieldElement(FieldElement element) {
     CodeBuffer emittedCode = compiler.backend.codeOf(element);
-    int size = 0;
-    DartType type = element.computeType(compiler);
     TypeMask inferredType = compiler.typesTask
         .getGuaranteedTypeOfElement(element);
     // If a field has an empty inferred type it is never used.
     if ((inferredType == null || inferredType.isEmpty) && emittedCode == null) {
       return null;
     }
+    int size = 0;
+    DartType type = element.variables.type;
     List<InfoNode> contents = new List<InfoNode>();
     if (emittedCode != null) {
       contents.add(new CodeInfoNode(
@@ -452,11 +463,16 @@ class DumpInfoTask extends CompilerTask {
   <head>
     <title>Dart2JS compilation information</title>
        <style>
-         code {margin-left: 20px; display: block;}
+         code {margin-left: 20px; display: block; white-space: pre; }
+         div.container, div.contained, div.element, div.attr {
+           margin-top:0px;
+           margin-bottom: 0px;
+         }
+         div.container, div.element, div.attr {
+           white-space: pre;
+         }
          div.contained {margin-left: 20px;}
-         div {margin-top:0px;
-         margin-bottom: 0px;
-         white-space: pre; /*border: 1px solid;*/}
+         div {/*border: 1px solid;*/}
          span.kind {}
          span.modifiers {font-weight:bold;}
          span.name {font-weight:bold; font-family: monospace;}

@@ -63,45 +63,45 @@ import com.google.dart.engine.type.InterfaceType;
 import com.google.dart.engine.type.Type;
 import com.google.dart.engine.utilities.io.FileUtilities2;
 
-import static com.google.dart.engine.ast.ASTFactory.adjacentStrings;
-import static com.google.dart.engine.ast.ASTFactory.argumentDefinitionTest;
-import static com.google.dart.engine.ast.ASTFactory.asExpression;
-import static com.google.dart.engine.ast.ASTFactory.assignmentExpression;
-import static com.google.dart.engine.ast.ASTFactory.binaryExpression;
-import static com.google.dart.engine.ast.ASTFactory.blockFunctionBody;
-import static com.google.dart.engine.ast.ASTFactory.booleanLiteral;
-import static com.google.dart.engine.ast.ASTFactory.cascadeExpression;
-import static com.google.dart.engine.ast.ASTFactory.conditionalExpression;
-import static com.google.dart.engine.ast.ASTFactory.doubleLiteral;
-import static com.google.dart.engine.ast.ASTFactory.expressionFunctionBody;
-import static com.google.dart.engine.ast.ASTFactory.formalParameterList;
-import static com.google.dart.engine.ast.ASTFactory.functionExpression;
-import static com.google.dart.engine.ast.ASTFactory.identifier;
-import static com.google.dart.engine.ast.ASTFactory.indexExpression;
-import static com.google.dart.engine.ast.ASTFactory.instanceCreationExpression;
-import static com.google.dart.engine.ast.ASTFactory.integer;
-import static com.google.dart.engine.ast.ASTFactory.interpolationExpression;
-import static com.google.dart.engine.ast.ASTFactory.interpolationString;
-import static com.google.dart.engine.ast.ASTFactory.isExpression;
-import static com.google.dart.engine.ast.ASTFactory.listLiteral;
-import static com.google.dart.engine.ast.ASTFactory.mapLiteral;
-import static com.google.dart.engine.ast.ASTFactory.mapLiteralEntry;
-import static com.google.dart.engine.ast.ASTFactory.methodInvocation;
-import static com.google.dart.engine.ast.ASTFactory.namedExpression;
-import static com.google.dart.engine.ast.ASTFactory.namedFormalParameter;
-import static com.google.dart.engine.ast.ASTFactory.nullLiteral;
-import static com.google.dart.engine.ast.ASTFactory.parenthesizedExpression;
-import static com.google.dart.engine.ast.ASTFactory.positionalFormalParameter;
-import static com.google.dart.engine.ast.ASTFactory.postfixExpression;
-import static com.google.dart.engine.ast.ASTFactory.prefixExpression;
-import static com.google.dart.engine.ast.ASTFactory.propertyAccess;
-import static com.google.dart.engine.ast.ASTFactory.simpleFormalParameter;
-import static com.google.dart.engine.ast.ASTFactory.string;
-import static com.google.dart.engine.ast.ASTFactory.superExpression;
-import static com.google.dart.engine.ast.ASTFactory.symbolLiteral;
-import static com.google.dart.engine.ast.ASTFactory.thisExpression;
-import static com.google.dart.engine.ast.ASTFactory.throwExpression;
-import static com.google.dart.engine.ast.ASTFactory.typeName;
+import static com.google.dart.engine.ast.AstFactory.adjacentStrings;
+import static com.google.dart.engine.ast.AstFactory.argumentDefinitionTest;
+import static com.google.dart.engine.ast.AstFactory.asExpression;
+import static com.google.dart.engine.ast.AstFactory.assignmentExpression;
+import static com.google.dart.engine.ast.AstFactory.binaryExpression;
+import static com.google.dart.engine.ast.AstFactory.blockFunctionBody;
+import static com.google.dart.engine.ast.AstFactory.booleanLiteral;
+import static com.google.dart.engine.ast.AstFactory.cascadeExpression;
+import static com.google.dart.engine.ast.AstFactory.conditionalExpression;
+import static com.google.dart.engine.ast.AstFactory.doubleLiteral;
+import static com.google.dart.engine.ast.AstFactory.expressionFunctionBody;
+import static com.google.dart.engine.ast.AstFactory.formalParameterList;
+import static com.google.dart.engine.ast.AstFactory.functionExpression;
+import static com.google.dart.engine.ast.AstFactory.identifier;
+import static com.google.dart.engine.ast.AstFactory.indexExpression;
+import static com.google.dart.engine.ast.AstFactory.instanceCreationExpression;
+import static com.google.dart.engine.ast.AstFactory.integer;
+import static com.google.dart.engine.ast.AstFactory.interpolationExpression;
+import static com.google.dart.engine.ast.AstFactory.interpolationString;
+import static com.google.dart.engine.ast.AstFactory.isExpression;
+import static com.google.dart.engine.ast.AstFactory.listLiteral;
+import static com.google.dart.engine.ast.AstFactory.mapLiteral;
+import static com.google.dart.engine.ast.AstFactory.mapLiteralEntry;
+import static com.google.dart.engine.ast.AstFactory.methodInvocation;
+import static com.google.dart.engine.ast.AstFactory.namedExpression;
+import static com.google.dart.engine.ast.AstFactory.namedFormalParameter;
+import static com.google.dart.engine.ast.AstFactory.nullLiteral;
+import static com.google.dart.engine.ast.AstFactory.parenthesizedExpression;
+import static com.google.dart.engine.ast.AstFactory.positionalFormalParameter;
+import static com.google.dart.engine.ast.AstFactory.postfixExpression;
+import static com.google.dart.engine.ast.AstFactory.prefixExpression;
+import static com.google.dart.engine.ast.AstFactory.propertyAccess;
+import static com.google.dart.engine.ast.AstFactory.simpleFormalParameter;
+import static com.google.dart.engine.ast.AstFactory.string;
+import static com.google.dart.engine.ast.AstFactory.superExpression;
+import static com.google.dart.engine.ast.AstFactory.symbolLiteral;
+import static com.google.dart.engine.ast.AstFactory.thisExpression;
+import static com.google.dart.engine.ast.AstFactory.throwExpression;
+import static com.google.dart.engine.ast.AstFactory.typeName;
 import static com.google.dart.engine.element.ElementFactory.classElement;
 import static com.google.dart.engine.element.ElementFactory.constructorElement;
 import static com.google.dart.engine.element.ElementFactory.fieldElement;
@@ -833,7 +833,26 @@ public class StaticTypeAnalyzerTest extends EngineTestCase {
     listener.assertNoErrors();
   }
 
-  public void test_visitPropertyAccess_getter() throws Exception {
+  public void test_visitPropertyAccess_propagated_getter() throws Exception {
+    Type boolType = typeProvider.getBoolType();
+    PropertyAccessorElementImpl getter = getterElement("b", false, boolType);
+    PropertyAccess node = propertyAccess(identifier("a"), "b");
+    node.getPropertyName().setPropagatedElement(getter);
+    assertSame(boolType, analyze(node, false));
+    listener.assertNoErrors();
+  }
+
+  public void test_visitPropertyAccess_propagated_setter() throws Exception {
+    Type boolType = typeProvider.getBoolType();
+    FieldElementImpl field = fieldElement("b", false, false, false, boolType);
+    PropertyAccessorElement setter = field.getSetter();
+    PropertyAccess node = propertyAccess(identifier("a"), "b");
+    node.getPropertyName().setPropagatedElement(setter);
+    assertSame(boolType, analyze(node, false));
+    listener.assertNoErrors();
+  }
+
+  public void test_visitPropertyAccess_static_getter() throws Exception {
     Type boolType = typeProvider.getBoolType();
     PropertyAccessorElementImpl getter = getterElement("b", false, boolType);
     PropertyAccess node = propertyAccess(identifier("a"), "b");
@@ -842,7 +861,7 @@ public class StaticTypeAnalyzerTest extends EngineTestCase {
     listener.assertNoErrors();
   }
 
-  public void test_visitPropertyAccess_setter() throws Exception {
+  public void test_visitPropertyAccess_static_setter() throws Exception {
     Type boolType = typeProvider.getBoolType();
     FieldElementImpl field = fieldElement("b", false, false, false, boolType);
     PropertyAccessorElement setter = field.getSetter();
@@ -912,7 +931,20 @@ public class StaticTypeAnalyzerTest extends EngineTestCase {
    * @return the type associated with the expression
    */
   private Type analyze(Expression node) {
-    return analyze(node, null);
+    return analyze(node, null, true);
+  }
+
+  /**
+   * Return the type associated with the given expression after the static or propagated type
+   * analyzer has computed a type for it.
+   * 
+   * @param node the expression with which the type is associated
+   * @param useStaticType {@code true} if the static type is being requested, and {@code false} if
+   *          the propagated type is being requested
+   * @return the type associated with the expression
+   */
+  private Type analyze(Expression node, boolean useStaticType) {
+    return analyze(node, null, useStaticType);
   }
 
   /**
@@ -924,6 +956,20 @@ public class StaticTypeAnalyzerTest extends EngineTestCase {
    * @return the type associated with the expression
    */
   private Type analyze(Expression node, InterfaceType thisType) {
+    return analyze(node, thisType, true);
+  }
+
+  /**
+   * Return the type associated with the given expression after the static type analyzer has
+   * computed a type for it.
+   * 
+   * @param node the expression with which the type is associated
+   * @param thisType the type of 'this'
+   * @param useStaticType {@code true} if the static type is being requested, and {@code false} if
+   *          the propagated type is being requested
+   * @return the type associated with the expression
+   */
+  private Type analyze(Expression node, InterfaceType thisType, boolean useStaticType) {
     try {
       Field typeField = analyzer.getClass().getDeclaredField("thisType");
       typeField.setAccessible(true);
@@ -932,7 +978,11 @@ public class StaticTypeAnalyzerTest extends EngineTestCase {
       throw new IllegalArgumentException("Could not set type of 'this'", exception);
     }
     node.accept(analyzer);
-    return node.getStaticType();
+    if (useStaticType) {
+      return node.getStaticType();
+    } else {
+      return node.getPropagatedType();
+    }
   }
 
   /**
@@ -985,9 +1035,9 @@ public class StaticTypeAnalyzerTest extends EngineTestCase {
 
     Map<String, Type> namedTypes = functionType.getNamedParameterTypes();
     if (expectedNamedTypes == null) {
-      assertSize(0, namedTypes);
+      assertSizeOfMap(0, namedTypes);
     } else {
-      assertSize(expectedNamedTypes.size(), namedTypes);
+      assertSizeOfMap(expectedNamedTypes.size(), namedTypes);
       for (Map.Entry<String, Type> entry : expectedNamedTypes.entrySet()) {
         assertSame(entry.getValue(), namedTypes.get(entry.getKey()));
       }
@@ -1026,9 +1076,7 @@ public class StaticTypeAnalyzerTest extends EngineTestCase {
     SourceFactory sourceFactory = new SourceFactory(new DartUriResolver(
         DirectoryBasedDartSdk.getDefaultSdk()));
     context.setSourceFactory(sourceFactory);
-    FileBasedSource source = new FileBasedSource(
-        sourceFactory.getContentCache(),
-        FileUtilities2.createFile("/lib.dart"));
+    FileBasedSource source = new FileBasedSource(FileUtilities2.createFile("/lib.dart"));
     CompilationUnitElementImpl definingCompilationUnit = new CompilationUnitElementImpl("lib.dart");
     definingCompilationUnit.setSource(source);
     LibraryElementImpl definingLibrary = new LibraryElementImpl(context, null);

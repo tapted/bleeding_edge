@@ -26,6 +26,8 @@ DEFINE_FLAG(bool, trace_inlining, false, "Trace inlining");
 DEFINE_FLAG(charp, inlining_filter, NULL, "Inline only in named function");
 
 // Flags for inlining heuristics.
+DEFINE_FLAG(int, inline_getters_setters_smaller_than, 10,
+    "Always inline getters and setters that have fewer instructions");
 DEFINE_FLAG(int, inlining_depth_threshold, 3,
     "Inline function calls up to threshold nesting depth");
 DEFINE_FLAG(int, inlining_size_threshold, 25,
@@ -271,9 +273,7 @@ class CallSites : public ValueObject {
         }
         StaticCallInstr* static_call = current->AsStaticCall();
         if (static_call != NULL) {
-          if (static_call->function().IsInlineable()) {
-            static_calls_.Add(StaticCallInfo(static_call));
-          }
+          static_calls_.Add(StaticCallInfo(static_call));
           continue;
         }
         PolymorphicInstanceCallInstr* instance_call =
@@ -365,7 +365,8 @@ class CallSiteInliner : public ValueObject {
       // Prevent methods becoming humongous and thus slow to compile.
       return false;
     }
-    if (instr_count <= FLAG_inlining_size_threshold) {
+    // 'instr_count' can be 0 if it was not computed yet.
+    if ((instr_count != 0) && (instr_count <= FLAG_inlining_size_threshold)) {
       return true;
     }
     if (call_site_count <= FLAG_inlining_callee_call_sites_threshold) {
@@ -375,7 +376,7 @@ class CallSiteInliner : public ValueObject {
         (instr_count <= FLAG_inlining_constant_arguments_size_threshold)) {
       return true;
     }
-    if (MethodRecognizer::AlwaysInline(callee)) {
+    if (FlowGraphInliner::AlwaysInline(callee)) {
       return true;
     }
     return false;
@@ -482,9 +483,7 @@ class CallSiteInliner : public ValueObject {
     const intptr_t prev_deopt_id = isolate->deopt_id();
     isolate->set_deopt_id(0);
     // Install bailout jump.
-    LongJump* base = isolate->long_jump_base();
-    LongJump jump;
-    isolate->set_long_jump_base(&jump);
+    LongJumpScope jump;
     if (setjmp(*jump.Set()) == 0) {
       // Parse the callee function.
       bool in_cache;
@@ -610,7 +609,6 @@ class CallSiteInliner : public ValueObject {
             (size > FLAG_inlining_constant_arguments_size_threshold)) {
           function.set_is_inlinable(false);
         }
-        isolate->set_long_jump_base(base);
         isolate->set_deopt_id(prev_deopt_id);
         TRACE_INLINING(OS::Print("     Bailout: heuristics with "
                                  "code size:  %" Pd ", "
@@ -632,7 +630,6 @@ class CallSiteInliner : public ValueObject {
       // Build succeeded so we restore the bailout jump.
       inlined_ = true;
       inlined_size_ += size;
-      isolate->set_long_jump_base(base);
       isolate->set_deopt_id(prev_deopt_id);
 
       call_data->callee_graph = callee_graph;
@@ -655,7 +652,6 @@ class CallSiteInliner : public ValueObject {
       Error& error = Error::Handle();
       error = isolate->object_store()->sticky_error();
       isolate->object_store()->clear_sticky_error();
-      isolate->set_long_jump_base(base);
       isolate->set_deopt_id(prev_deopt_id);
       TRACE_INLINING(OS::Print("     Bailout: %s\n", error.ToErrorCString()));
       return false;
@@ -679,15 +675,18 @@ class CallSiteInliner : public ValueObject {
       // TODO(fschneider): Avoid setting the context, if not needed.
       Definition* closure =
           closure_call->PushArgumentAt(0)->value()->definition();
-      LoadFieldInstr* context =
-          new LoadFieldInstr(new Value(closure),
-                             Closure::context_offset(),
-                             Type::ZoneHandle());
       AllocateObjectInstr* alloc =
           closure_call->ArgumentAt(0)->AsAllocateObject();
+      Definition* context = NULL;
       if ((alloc != NULL) && !alloc->closure_function().IsNull()) {
         ASSERT(!alloc->context_field().IsNull());
-        context->set_field(&alloc->context_field());
+        context = new LoadFieldInstr(new Value(closure),
+                                     &alloc->context_field(),
+                                     Type::ZoneHandle());
+      } else {
+        context = new LoadFieldInstr(new Value(closure),
+                                     Closure::context_offset(),
+                                     Type::ZoneHandle());
       }
 
       context->set_ssa_temp_index(caller_graph()->alloc_ssa_temp_index());
@@ -782,7 +781,7 @@ class CallSiteInliner : public ValueObject {
         }
       }
       const Function& target = call->function();
-      if (!MethodRecognizer::AlwaysInline(target) &&
+      if (!FlowGraphInliner::AlwaysInline(target) &&
           (call_info[call_idx].ratio * 100) < FLAG_inlining_hotness) {
         TRACE_INLINING(OS::Print(
             "  => %s (deopt count %d)\n     Bailout: cold %f\n",
@@ -811,11 +810,6 @@ class CallSiteInliner : public ValueObject {
       // Find the closure of the callee.
       ASSERT(call->ArgumentCount() > 0);
       Function& target = Function::ZoneHandle();
-      CreateClosureInstr* closure =
-          call->ArgumentAt(0)->AsCreateClosure();
-      if (closure != NULL) {
-        target ^= closure->function().raw();
-      }
       AllocateObjectInstr* alloc =
           call->ArgumentAt(0)->AsAllocateObject();
       if ((alloc != NULL) && !alloc->closure_function().IsNull()) {
@@ -854,7 +848,7 @@ class CallSiteInliner : public ValueObject {
 
       const ICData& ic_data = call->ic_data();
       const Function& target = Function::ZoneHandle(ic_data.GetTargetAt(0));
-      if (!MethodRecognizer::AlwaysInline(target) &&
+      if (!FlowGraphInliner::AlwaysInline(target) &&
           (call_info[call_idx].ratio * 100) < FLAG_inlining_hotness) {
         TRACE_INLINING(OS::Print(
             "  => %s (deopt count %d)\n     Bailout: cold %f\n",
@@ -1018,6 +1012,10 @@ bool PolymorphicInliner::CheckInlinedDuplicate(const Function& target) {
         // Convert the old target entry to a new join entry.
         TargetEntryInstr* old_target =
             inlined_entries_[i]->AsGraphEntry()->normal_entry();
+        // Unuse all inputs in the the old graph entry since it is not part of
+        // the graph anymore. A new target be created instead.
+        inlined_entries_[i]->AsGraphEntry()->UnuseAllInputs();
+
         JoinEntryInstr* new_join = BranchSimplifier::ToJoinEntry(old_target);
         old_target->ReplaceAsPredecessorWith(new_join);
         for (intptr_t j = 0; j < old_target->dominated_blocks().length(); ++j) {
@@ -1065,7 +1063,7 @@ bool PolymorphicInliner::CheckNonInlinedDuplicate(const Function& target) {
 
 bool PolymorphicInliner::TryInlining(intptr_t receiver_cid,
                                      const Function& target) {
-  if (!target.is_optimizable()) {
+  if (!target.IsInlineable()) {
     if (TryInlineRecognizedMethod(receiver_cid, target)) {
       owner_->inlined_ = true;
       return true;
@@ -1446,6 +1444,18 @@ void FlowGraphInliner::CollectGraphInfo(FlowGraph* flow_graph) {
   function.set_optimized_instruction_count(
       ClampUint16(info.instruction_count()));
   function.set_optimized_call_site_count(ClampUint16(info.call_site_count()));
+}
+
+
+bool FlowGraphInliner::AlwaysInline(const Function& function) {
+  if (function.IsImplicitGetterFunction() || function.IsGetterFunction() ||
+      function.IsImplicitSetterFunction() || function.IsSetterFunction()) {
+    const intptr_t count = function.optimized_instruction_count();
+    if ((count != 0) && (count < FLAG_inline_getters_setters_smaller_than)) {
+      return true;
+    }
+  }
+  return MethodRecognizer::AlwaysInline(function);
 }
 
 

@@ -123,7 +123,7 @@ public class ClassDeclaration extends CompilationUnitMember {
   }
 
   @Override
-  public <R> R accept(ASTVisitor<R> visitor) {
+  public <R> R accept(AstVisitor<R> visitor) {
     return visitor.visitClassDeclaration(this);
   }
 
@@ -143,6 +143,28 @@ public class ClassDeclaration extends CompilationUnitMember {
    */
   public Token getClassKeyword() {
     return classKeyword;
+  }
+
+  /**
+   * Return the constructor declared in the class with the given name.
+   * 
+   * @param name the name of the constructor to find, {@code null} for default
+   * @return the found constructor or {@code null} if not found
+   */
+  public ConstructorDeclaration getConstructor(String name) {
+    for (ClassMember classMember : members) {
+      if (classMember instanceof ConstructorDeclaration) {
+        ConstructorDeclaration constructor = (ConstructorDeclaration) classMember;
+        SimpleIdentifier constructorName = constructor.getName();
+        if (name == null && constructorName == null) {
+          return constructor;
+        }
+        if (constructorName != null && constructorName.getName().equals(name)) {
+          return constructor;
+        }
+      }
+    }
+    return null;
   }
 
   @Override
@@ -213,6 +235,25 @@ public class ClassDeclaration extends CompilationUnitMember {
    */
   public NodeList<ClassMember> getMembers() {
     return members;
+  }
+
+  /**
+   * Return the method declared in the class with the given name.
+   * 
+   * @param name the name of the method to find
+   * @return the found method or {@code null} if not found
+   */
+  public MethodDeclaration getMethod(String name) {
+    for (ClassMember classMember : members) {
+      if (classMember instanceof MethodDeclaration) {
+        MethodDeclaration method = (MethodDeclaration) classMember;
+        SimpleIdentifier methodName = method.getName();
+        if (methodName != null && name.equals(methodName.getName())) {
+          return method;
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -353,7 +394,7 @@ public class ClassDeclaration extends CompilationUnitMember {
   }
 
   @Override
-  public void visitChildren(ASTVisitor<?> visitor) {
+  public void visitChildren(AstVisitor<?> visitor) {
     super.visitChildren(visitor);
     safelyVisitChild(name, visitor);
     safelyVisitChild(typeParameters, visitor);

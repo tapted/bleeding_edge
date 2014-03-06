@@ -34,6 +34,17 @@
     },
     "support_level": "untriaged"
   },
+  "AesCtrParams": {
+    "members": {
+      "counter": {
+        "support_level": "untriaged"
+      },
+      "length": {
+        "support_level": "untriaged"
+      }
+    },
+    "support_level": "untriaged"
+  },
   "AesKeyGenParams": {
     "members": {
       "length": {
@@ -682,6 +693,9 @@
       "delete": {
         "support_level": "untriaged"
       },
+      "forEach": {
+        "support_level": "untriaged"
+      },
       "get": {
         "support_level": "untriaged"
       },
@@ -695,6 +709,10 @@
         "support_level": "untriaged"
       }
     },
+    "support_level": "untriaged"
+  },
+  "CSSVariablesMapForEachCallback": {
+    "members": {},
     "support_level": "untriaged"
   },
   "CSSViewportRule": {
@@ -758,6 +776,9 @@
       "currentPath": {
         "comment": "http://www.whatwg.org/specs/web-apps/current-work/multipage/the-canvas-element.html#path-objects",
         "support_level": "experimental"
+      },
+      "currentTransform": {
+        "support_level": "untriaged"
       },
       "drawCustomFocusRing": {
         "support_level": "untriaged"
@@ -1761,6 +1782,9 @@
         "dart_action": "unstable"
       },
       "head": {},
+      "hidden": {
+        "support_level": "untriaged"
+      },
       "images": {
         "dart_action": "suppress"
       },
@@ -1786,6 +1810,12 @@
       "onbeforecut": {},
       "onbeforepaste": {},
       "onblur": {},
+      "oncanplay": {
+        "support_level": "untriaged"
+      },
+      "oncanplaythrough": {
+        "support_level": "untriaged"
+      },
       "onchange": {},
       "onclick": {},
       "oncontextmenu": {},
@@ -1802,6 +1832,15 @@
       "ondragover": {},
       "ondragstart": {},
       "ondrop": {},
+      "ondurationchange": {
+        "support_level": "untriaged"
+      },
+      "onemptied": {
+        "support_level": "untriaged"
+      },
+      "onended": {
+        "support_level": "untriaged"
+      },
       "onerror": {},
       "onfocus": {},
       "onfullscreenchange": {
@@ -1818,6 +1857,12 @@
       "onkeypress": {},
       "onkeyup": {},
       "onload": {},
+      "onloadeddata": {
+        "support_level": "untriaged"
+      },
+      "onloadedmetadata": {
+        "support_level": "untriaged"
+      },
       "onmousedown": {},
       "onmouseenter": {
         "support_level": "untriaged"
@@ -1831,10 +1876,22 @@
       "onmouseup": {},
       "onmousewheel": {},
       "onpaste": {},
+      "onpause": {
+        "support_level": "untriaged"
+      },
+      "onplay": {
+        "support_level": "untriaged"
+      },
+      "onplaying": {
+        "support_level": "untriaged"
+      },
       "onpointerlockchange": {
         "support_level": "untriaged"
       },
       "onpointerlockerror": {
+        "support_level": "untriaged"
+      },
+      "onratechange": {
         "support_level": "untriaged"
       },
       "onreadystatechange": {},
@@ -1848,10 +1905,25 @@
         "comment": "https://dvcs.w3.org/hg/content-security-policy/raw-file/tip/csp-specification.dev.html#widl-Document-onsecuritypolicyviolation",
         "support_level": "experimental"
       },
+      "onseeked": {
+        "support_level": "untriaged"
+      },
+      "onseeking": {
+        "support_level": "untriaged"
+      },
       "onselect": {},
       "onselectionchange": {},
       "onselectstart": {},
+      "onstalled": {
+        "support_level": "untriaged"
+      },
       "onsubmit": {},
+      "onsuspend": {
+        "support_level": "untriaged"
+      },
+      "ontimeupdate": {
+        "support_level": "untriaged"
+      },
       "ontouchcancel": {
         "comment": "http://www.w3.org/TR/touch-events/, http://www.chromestatus.com/features",
         "support_level": "experimental"
@@ -1867,6 +1939,12 @@
       "ontouchstart": {
         "comment": "http://www.w3.org/TR/touch-events/, http://www.chromestatus.com/features",
         "support_level": "experimental"
+      },
+      "onvolumechange": {
+        "support_level": "untriaged"
+      },
+      "onwaiting": {
+        "support_level": "untriaged"
       },
       "onwebkitfullscreenchange": {
         "comment": "https://dvcs.w3.org/hg/fullscreen/raw-file/tip/Overview.html",
@@ -1908,6 +1986,9 @@
       },
       "styleSheets": {},
       "title": {},
+      "visibilityState": {
+        "support_level": "untriaged"
+      },
       "webkitCancelFullScreen": {
         "comment": "https://dvcs.w3.org/hg/fullscreen/raw-file/tip/Overview.html",
         "dart_action": "suppress",
@@ -2017,10 +2098,16 @@
         "support_level": "deprecated"
       },
       "name": {},
+      "nextElementSibling": {
+        "support_level": "untriaged"
+      },
       "notations": {
         "comment": "http://dom.spec.whatwg.org/#dom-documenttype-notations",
         "dart_action": "suppress",
         "support_level": "deprecated"
+      },
+      "previousElementSibling": {
+        "support_level": "untriaged"
       },
       "publicId": {},
       "remove": {
@@ -2062,6 +2149,9 @@
         "comment": "https://dvcs.w3.org/hg/fullscreen/raw-file/tip/Overview.html#dom-element-requestfullscreen",
         "dart_action": "suppress",
         "support_level": "deprecated"
+      },
+      "animate": {
+        "support_level": "untriaged"
       },
       "attributes": {},
       "blur": {},
@@ -2157,6 +2247,8 @@
         "support_level": "nonstandard"
       },
       "inputMethodContext": {
+        "comment": "http://www.w3.org/TR/ime-api/#the-inputmethodcontext-property Per the spec is only on HTMLElement.",
+        "dart_action": "suppress",
         "support_level": "untriaged"
       },
       "insertAdjacentElement": {
@@ -2196,6 +2288,12 @@
       "onbeforecut": {},
       "onbeforepaste": {},
       "onblur": {},
+      "oncanplay": {
+        "support_level": "untriaged"
+      },
+      "oncanplaythrough": {
+        "support_level": "untriaged"
+      },
       "onchange": {},
       "onclick": {},
       "oncontextmenu": {},
@@ -2212,6 +2310,15 @@
       "ondragover": {},
       "ondragstart": {},
       "ondrop": {},
+      "ondurationchange": {
+        "support_level": "untriaged"
+      },
+      "onemptied": {
+        "support_level": "untriaged"
+      },
+      "onended": {
+        "support_level": "untriaged"
+      },
       "onerror": {},
       "onfocus": {},
       "onfullscreenchange": {
@@ -2228,6 +2335,12 @@
       "onkeypress": {},
       "onkeyup": {},
       "onload": {},
+      "onloadeddata": {
+        "support_level": "untriaged"
+      },
+      "onloadedmetadata": {
+        "support_level": "untriaged"
+      },
       "onmousedown": {},
       "onmouseenter": {
         "support_level": "untriaged"
@@ -2244,18 +2357,45 @@
         "support_level": "nonstandard"
       },
       "onpaste": {},
+      "onpause": {
+        "support_level": "untriaged"
+      },
+      "onplay": {
+        "support_level": "untriaged"
+      },
+      "onplaying": {
+        "support_level": "untriaged"
+      },
+      "onratechange": {
+        "support_level": "untriaged"
+      },
       "onreset": {},
       "onscroll": {},
       "onsearch": {
         "comment": "http://www.w3.org/TR/html-markup/input.search.html",
         "support_level": "experimental"
       },
+      "onseeked": {
+        "support_level": "untriaged"
+      },
+      "onseeking": {
+        "support_level": "untriaged"
+      },
       "onselect": {},
       "onselectstart": {
         "dart_action": "experimental",
         "support_level": "nonstandard"
       },
+      "onstalled": {
+        "support_level": "untriaged"
+      },
       "onsubmit": {},
+      "onsuspend": {
+        "support_level": "untriaged"
+      },
+      "ontimeupdate": {
+        "support_level": "untriaged"
+      },
       "ontouchcancel": {
         "comment": "http://www.w3.org/TR/touch-events/, http://www.chromestatus.com/features",
         "support_level": "experimental"
@@ -2281,6 +2421,12 @@
         "support_level": "experimental"
       },
       "ontransitionend": {},
+      "onvolumechange": {
+        "support_level": "untriaged"
+      },
+      "onwaiting": {
+        "support_level": "untriaged"
+      },
       "onwebkitTransitionEnd": {
         "support_level": "deprecated"
       },
@@ -2708,6 +2854,9 @@
   "File": {
     "comment": "http://www.w3.org/TR/FileAPI/#dfn-file",
     "members": {
+      "lastModified": {
+        "support_level": "untriaged"
+      },
       "lastModifiedDate": {},
       "name": {},
       "webkitRelativePath": {
@@ -2917,6 +3066,9 @@
       "featureSettings": {
         "support_level": "untriaged"
       },
+      "load": {
+        "support_level": "untriaged"
+      },
       "status": {
         "support_level": "untriaged"
       },
@@ -3034,6 +3186,167 @@
     },
     "support_level": "stable"
   },
+  "GlobalEventHandlers": {
+    "members": {
+      "onabort": {
+        "support_level": "untriaged"
+      },
+      "onblur": {
+        "support_level": "untriaged"
+      },
+      "oncanplay": {
+        "support_level": "untriaged"
+      },
+      "oncanplaythrough": {
+        "support_level": "untriaged"
+      },
+      "onchange": {
+        "support_level": "untriaged"
+      },
+      "onclick": {
+        "support_level": "untriaged"
+      },
+      "oncontextmenu": {
+        "support_level": "untriaged"
+      },
+      "ondblclick": {
+        "support_level": "untriaged"
+      },
+      "ondoubleclick": {
+        "support_level": "untriaged"
+      },
+      "ondrag": {
+        "support_level": "untriaged"
+      },
+      "ondragend": {
+        "support_level": "untriaged"
+      },
+      "ondragenter": {
+        "support_level": "untriaged"
+      },
+      "ondragleave": {
+        "support_level": "untriaged"
+      },
+      "ondragover": {
+        "support_level": "untriaged"
+      },
+      "ondragstart": {
+        "support_level": "untriaged"
+      },
+      "ondrop": {
+        "support_level": "untriaged"
+      },
+      "ondurationchange": {
+        "support_level": "untriaged"
+      },
+      "onemptied": {
+        "support_level": "untriaged"
+      },
+      "onended": {
+        "support_level": "untriaged"
+      },
+      "onerror": {
+        "support_level": "untriaged"
+      },
+      "onfocus": {
+        "support_level": "untriaged"
+      },
+      "oninput": {
+        "support_level": "untriaged"
+      },
+      "oninvalid": {
+        "support_level": "untriaged"
+      },
+      "onkeydown": {
+        "support_level": "untriaged"
+      },
+      "onkeypress": {
+        "support_level": "untriaged"
+      },
+      "onkeyup": {
+        "support_level": "untriaged"
+      },
+      "onload": {
+        "support_level": "untriaged"
+      },
+      "onloadeddata": {
+        "support_level": "untriaged"
+      },
+      "onloadedmetadata": {
+        "support_level": "untriaged"
+      },
+      "onmousedown": {
+        "support_level": "untriaged"
+      },
+      "onmouseenter": {
+        "support_level": "untriaged"
+      },
+      "onmouseleave": {
+        "support_level": "untriaged"
+      },
+      "onmousemove": {
+        "support_level": "untriaged"
+      },
+      "onmouseout": {
+        "support_level": "untriaged"
+      },
+      "onmouseover": {
+        "support_level": "untriaged"
+      },
+      "onmouseup": {
+        "support_level": "untriaged"
+      },
+      "onmousewheel": {
+        "support_level": "untriaged"
+      },
+      "onpause": {
+        "support_level": "untriaged"
+      },
+      "onplay": {
+        "support_level": "untriaged"
+      },
+      "onplaying": {
+        "support_level": "untriaged"
+      },
+      "onratechange": {
+        "support_level": "untriaged"
+      },
+      "onreset": {
+        "support_level": "untriaged"
+      },
+      "onscroll": {
+        "support_level": "untriaged"
+      },
+      "onseeked": {
+        "support_level": "untriaged"
+      },
+      "onseeking": {
+        "support_level": "untriaged"
+      },
+      "onselect": {
+        "support_level": "untriaged"
+      },
+      "onstalled": {
+        "support_level": "untriaged"
+      },
+      "onsubmit": {
+        "support_level": "untriaged"
+      },
+      "onsuspend": {
+        "support_level": "untriaged"
+      },
+      "ontimeupdate": {
+        "support_level": "untriaged"
+      },
+      "onvolumechange": {
+        "support_level": "untriaged"
+      },
+      "onwaiting": {
+        "support_level": "untriaged"
+      }
+    },
+    "support_level": "untriaged"
+  },
   "HTMLAllCollection": {
     "comment": "http://www.whatwg.org/specs/web-apps/current-work/multipage/obsolete.html#dom-document-all",
     "dart_action": "suppress",
@@ -3075,8 +3388,10 @@
       },
       "origin": {
         "comment": "WebKit only",
-        "dart_action": "suppress",
         "support_level": "nonstandard"
+      },
+      "password": {
+        "support_level": "untriaged"
       },
       "pathname": {},
       "ping": {
@@ -3101,7 +3416,10 @@
       "target": {},
       "text": {},
       "toString": {},
-      "type": {}
+      "type": {},
+      "username": {
+        "support_level": "untriaged"
+      }
     },
     "support_level": "stable"
   },
@@ -3138,6 +3456,12 @@
         "dart_action": "suppress",
         "support_level": "deprecated"
       },
+      "origin": {
+        "support_level": "untriaged"
+      },
+      "password": {
+        "support_level": "untriaged"
+      },
       "pathname": {},
       "ping": {
         "comment": "http://www.whatwg.org/specs/web-apps/current-work/multipage/obsolete.html#HTMLAreaElement-partial",
@@ -3148,7 +3472,13 @@
       "protocol": {},
       "search": {},
       "shape": {},
-      "target": {}
+      "target": {},
+      "toString": {
+        "support_level": "untriaged"
+      },
+      "username": {
+        "support_level": "untriaged"
+      }
     },
     "support_level": "stable"
   },
@@ -3225,6 +3555,9 @@
       "ononline": {},
       "onpopstate": {},
       "onresize": {},
+      "onscroll": {
+        "support_level": "untriaged"
+      },
       "onstorage": {},
       "onunload": {},
       "text": {
@@ -3477,6 +3810,162 @@
       },
       "isContentEditable": {},
       "lang": {},
+      "onabort": {
+        "support_level": "untriaged"
+      },
+      "onblur": {
+        "support_level": "untriaged"
+      },
+      "oncanplay": {
+        "support_level": "untriaged"
+      },
+      "oncanplaythrough": {
+        "support_level": "untriaged"
+      },
+      "onchange": {
+        "support_level": "untriaged"
+      },
+      "onclick": {
+        "support_level": "untriaged"
+      },
+      "oncontextmenu": {
+        "support_level": "untriaged"
+      },
+      "ondblclick": {
+        "support_level": "untriaged"
+      },
+      "ondoubleclick": {
+        "support_level": "untriaged"
+      },
+      "ondrag": {
+        "support_level": "untriaged"
+      },
+      "ondragend": {
+        "support_level": "untriaged"
+      },
+      "ondragenter": {
+        "support_level": "untriaged"
+      },
+      "ondragleave": {
+        "support_level": "untriaged"
+      },
+      "ondragover": {
+        "support_level": "untriaged"
+      },
+      "ondragstart": {
+        "support_level": "untriaged"
+      },
+      "ondrop": {
+        "support_level": "untriaged"
+      },
+      "ondurationchange": {
+        "support_level": "untriaged"
+      },
+      "onemptied": {
+        "support_level": "untriaged"
+      },
+      "onended": {
+        "support_level": "untriaged"
+      },
+      "onerror": {
+        "support_level": "untriaged"
+      },
+      "onfocus": {
+        "support_level": "untriaged"
+      },
+      "oninput": {
+        "support_level": "untriaged"
+      },
+      "oninvalid": {
+        "support_level": "untriaged"
+      },
+      "onkeydown": {
+        "support_level": "untriaged"
+      },
+      "onkeypress": {
+        "support_level": "untriaged"
+      },
+      "onkeyup": {
+        "support_level": "untriaged"
+      },
+      "onload": {
+        "support_level": "untriaged"
+      },
+      "onloadeddata": {
+        "support_level": "untriaged"
+      },
+      "onloadedmetadata": {
+        "support_level": "untriaged"
+      },
+      "onmousedown": {
+        "support_level": "untriaged"
+      },
+      "onmouseenter": {
+        "support_level": "untriaged"
+      },
+      "onmouseleave": {
+        "support_level": "untriaged"
+      },
+      "onmousemove": {
+        "support_level": "untriaged"
+      },
+      "onmouseout": {
+        "support_level": "untriaged"
+      },
+      "onmouseover": {
+        "support_level": "untriaged"
+      },
+      "onmouseup": {
+        "support_level": "untriaged"
+      },
+      "onmousewheel": {
+        "support_level": "untriaged"
+      },
+      "onpause": {
+        "support_level": "untriaged"
+      },
+      "onplay": {
+        "support_level": "untriaged"
+      },
+      "onplaying": {
+        "support_level": "untriaged"
+      },
+      "onratechange": {
+        "support_level": "untriaged"
+      },
+      "onreset": {
+        "support_level": "untriaged"
+      },
+      "onscroll": {
+        "support_level": "untriaged"
+      },
+      "onseeked": {
+        "support_level": "untriaged"
+      },
+      "onseeking": {
+        "support_level": "untriaged"
+      },
+      "onselect": {
+        "support_level": "untriaged"
+      },
+      "onstalled": {
+        "support_level": "untriaged"
+      },
+      "onsubmit": {
+        "support_level": "untriaged"
+      },
+      "onsuspend": {
+        "support_level": "untriaged"
+      },
+      "ontimeupdate": {
+        "support_level": "untriaged"
+      },
+      "onvolumechange": {
+        "support_level": "untriaged"
+      },
+      "onwaiting": {
+        "support_level": "untriaged"
+      },
       "outerHTML": {},
       "outerText": {
         "dart_action": "suppress",
@@ -3646,6 +4135,9 @@
         "comment": "http://www.whatwg.org/specs/web-apps/current-work/multipage/obsolete.html#HTMLHRElement-partial",
         "dart_action": "suppress",
         "support_level": "deprecated"
+      },
+      "color": {
+        "support_level": "untriaged"
       },
       "noShade": {
         "comment": "http://www.whatwg.org/specs/web-apps/current-work/multipage/obsolete.html#HTMLHRElement-partial",
@@ -4066,6 +4558,9 @@
       },
       "controller": {},
       "controls": {},
+      "crossOrigin": {
+        "support_level": "untriaged"
+      },
       "currentSrc": {},
       "currentTime": {},
       "defaultMuted": {},
@@ -4558,6 +5053,9 @@
     "comment": "https://dvcs.w3.org/hg/webcomponents/raw-file/tip/spec/shadow/index.html#shadow-element",
     "members": {
       "HTMLShadowElement": {},
+      "getDistributedNodes": {
+        "support_level": "untriaged"
+      },
       "olderShadowRoot": {},
       "resetStyleInheritance": {}
     },
@@ -4944,6 +5442,9 @@
     "comment": "http://www.whatwg.org/specs/web-apps/current-work/multipage/the-video-element.html#the-video-element",
     "members": {
       "HTMLVideoElement": {},
+      "getVideoPlaybackQuality": {
+        "support_level": "untriaged"
+      },
       "height": {},
       "poster": {},
       "videoHeight": {},
@@ -5039,6 +5540,9 @@
     "members": {
       "advance": {},
       "continue": {},
+      "continuePrimaryKey": {
+        "support_level": "untriaged"
+      },
       "delete": {},
       "direction": {},
       "key": {},
@@ -5160,6 +5664,9 @@
       "keyPath": {},
       "name": {},
       "openCursor": {},
+      "openKeyCursor": {
+        "support_level": "untriaged"
+      },
       "put": {},
       "transaction": {}
     },
@@ -5222,6 +5729,9 @@
       "dataLoss": {
         "support_level": "untriaged"
       },
+      "dataLossMessage": {
+        "support_level": "untriaged"
+      },
       "newVersion": {},
       "oldVersion": {}
     },
@@ -5254,11 +5764,26 @@
   "InputMethodContext": {
     "comment": "http://www.w3.org/TR/ime-api/#idl-def-InputMethodContext",
     "members": {
+      "addEventListener": {
+        "support_level": "untriaged"
+      },
       "composition": {},
+      "compositionEndOffset": {
+        "support_level": "untriaged"
+      },
+      "compositionStartOffset": {
+        "support_level": "untriaged"
+      },
       "confirmComposition": {},
+      "dispatchEvent": {
+        "support_level": "untriaged"
+      },
       "enabled": {},
       "locale": {},
       "open": {},
+      "removeEventListener": {
+        "support_level": "untriaged"
+      },
       "setCaretRectangle": {},
       "setExclusionRectangle": {},
       "target": {
@@ -5362,6 +5887,9 @@
         "support_level": "untriaged"
       },
       "metaKey": {},
+      "repeat": {
+        "support_level": "untriaged"
+      },
       "shiftKey": {}
     },
     "support_level": "stable"
@@ -5732,7 +6260,10 @@
       "onmute": {},
       "onunmute": {},
       "readyState": {},
-      "removeEventListener": {}
+      "removeEventListener": {},
+      "stop": {
+        "support_level": "untriaged"
+      }
     },
     "support_level": "experimental"
   },
@@ -5985,6 +6516,9 @@
       },
       "language": {
         "comment": "http://www.whatwg.org/specs/web-apps/current-work/multipage/timers.html#navigatorlanguage"
+      },
+      "maxTouchPoints": {
+        "support_level": "untriaged"
       },
       "mimeTypes": {
         "dart_action": "experimental",
@@ -6272,6 +6806,9 @@
     "members": {
       "Notification": {},
       "addEventListener": {},
+      "body": {
+        "support_level": "untriaged"
+      },
       "cancel": {
         "dart_action": "experimental",
         "support_level": "nonstandard"
@@ -6282,6 +6819,12 @@
         "support_level": "nonstandard"
       },
       "dispatchEvent": {},
+      "icon": {
+        "support_level": "untriaged"
+      },
+      "lang": {
+        "support_level": "untriaged"
+      },
       "onclick": {},
       "onclose": {},
       "ondisplay": {
@@ -6304,6 +6847,9 @@
       "tag": {
         "dart_action": "experimental",
         "support_level": "nonstandard"
+      },
+      "title": {
+        "support_level": "untriaged"
       }
     },
     "support_level": "experimental"
@@ -6803,10 +7349,19 @@
       "_any": {
         "support_level": "untriaged"
       },
+      "all": {
+        "support_level": "untriaged"
+      },
+      "cast": {
+        "support_level": "untriaged"
+      },
       "every": {
         "support_level": "untriaged"
       },
       "fulfill": {
+        "support_level": "untriaged"
+      },
+      "race": {
         "support_level": "untriaged"
       },
       "reject": {
@@ -7778,6 +8333,162 @@
         "support_level": "untriaged"
       },
       "id": {},
+      "onabort": {
+        "support_level": "untriaged"
+      },
+      "onblur": {
+        "support_level": "untriaged"
+      },
+      "oncanplay": {
+        "support_level": "untriaged"
+      },
+      "oncanplaythrough": {
+        "support_level": "untriaged"
+      },
+      "onchange": {
+        "support_level": "untriaged"
+      },
+      "onclick": {
+        "support_level": "untriaged"
+      },
+      "oncontextmenu": {
+        "support_level": "untriaged"
+      },
+      "ondblclick": {
+        "support_level": "untriaged"
+      },
+      "ondoubleclick": {
+        "support_level": "untriaged"
+      },
+      "ondrag": {
+        "support_level": "untriaged"
+      },
+      "ondragend": {
+        "support_level": "untriaged"
+      },
+      "ondragenter": {
+        "support_level": "untriaged"
+      },
+      "ondragleave": {
+        "support_level": "untriaged"
+      },
+      "ondragover": {
+        "support_level": "untriaged"
+      },
+      "ondragstart": {
+        "support_level": "untriaged"
+      },
+      "ondrop": {
+        "support_level": "untriaged"
+      },
+      "ondurationchange": {
+        "support_level": "untriaged"
+      },
+      "onemptied": {
+        "support_level": "untriaged"
+      },
+      "onended": {
+        "support_level": "untriaged"
+      },
+      "onerror": {
+        "support_level": "untriaged"
+      },
+      "onfocus": {
+        "support_level": "untriaged"
+      },
+      "oninput": {
+        "support_level": "untriaged"
+      },
+      "oninvalid": {
+        "support_level": "untriaged"
+      },
+      "onkeydown": {
+        "support_level": "untriaged"
+      },
+      "onkeypress": {
+        "support_level": "untriaged"
+      },
+      "onkeyup": {
+        "support_level": "untriaged"
+      },
+      "onload": {
+        "support_level": "untriaged"
+      },
+      "onloadeddata": {
+        "support_level": "untriaged"
+      },
+      "onloadedmetadata": {
+        "support_level": "untriaged"
+      },
+      "onmousedown": {
+        "support_level": "untriaged"
+      },
+      "onmouseenter": {
+        "support_level": "untriaged"
+      },
+      "onmouseleave": {
+        "support_level": "untriaged"
+      },
+      "onmousemove": {
+        "support_level": "untriaged"
+      },
+      "onmouseout": {
+        "support_level": "untriaged"
+      },
+      "onmouseover": {
+        "support_level": "untriaged"
+      },
+      "onmouseup": {
+        "support_level": "untriaged"
+      },
+      "onmousewheel": {
+        "support_level": "untriaged"
+      },
+      "onpause": {
+        "support_level": "untriaged"
+      },
+      "onplay": {
+        "support_level": "untriaged"
+      },
+      "onplaying": {
+        "support_level": "untriaged"
+      },
+      "onratechange": {
+        "support_level": "untriaged"
+      },
+      "onreset": {
+        "support_level": "untriaged"
+      },
+      "onscroll": {
+        "support_level": "untriaged"
+      },
+      "onseeked": {
+        "support_level": "untriaged"
+      },
+      "onseeking": {
+        "support_level": "untriaged"
+      },
+      "onselect": {
+        "support_level": "untriaged"
+      },
+      "onstalled": {
+        "support_level": "untriaged"
+      },
+      "onsubmit": {
+        "support_level": "untriaged"
+      },
+      "onsuspend": {
+        "support_level": "untriaged"
+      },
+      "ontimeupdate": {
+        "support_level": "untriaged"
+      },
+      "onvolumechange": {
+        "support_level": "untriaged"
+      },
+      "onwaiting": {
+        "support_level": "untriaged"
+      },
       "ownerSVGElement": {},
       "style": {
         "support_level": "untriaged"
@@ -8717,6 +9428,17 @@
     },
     "support_level": "stable"
   },
+  "SVGGeometryElement": {
+    "members": {
+      "isPointInFill": {
+        "support_level": "untriaged"
+      },
+      "isPointInStroke": {
+        "support_level": "untriaged"
+      }
+    },
+    "support_level": "untriaged"
+  },
   "SVGGlyphElement": {
     "comment": "http://www.w3.org/TR/SVG/fonts.html#InterfaceSVGGlyphElement",
     "dart_action": "unstable",
@@ -8770,6 +9492,9 @@
         "support_level": "untriaged"
       },
       "getScreenCTM": {
+        "support_level": "untriaged"
+      },
+      "getStrokeBBox": {
         "support_level": "untriaged"
       },
       "getTransformToElement": {
@@ -10486,6 +11211,10 @@
     "members": {},
     "support_level": "untriaged"
   },
+  "ServiceWorkerGlobalScope": {
+    "members": {},
+    "support_level": "untriaged"
+  },
   "ShadowRoot": {
     "comment": "https://dvcs.w3.org/hg/webcomponents/raw-file/tip/spec/shadow/index.html#api-shadow-root",
     "members": {
@@ -10498,11 +11227,17 @@
       "getElementsByTagName": {},
       "getElementsByTagNameNS": {},
       "getSelection": {},
+      "host": {
+        "support_level": "untriaged"
+      },
       "innerHTML": {},
       "olderShadowRoot": {
         "support_level": "untriaged"
       },
-      "resetStyleInheritance": {}
+      "resetStyleInheritance": {},
+      "styleSheets": {
+        "support_level": "untriaged"
+      }
     },
     "support_level": "experimental"
   },
@@ -10728,11 +11463,20 @@
   "SpeechSynthesis": {
     "comment": "https://dvcs.w3.org/hg/speech-api/raw-file/tip/speechapi.html#tts-section",
     "members": {
+      "addEventListener": {
+        "support_level": "untriaged"
+      },
       "cancel": {},
+      "dispatchEvent": {
+        "support_level": "untriaged"
+      },
       "getVoices": {},
       "pause": {},
       "paused": {},
       "pending": {},
+      "removeEventListener": {
+        "support_level": "untriaged"
+      },
       "resume": {},
       "speak": {},
       "speaking": {}
@@ -10974,15 +11718,27 @@
       "activeCues": {},
       "addCue": {},
       "addEventListener": {},
+      "addRegion": {
+        "support_level": "untriaged"
+      },
       "cues": {},
       "dispatchEvent": {},
+      "id": {
+        "support_level": "untriaged"
+      },
       "kind": {},
       "label": {},
       "language": {},
       "mode": {},
       "oncuechange": {},
+      "regions": {
+        "support_level": "untriaged"
+      },
       "removeCue": {},
-      "removeEventListener": {}
+      "removeEventListener": {},
+      "removeRegion": {
+        "support_level": "untriaged"
+      }
     },
     "support_level": "experimental"
   },
@@ -11012,6 +11768,9 @@
       "position": {
         "dart_action": "experimental",
         "support_level": "nonstandard"
+      },
+      "regionId": {
+        "support_level": "untriaged"
       },
       "removeEventListener": {},
       "size": {
@@ -11049,9 +11808,15 @@
     "members": {
       "addEventListener": {},
       "dispatchEvent": {},
+      "getTrackById": {
+        "support_level": "untriaged"
+      },
       "item": {},
       "length": {},
       "onaddtrack": {},
+      "onchange": {
+        "support_level": "untriaged"
+      },
       "removeEventListener": {}
     },
     "support_level": "experimental"
@@ -11218,9 +11983,118 @@
       "createObjectUrlFromBlob": {},
       "createObjectUrlFromSource": {},
       "createObjectUrlFromStream": {},
-      "revokeObjectURL": {}
+      "hash": {
+        "support_level": "untriaged"
+      },
+      "host": {
+        "support_level": "untriaged"
+      },
+      "hostname": {
+        "support_level": "untriaged"
+      },
+      "href": {
+        "support_level": "untriaged"
+      },
+      "origin": {
+        "support_level": "untriaged"
+      },
+      "password": {
+        "support_level": "untriaged"
+      },
+      "pathname": {
+        "support_level": "untriaged"
+      },
+      "port": {
+        "support_level": "untriaged"
+      },
+      "protocol": {
+        "support_level": "untriaged"
+      },
+      "revokeObjectURL": {},
+      "search": {
+        "support_level": "untriaged"
+      },
+      "toString": {
+        "support_level": "untriaged"
+      },
+      "username": {
+        "support_level": "untriaged"
+      }
     },
     "support_level": "stable"
+  },
+  "URLUtils": {
+    "members": {
+      "hash": {
+        "support_level": "untriaged"
+      },
+      "host": {
+        "support_level": "untriaged"
+      },
+      "hostname": {
+        "support_level": "untriaged"
+      },
+      "href": {
+        "support_level": "untriaged"
+      },
+      "origin": {
+        "support_level": "untriaged"
+      },
+      "password": {
+        "support_level": "untriaged"
+      },
+      "pathname": {
+        "support_level": "untriaged"
+      },
+      "port": {
+        "support_level": "untriaged"
+      },
+      "protocol": {
+        "support_level": "untriaged"
+      },
+      "search": {
+        "support_level": "untriaged"
+      },
+      "toString": {
+        "support_level": "untriaged"
+      },
+      "username": {
+        "support_level": "untriaged"
+      }
+    },
+    "support_level": "untriaged"
+  },
+  "URLUtilsReadOnly": {
+    "members": {
+      "hash": {
+        "support_level": "untriaged"
+      },
+      "host": {
+        "support_level": "untriaged"
+      },
+      "hostname": {
+        "support_level": "untriaged"
+      },
+      "href": {
+        "support_level": "untriaged"
+      },
+      "pathname": {
+        "support_level": "untriaged"
+      },
+      "port": {
+        "support_level": "untriaged"
+      },
+      "protocol": {
+        "support_level": "untriaged"
+      },
+      "search": {
+        "support_level": "untriaged"
+      },
+      "toString": {
+        "support_level": "untriaged"
+      }
+    },
+    "support_level": "untriaged"
   },
   "Uint16Array": {
     "comment": "http://www.khronos.org/registry/typedarray/specs/latest/",
@@ -11261,6 +12135,86 @@
     },
     "support_level": "stable"
   },
+  "VTTCue": {
+    "members": {
+      "VTTCue": {},
+      "align": {
+        "support_level": "untriaged"
+      },
+      "getCueAsHTML": {
+        "support_level": "untriaged"
+      },
+      "line": {
+        "support_level": "untriaged"
+      },
+      "position": {
+        "support_level": "untriaged"
+      },
+      "regionId": {
+        "support_level": "untriaged"
+      },
+      "size": {
+        "support_level": "untriaged"
+      },
+      "snapToLines": {
+        "support_level": "untriaged"
+      },
+      "text": {
+        "support_level": "untriaged"
+      },
+      "vertical": {
+        "support_level": "untriaged"
+      }
+    },
+    "support_level": "untriaged"
+  },
+  "VTTRegion": {
+    "members": {
+      "VTTRegion": {},
+      "height": {
+        "support_level": "untriaged"
+      },
+      "id": {
+        "support_level": "untriaged"
+      },
+      "regionAnchorX": {
+        "support_level": "untriaged"
+      },
+      "regionAnchorY": {
+        "support_level": "untriaged"
+      },
+      "scroll": {
+        "support_level": "untriaged"
+      },
+      "track": {
+        "support_level": "untriaged"
+      },
+      "viewportAnchorX": {
+        "support_level": "untriaged"
+      },
+      "viewportAnchorY": {
+        "support_level": "untriaged"
+      },
+      "width": {
+        "support_level": "untriaged"
+      }
+    },
+    "support_level": "untriaged"
+  },
+  "VTTRegionList": {
+    "members": {
+      "getRegionById": {
+        "support_level": "untriaged"
+      },
+      "item": {
+        "support_level": "untriaged"
+      },
+      "length": {
+        "support_level": "untriaged"
+      }
+    },
+    "support_level": "untriaged"
+  },
   "ValidityState": {
     "comment": "http://www.whatwg.org/specs/web-apps/current-work/multipage/association-of-controls-and-forms.html#validitystate",
     "members": {
@@ -11276,6 +12230,23 @@
       "valueMissing": {}
     },
     "support_level": "stable"
+  },
+  "VideoPlaybackQuality": {
+    "members": {
+      "corruptedVideoFrames": {
+        "support_level": "untriaged"
+      },
+      "creationTime": {
+        "support_level": "untriaged"
+      },
+      "droppedVideoFrames": {
+        "support_level": "untriaged"
+      },
+      "totalVideoFrames": {
+        "support_level": "untriaged"
+      }
+    },
+    "support_level": "untriaged"
   },
   "VoidCallback": {
     "comment": "http://www.w3.org/TR/file-system-api/#the-voidcallback-interface",
@@ -11351,6 +12322,9 @@
       "alpha": {},
       "antialias": {},
       "depth": {},
+      "failIfMajorPerformanceCaveat": {
+        "support_level": "untriaged"
+      },
       "premultipliedAlpha": {},
       "preserveDrawingBuffer": {},
       "stencil": {}
@@ -12123,6 +13097,10 @@
     },
     "support_level": "experimental"
   },
+  "WebKitNotification": {
+    "members": {},
+    "support_level": "untriaged"
+  },
   "WebKitPoint": {
     "comment": "http://developer.apple.com/library/safari/#documentation/DataManagement/Reference/DOMWindowAdditionsReference/DOMWindowAdditions/DOMWindowAdditions.html",
     "members": {
@@ -12568,6 +13546,38 @@
         "support_level": "untriaged"
       },
       "btoa": {
+        "support_level": "untriaged"
+      }
+    },
+    "support_level": "untriaged"
+  },
+  "WindowEventHandlers": {
+    "members": {
+      "onbeforeunload": {
+        "support_level": "untriaged"
+      },
+      "onhashchange": {
+        "support_level": "untriaged"
+      },
+      "onmessage": {
+        "support_level": "untriaged"
+      },
+      "onoffline": {
+        "support_level": "untriaged"
+      },
+      "ononline": {
+        "support_level": "untriaged"
+      },
+      "onpopstate": {
+        "support_level": "untriaged"
+      },
+      "onresize": {
+        "support_level": "untriaged"
+      },
+      "onstorage": {
+        "support_level": "untriaged"
+      },
+      "onunload": {
         "support_level": "untriaged"
       }
     },

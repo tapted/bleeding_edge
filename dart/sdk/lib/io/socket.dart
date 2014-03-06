@@ -16,7 +16,7 @@ class InternetAddressType {
 
   final int _value;
 
-  const InternetAddressType._(int this._value);
+  const InternetAddressType._(this._value);
 
   factory InternetAddressType._from(int value) {
     if (value == 0) return IP_V4;
@@ -88,6 +88,13 @@ abstract class InternetAddress {
    * associated with the address this returns the numeric address.
    */
   String get host;
+
+  /**
+   * Get the raw address of this [InternetAddress]. The result is either a
+   * 4 or 16 byte long list. The returned list is a copy, making it possible
+   * to change the list without modifying the [InternetAddress].
+   */
+  List<int> get rawAddress;
 
   /**
    * Returns true if the [InternetAddress] is a loopback address.
@@ -304,8 +311,9 @@ class SocketDirection {
   static const SocketDirection RECEIVE = const SocketDirection._(0);
   static const SocketDirection SEND = const SocketDirection._(1);
   static const SocketDirection BOTH = const SocketDirection._(2);
-  const SocketDirection._(this._value);
   final _value;
+
+  const SocketDirection._(this._value);
 }
 
 /**
@@ -327,9 +335,9 @@ class SocketOption {
   static const SocketOption _IP_MULTICAST_HOPS = const SocketOption._(2);
   static const SocketOption _IP_MULTICAST_IF = const SocketOption._(3);
   static const SocketOption _IP_BROADCAST = const SocketOption._(4);
+  final _value;
 
   const SocketOption._(this._value);
-  final _value;
 }
 
 /**
@@ -340,8 +348,9 @@ class RawSocketEvent {
   static const RawSocketEvent WRITE = const RawSocketEvent._(1);
   static const RawSocketEvent READ_CLOSED = const RawSocketEvent._(2);
   static const RawSocketEvent CLOSED = const RawSocketEvent._(3);
-  const RawSocketEvent._(this._value);
   final int _value;
+
+  const RawSocketEvent._(this._value);
   String toString() {
     return ['RawSocketEvent:READ',
             'RawSocketEvent:WRITE',
@@ -355,6 +364,20 @@ class RawSocketEvent {
  * events signaled by the system. It's a [Stream] of [RawSocketEvent]s.
  */
 abstract class RawSocket implements Stream<RawSocketEvent> {
+  /**
+   * Set or get, if the [RawSocket] should listen for [RawSocketEvent.READ]
+   * events. Default is [:true:].
+   */
+  bool readEventsEnabled;
+
+  /**
+   * Set or get, if the [RawSocket] should listen for [RawSocketEvent.WRITE]
+   * events. Default is [:true:].
+   * This is a one-shot listener, and writeEventsEnabled must be set
+   * to true again to receive another write event.
+   */
+  bool writeEventsEnabled;
+
   /**
    * Creates a new socket connection to the host and port and returns a [Future]
    * that will complete with either a [RawSocket] once connected or an error
@@ -376,7 +399,7 @@ abstract class RawSocket implements Stream<RawSocketEvent> {
    * Read up to [len] bytes from the socket. This function is
    * non-blocking and will only return data if data is available. The
    * number of bytes read can be less then [len] if fewer bytes are
-   * available for immediate reading. If no data is available [null]
+   * available for immediate reading. If no data is available [:null:]
    * is returned.
    */
   List<int> read([int len]);
@@ -431,24 +454,10 @@ abstract class RawSocket implements Stream<RawSocketEvent> {
   void shutdown(SocketDirection direction);
 
   /**
-   * Set or get, if the [RawSocket] should listen for [RawSocketEvent.READ]
-   * events. Default is [true].
-   */
-  bool readEventsEnabled;
-
-  /**
-   * Set or get, if the [RawSocket] should listen for [RawSocketEvent.WRITE]
-   * events. Default is [true].
-   * This is a one-shot listener, and writeEventsEnabled must be set
-   * to true again to receive another write event.
-   */
-  bool writeEventsEnabled;
-
-  /**
    * Use [setOption] to customize the [RawSocket]. See [SocketOption] for
    * available options.
    *
-   * Returns [true] if the option was set successfully, false otherwise.
+   * Returns [:true:] if the option was set successfully, false otherwise.
    */
   bool setOption(SocketOption option, bool enabled);
 }
@@ -485,7 +494,7 @@ abstract class Socket implements Stream<List<int>>, IOSink {
    * Use [setOption] to customize the [RawSocket]. See [SocketOption] for
    * available options.
    *
-   * Returns [true] if the option was set successfully, false otherwise.
+   * Returns [:true:] if the option was set successfully, false otherwise.
    */
   bool setOption(SocketOption option, bool enabled);
 
@@ -534,6 +543,59 @@ class Datagram {
  * received as an UDP socket cannot be closed by a remote peer.
  */
 abstract class RawDatagramSocket extends Stream<RawSocketEvent> {
+  /**
+   * Set or get, if the [RawDatagramSocket] should listen for
+   * [RawSocketEvent.READ] events. Default is [:true:].
+   */
+  bool readEventsEnabled;
+
+  /**
+   * Set or get, if the [RawDatagramSocket] should listen for
+   * [RawSocketEvent.WRITE] events. Default is [:true:].  This is a
+   * one-shot listener, and writeEventsEnabled must be set to true
+   * again to receive another write event.
+   */
+  bool writeEventsEnabled;
+
+  /**
+   * Set or get, whether multicast traffic is looped back to the host.
+   *
+   * By default multicast loopback is enabled.
+   */
+  bool multicastLoopback;
+
+  /**
+   * Set or get, the maximum network hops for multicast packages
+   * originating from this socket.
+   *
+   * For IPv4 this is referred to as TTL (time to live).
+   *
+   * By default this value is 1 causing multicast traffic to stay on
+   * the local network.
+   */
+  int multicastHops;
+
+  /**
+   * Set or get, the network interface used for outgoing multicast packages.
+   *
+   * A value of `null`indicate that the system chooses the network
+   * interface to use.
+   *
+   * By default this value is `null`
+   */
+  NetworkInterface multicastInterface;
+
+  /**
+   * Set or get, whether IPv4 broadcast is enabled.
+   *
+   * IPv4 broadcast needs to be enabled by the sender for sending IPv4
+   * broadcast packages. By default IPv4 broadcast is disabled.
+   *
+   * For IPv6 there is no general broadcast mechanism. Use multicast
+   * instead.
+   */
+  bool broadcastEnabled;
+
   /**
    * Creates a new raw datagram socket binding it to an address and
    * port.
@@ -585,59 +647,6 @@ abstract class RawDatagramSocket extends Stream<RawSocketEvent> {
    * exception is thrown.
    */
   void leaveMulticast(InternetAddress group, {NetworkInterface interface});
-
-  /**
-   * Set or get, if the [RawDatagramSocket] should listen for
-   * [RawSocketEvent.READ] events. Default is [true].
-   */
-  bool readEventsEnabled;
-
-  /**
-   * Set or get, if the [RawDatagramSocket] should listen for
-   * [RawSocketEvent.WRITE] events. Default is [true].  This is a
-   * one-shot listener, and writeEventsEnabled must be set to true
-   * again to receive another write event.
-   */
-  bool writeEventsEnabled;
-
-  /**
-   * Set or get, whether multicast traffic is looped back to the host.
-   *
-   * By default multicast loopback is enabled.
-   */
-  bool multicastLoopback;
-
-  /**
-   * Set or get, the maximum network hops for multicast packages
-   * originating from this socket.
-   *
-   * For IPv4 this is referred to as TTL (time to live).
-   *
-   * By default this value is 1 causing multicast traffic to stay on
-   * the local network.
-   */
-  int multicastHops;
-
-  /**
-   * Set or get, the network interface used for outgoing multicast packages.
-   *
-   * A value of `null`indicate that the system chooses the network
-   * interface to use.
-   *
-   * By default this value is `null`
-   */
-  NetworkInterface multicastInterface;
-
-  /**
-   * Set or get, whether IPv4 broadcast is enabled.
-   *
-   * IPv4 broadcast needs to be enabled by the sender for sending IPv4
-   * broadcast packages. By default IPv4 broadcast is disabled.
-   *
-   * For IPv6 there is no general broadcast mechanism. Use multicast
-   * instead.
-   */
-  bool broadcastEnabled;
 }
 
 
@@ -647,10 +656,7 @@ class SocketException implements IOException {
   final InternetAddress address;
   final int port;
 
-  const SocketException(String this.message,
-                        {OSError this.osError,
-                         InternetAddress this.address,
-                         int this.port});
+  const SocketException(this.message, {this.osError, this.address, this.port});
 
   String toString() {
     StringBuffer sb = new StringBuffer();

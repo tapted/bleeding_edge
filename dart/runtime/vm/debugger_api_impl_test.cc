@@ -647,28 +647,26 @@ TEST_CASE(Debug_StepOut) {
   EXPECT(breakpoint_hit == true);
 }
 
+static const char* step_into_expected_bpts[] = {
+    "main",
+      "foo",
+        "f1",
+      "foo",
+      "foo",
+        "X.kvmk",
+          "f2",
+        "X.kvmk",
+        "X.kvmk",
+      "foo",
+    "main"
+};
 
 void TestStepIntoHandler(Dart_IsolateId isolate_id,
                          intptr_t bp_id,
                          const Dart_CodeLocation& location) {
   Dart_StackTrace trace;
   Dart_GetStackTrace(&trace);
-  const char* expected_bpts[] = {
-      "main",
-        "foo",
-          "f1",
-        "foo",
-          "X.X.",
-          "X.X.",
-        "foo",
-          "X.kvmk",
-            "f2",
-          "X.kvmk",
-          "X.kvmk",
-        "foo",
-      "main"
-  };
-  const intptr_t expected_bpts_length = ARRAY_SIZE(expected_bpts);
+  const intptr_t expected_bpts_length = ARRAY_SIZE(step_into_expected_bpts);
   intptr_t trace_len;
   Dart_Handle res = Dart_StackTraceLength(trace, &trace_len);
   EXPECT_VALID(res);
@@ -683,7 +681,7 @@ void TestStepIntoHandler(Dart_IsolateId isolate_id,
   const char* name_chars;
   Dart_StringToCString(func_name, &name_chars);
   if (breakpoint_hit_counter < expected_bpts_length) {
-    EXPECT_STREQ(expected_bpts[breakpoint_hit_counter], name_chars);
+    EXPECT_STREQ(step_into_expected_bpts[breakpoint_hit_counter], name_chars);
   }
   if (verbose) {
     OS::Print("  >> bpt nr %d: %s\n", breakpoint_hit_counter, name_chars);
@@ -727,6 +725,7 @@ TEST_CASE(Debug_StepInto) {
   int64_t int_value = ToInt64(retval);
   EXPECT_EQ(7, int_value);
   EXPECT(breakpoint_hit == true);
+  EXPECT(breakpoint_hit_counter == ARRAY_SIZE(step_into_expected_bpts));
 }
 
 
@@ -1300,6 +1299,7 @@ UNIT_TEST_CASE(Debug_IsolateID) {
   EXPECT_VALID(retval);
   EXPECT(test_isolate_id != ILLEGAL_ISOLATE_ID);
   EXPECT(Dart_GetIsolate(test_isolate_id) == isolate);
+  EXPECT(Dart_GetIsolateId(isolate) == test_isolate_id);
   Dart_ExitScope();
   Dart_ShutdownIsolate();
   EXPECT(verify_callback == 0x5);  // Only created and shutdown events.
@@ -1308,9 +1308,18 @@ UNIT_TEST_CASE(Debug_IsolateID) {
 
 static Monitor* sync = NULL;
 static bool isolate_interrupted = false;
+static bool pause_event_handled = false;
 static Dart_IsolateId interrupt_isolate_id = ILLEGAL_ISOLATE_ID;
 static volatile bool continue_isolate_loop = true;
 
+
+static void InterruptIsolateHandler(Dart_IsolateId isolateId,
+                                    intptr_t breakpointId,
+                                    const Dart_CodeLocation& location) {
+  MonitorLocker ml(sync);
+  pause_event_handled = true;
+  ml.Notify();
+}
 
 static void TestInterruptIsolate(Dart_IsolateId isolate_id,
                                  Dart_IsolateEvent kind) {
@@ -1328,7 +1337,7 @@ static void TestInterruptIsolate(Dart_IsolateId isolate_id,
       MonitorLocker ml(sync);
       isolate_interrupted = true;
       continue_isolate_loop = false;
-      ml.Notify();
+      Dart_SetStepInto();
     }
   } else if (kind == kShutdown) {
     if (interrupt_isolate_id == isolate_id) {
@@ -1349,7 +1358,10 @@ static void InterruptNativeFunction(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction InterruptNativeResolver(Dart_Handle name,
-                                                   int arg_count) {
+                                                   int arg_count,
+                                                   bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return &InterruptNativeFunction;
 }
 
@@ -1391,6 +1403,7 @@ TEST_CASE(Debug_InterruptIsolate) {
   Dart_SetIsolateEventHandler(&TestInterruptIsolate);
   sync = new Monitor();
   EXPECT(interrupt_isolate_id == ILLEGAL_ISOLATE_ID);
+  Dart_SetPausedEventHandler(InterruptIsolateHandler);
   int result = Thread::Start(InterruptIsolateRun, 0);
   EXPECT_EQ(0, result);
 
@@ -1410,11 +1423,12 @@ TEST_CASE(Debug_InterruptIsolate) {
   // Wait for the test isolate to be interrupted.
   {
     MonitorLocker ml(sync);
-    while (!isolate_interrupted) {
+    while (!isolate_interrupted || !pause_event_handled) {
       ml.Wait();
     }
   }
   EXPECT(isolate_interrupted);
+  EXPECT(pause_event_handled);
 
   // Wait for the test isolate to shutdown.
   {

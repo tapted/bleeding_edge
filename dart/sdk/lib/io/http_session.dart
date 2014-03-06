@@ -18,11 +18,11 @@ class _HttpSession implements HttpSession {
   // Pointers in timeout queue.
   _HttpSession _prev;
   _HttpSession _next;
+  final String id;
 
   final Map _data = new HashMap();
 
-  _HttpSession(_HttpSessionManager this._sessionManager, String this.id)
-    : _lastSeen = new DateTime.now();
+  _HttpSession(this._sessionManager, this.id) : _lastSeen = new DateTime.now();
 
   void destroy() {
     _destroyed = true;
@@ -40,8 +40,6 @@ class _HttpSession implements HttpSession {
   DateTime get lastSeen => _lastSeen;
 
   bool get isNew => _isNew;
-
-  final String id;
 
   void set onTimeout(void callback()) {
     _timeoutCallback = callback;
@@ -62,6 +60,8 @@ class _HttpSession implements HttpSession {
   int get length => _data.length;
   bool get isEmpty => _data.isEmpty;
   bool get isNotEmpty => _data.isNotEmpty;
+
+  String toString() => 'HttpSession id:$id $_data';
 }
 
 // Private class used to manage all the active sessions. The sessions are stored
@@ -70,6 +70,12 @@ class _HttpSession implements HttpSession {
 //  * In a map, mapping from ID to HttpSession.
 //  * In a linked list, used as a timeout queue.
 class _HttpSessionManager {
+  Map<String, _HttpSession> _sessions;
+  int _sessionTimeout = 20 * 60;  // 20 mins.
+  _HttpSession _head;
+  _HttpSession _tail;
+  Timer _timer;
+
   _HttpSessionManager() : _sessions = {};
 
   String createSessionId() {
@@ -78,9 +84,7 @@ class _HttpSessionManager {
     return _CryptoUtils.bytesToHex(data);
   }
 
-  _HttpSession getSession(String id) {
-    return _sessions[id];
-  }
+  _HttpSession getSession(String id) => _sessions[id];
 
   _HttpSession createSession() {
     var id = createSessionId();
@@ -100,9 +104,7 @@ class _HttpSessionManager {
     _startTimer();
   }
 
-  void close() {
-    _stopTimer();
-  }
+  void close() => _stopTimer();
 
   void _bumpToEnd(_HttpSession session) {
     _removeFromTimeoutQueue(session);
@@ -168,11 +170,5 @@ class _HttpSessionManager {
       _timer = null;
     }
   }
-
-  Map<String, _HttpSession> _sessions;
-  int _sessionTimeout = 20 * 60;  // 20 mins.
-  _HttpSession _head;
-  _HttpSession _tail;
-  Timer _timer;
 }
 

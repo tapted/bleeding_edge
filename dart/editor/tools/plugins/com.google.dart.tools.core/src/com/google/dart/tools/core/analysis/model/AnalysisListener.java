@@ -35,4 +35,11 @@ public interface AnalysisListener {
    * @param event contains information about the compilation unit that was resolved
    */
   void resolved(ResolvedEvent event);
+
+  /**
+   * Called when a HTML unit has been resolved.
+   * 
+   * @param event contains information about the HTML unit that was resolved
+   */
+  void resolvedHtml(ResolvedHtmlEvent event);
 }

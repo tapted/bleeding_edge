@@ -87,7 +87,7 @@ class ResourceServerHandler implements Runnable {
     public Map<String, String> headers = new LinkedHashMap<String, String>();
 
     public int getContentLength() {
-      String len = headers.get(CONTENT_LENGTH);
+      String len = getHeaderKey(CONTENT_LENGTH);
 
       try {
         return len == null ? -1 : Integer.parseInt(len);
@@ -96,10 +96,32 @@ class ResourceServerHandler implements Runnable {
       }
     }
 
+    /**
+     * Return the value for the given key; assume case-insensitively for the key.
+     * 
+     * @param key
+     * @return
+     */
+    public String getHeaderKey(String key) {
+      String value = headers.get(key);
+
+      if (value != null) {
+        return value;
+      }
+
+      for (String k : headers.keySet()) {
+        if (k.equalsIgnoreCase(key)) {
+          return headers.get(k);
+        }
+      }
+
+      return null;
+    }
+
     public List<int[]> getRanges() {
       // Range: bytes=0-99,500-1499,4000-
       if (headers.containsKey(RANGE)) {
-        String rangeStr = headers.get(RANGE);
+        String rangeStr = getHeaderKey(RANGE);
 
         if (rangeStr.startsWith("bytes=")) {
           rangeStr = rangeStr.substring("bytes=".length());
@@ -117,10 +139,9 @@ class ResourceServerHandler implements Runnable {
               } else if (index == str.length() - 1) {
                 result.add(new int[] {Integer.parseInt(str.substring(0, index)), -1});
               } else if (index != -1) {
-                result.add(
-                    new int[] {
-                        Integer.parseInt(str.substring(0, index)),
-                        Integer.parseInt(str.substring(index + 1))});
+                result.add(new int[] {
+                    Integer.parseInt(str.substring(0, index)),
+                    Integer.parseInt(str.substring(index + 1))});
               }
             } catch (NumberFormatException nfe) {
 
@@ -233,16 +254,15 @@ class ResourceServerHandler implements Runnable {
       {"/favicon.ico", TYPE_GIF, "/resources/favicon.ico"},
       {"/dart_16_16.gif", TYPE_GIF, "/resources/dart_16_16.gif"},
       {"/dart_32_32.gif", TYPE_GIF, "/resources/dart_32_32.gif"},
-      {"/agent.html", TYPE_HTML, "agent.html"}, {"/agent.js", TYPE_JS, "agent.js"}, {
-          "/apple-touch-icon-precomposed.png", TYPE_PNG,
-          "/resources/apple-touch-icon-precomposed.png"}};
+      {"/agent.html", TYPE_HTML, "agent.html"},
+      {"/agent.js", TYPE_JS, "agent.js"},
+      {"/apple-touch-icon-precomposed.png", TYPE_PNG, "/resources/apple-touch-icon-precomposed.png"}};
 
   @SuppressWarnings("unused")
   private static byte[] getJSAgentContent() {
     if (AGENT_CONTENT == null) {
       try {
-        AGENT_CONTENT = ByteStreams.toByteArray(
-            ResourceServer.class.getResourceAsStream("agent.js"));
+        AGENT_CONTENT = ByteStreams.toByteArray(ResourceServer.class.getResourceAsStream("agent.js"));
       } catch (IOException e) {
         DartDebugCorePlugin.logError(e);
 
@@ -257,8 +277,8 @@ class ResourceServerHandler implements Runnable {
     extraMappings = new HashMap<String, String>();
 
     try {
-      BufferedReader reader = new BufferedReader(
-          new InputStreamReader(ResourceServerHandler.class.getResourceAsStream("mime.txt")));
+      BufferedReader reader = new BufferedReader(new InputStreamReader(
+          ResourceServerHandler.class.getResourceAsStream("mime.txt")));
 
       String line = reader.readLine();
 
@@ -468,9 +488,8 @@ class ResourceServerHandler implements Runnable {
         response.headers.put(CONTENT_LENGTH, Long.toString(rangeData.length));
         // Content-Range: bytes X-Y/Z
         int[] range = ranges.get(0);
-        response.headers.put(
-            CONTENT_RANGE,
-            "bytes " + range[0] + "-" + range[1] + "/" + rangeData.length);
+        response.headers.put(CONTENT_RANGE, "bytes " + range[0] + "-" + range[1] + "/"
+            + rangeData.length);
       } else {
         response.responseBodyStream = new FileInputStream(javaFile);
       }
@@ -500,8 +519,7 @@ class ResourceServerHandler implements Runnable {
     return response;
   }
 
-  private HttpResponse createPOSTResponse(HttpHeader header, DataInputStream in)
-      throws IOException {
+  private HttpResponse createPOSTResponse(HttpHeader header, DataInputStream in) throws IOException {
     // This 200000 value matches Jetty's setting.
     final int MAX_POST = 200000 + 100;
 
@@ -673,10 +691,11 @@ class ResourceServerHandler implements Runnable {
 
     // User-Agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_3) AppleWebKit/536.8 (KHTML, like Gecko) Chrome/20.0.1110.0 (Dart) Safari/536.8
     if (DartDebugCorePlugin.getPlugin().getUserAgentManager() != null) {
-      String userAgent = header.headers.get(USER_AGENT);
+      String userAgent = header.getHeaderKey(USER_AGENT);
 
-      boolean allowed = DartDebugCorePlugin.getPlugin()
-          .getUserAgentManager().allowUserAgent(remoteAddress, userAgent);
+      boolean allowed = DartDebugCorePlugin.getPlugin().getUserAgentManager().allowUserAgent(
+          remoteAddress,
+          userAgent);
 
       if (allowed) {
         resourceServer.loadingContentFrom(remoteAddress.getHostAddress(), userAgent);
@@ -758,10 +777,11 @@ class ResourceServerHandler implements Runnable {
     if (!file.exists() && childPath.toString().contains(DartCore.PACKAGES_DIRECTORY_PATH)) {
 
       int packagesIndex = childPath.toString().indexOf(DartCore.PACKAGES_DIRECTORY_PATH);
-      String pathString = childPath.toString()
-          .substring(packagesIndex + DartCore.PACKAGES_DIRECTORY_PATH.length());
-      IFileInfo fileInfo = DartCore.getProjectManager()
-          .resolveUriToFileInfo(project, DartCore.PACKAGE_SCHEME_SPEC + pathString);
+      String pathString = childPath.toString().substring(
+          packagesIndex + DartCore.PACKAGES_DIRECTORY_PATH.length());
+      IFileInfo fileInfo = DartCore.getProjectManager().resolveUriToFileInfo(
+          project,
+          DartCore.PACKAGE_SCHEME_SPEC + pathString);
       if (fileInfo != null) {
         file = fileInfo.getFile();
       }
@@ -771,8 +791,8 @@ class ResourceServerHandler implements Runnable {
   }
 
   private IResource locateMappedFile(File file) {
-    IResource resource = ResourcesPlugin.getWorkspace()
-        .getRoot().getFileForLocation(Path.fromOSString(file.getAbsolutePath()));
+    IResource resource = ResourcesPlugin.getWorkspace().getRoot().getFileForLocation(
+        Path.fromOSString(file.getAbsolutePath()));
 
     if (resource instanceof IFile) {
       IFile resourceFile = (IFile) resource;
@@ -780,8 +800,8 @@ class ResourceServerHandler implements Runnable {
       String mappingPath = DartCore.getResourceRemapping(resourceFile);
 
       if (mappingPath != null) {
-        IResource mappedResource = ResourcesPlugin.getWorkspace()
-            .getRoot().findMember(Path.fromPortableString(mappingPath));
+        IResource mappedResource = ResourcesPlugin.getWorkspace().getRoot().findMember(
+            Path.fromPortableString(mappingPath));
 
         if (mappedResource != null && mappedResource.exists()) {
           return mappedResource;

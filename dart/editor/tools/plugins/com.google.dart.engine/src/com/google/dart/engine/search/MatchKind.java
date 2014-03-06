@@ -25,6 +25,16 @@ import com.google.dart.engine.element.LibraryElement;
  */
 public enum MatchKind {
   /**
+   * A reference to an Angular element.
+   */
+  ANGULAR_REFERENCE,
+
+  /**
+   * A reference to an Angular element.
+   */
+  ANGULAR_CLOSING_TAG_REFERENCE,
+
+  /**
    * A declaration of a class.
    */
   CLASS_DECLARATION,

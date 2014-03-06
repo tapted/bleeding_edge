@@ -43,8 +43,10 @@ static void LengthCheck(intptr_t len, intptr_t max) {
 }
 
 
-  static void PeerFinalizer(Dart_WeakPersistentHandle handle, void* peer) {
-  Dart_DeleteWeakPersistentHandle(handle);
+static void PeerFinalizer(Dart_Isolate isolate,
+                          Dart_WeakPersistentHandle handle,
+                          void* peer) {
+  Dart_DeleteWeakPersistentHandle(isolate, handle);
   OS::AlignedFree(peer);
 }
 
@@ -65,33 +67,28 @@ DEFINE_NATIVE_ENTRY(TypedData_length, 1) {
   return Integer::null();
 }
 
+
 template <typename DstType, typename SrcType>
 static RawBool* CopyData(const Instance& dst, const Instance& src,
                          const Smi& dst_start, const Smi& src_start,
                          const Smi& length) {
   const DstType& dst_array = DstType::Cast(dst);
   const SrcType& src_array = SrcType::Cast(src);
-  intptr_t element_size_in_bytes = dst_array.ElementSizeInBytes();
-  intptr_t dst_offset_in_bytes = dst_start.Value() * element_size_in_bytes;
-  intptr_t src_offset_in_bytes = src_start.Value() * element_size_in_bytes;
-  intptr_t length_in_bytes = length.Value() * element_size_in_bytes;
+  const intptr_t dst_offset_in_bytes = dst_start.Value();
+  const intptr_t src_offset_in_bytes = src_start.Value();
+  const intptr_t length_in_bytes = length.Value();
   if (dst_array.ElementType() != src_array.ElementType()) {
     return Bool::False().raw();
   }
-  RangeCheck(src_offset_in_bytes,
-             length_in_bytes,
-             src_array.LengthInBytes(),
-             element_size_in_bytes);
-  RangeCheck(dst_offset_in_bytes,
-             length_in_bytes,
-             dst_array.LengthInBytes(),
-             element_size_in_bytes);
+  ASSERT(Utils::RangeCheck(
+      src_offset_in_bytes, length_in_bytes, src_array.LengthInBytes()));
+  ASSERT(Utils::RangeCheck(
+      dst_offset_in_bytes, length_in_bytes, dst_array.LengthInBytes()));
   TypedData::Copy<DstType, SrcType>(dst_array, dst_offset_in_bytes,
                                     src_array, src_offset_in_bytes,
                                     length_in_bytes);
   return Bool::True().raw();
 }
-
 
 DEFINE_NATIVE_ENTRY(TypedData_setRange, 5) {
   GET_NON_NULL_NATIVE_ARGUMENT(Instance, dst, arguments->NativeArgAt(0));
@@ -122,9 +119,9 @@ DEFINE_NATIVE_ENTRY(TypedData_setRange, 5) {
           dst, src, dst_start, src_start, length);
     }
   }
+  UNREACHABLE();
   return Bool::False().raw();
 }
-
 
 // We check the length parameter against a possible maximum length for the
 // array based on available physical addressable memory on the system. The
@@ -192,7 +189,11 @@ DEFINE_NATIVE_ENTRY(TypedData_##getter, 2) {                                   \
 }                                                                              \
 
 
-#define TYPED_DATA_SETTER(setter, object, get_object_value, access_size)       \
+#define TYPED_DATA_SETTER(setter,                                              \
+                          object,                                              \
+                          get_object_value,                                    \
+                          access_size,                                         \
+                          access_type)                                         \
 DEFINE_NATIVE_ENTRY(TypedData_##setter, 3) {                                   \
   GET_NON_NULL_NATIVE_ARGUMENT(Instance, instance, arguments->NativeArgAt(0)); \
   GET_NON_NULL_NATIVE_ARGUMENT(Smi, offsetInBytes, arguments->NativeArgAt(1)); \
@@ -201,12 +202,14 @@ DEFINE_NATIVE_ENTRY(TypedData_##setter, 3) {                                   \
     const TypedData& array = TypedData::Cast(instance);                        \
     RangeCheck(offsetInBytes.Value(), access_size,                             \
                array.LengthInBytes(), access_size);                            \
-    array.setter(offsetInBytes.Value(), value.get_object_value());             \
+    array.setter(offsetInBytes.Value(),                                        \
+                 static_cast<access_type>(value.get_object_value()));          \
   } else if (instance.IsExternalTypedData()) {                                 \
     const ExternalTypedData& array = ExternalTypedData::Cast(instance);        \
     RangeCheck(offsetInBytes.Value(), access_size,                             \
                array.LengthInBytes(), access_size);                            \
-    array.setter(offsetInBytes.Value(), value.get_object_value());             \
+    array.setter(offsetInBytes.Value(),                                        \
+                 static_cast<access_type>(value.get_object_value()));          \
   } else {                                                                     \
     const String& error = String::Handle(String::NewFormatted(                 \
         "Expected a TypedData object but found %s", instance.ToCString()));    \
@@ -275,9 +278,10 @@ DEFINE_NATIVE_ENTRY(TypedData_##setter, 3) {                                   \
                            setter,                                             \
                            object,                                             \
                            get_object_value,                                   \
-                           access_size)                                        \
+                           access_size,                                        \
+                           access_type)                                        \
   TYPED_DATA_GETTER(getter, object, access_size)                               \
-  TYPED_DATA_SETTER(setter, object, get_object_value, access_size)             \
+  TYPED_DATA_SETTER(setter, object, get_object_value, access_size, access_type)\
 
 
 #define TYPED_DATA_UINT64_NATIVES(getter, setter, object)                      \
@@ -285,18 +289,21 @@ DEFINE_NATIVE_ENTRY(TypedData_##setter, 3) {                                   \
   TYPED_DATA_UINT64_SETTER(setter, object)                                     \
 
 
-TYPED_DATA_NATIVES(GetInt8, SetInt8, Smi, Value, 1)
-TYPED_DATA_NATIVES(GetUint8, SetUint8, Smi, Value, 1)
-TYPED_DATA_NATIVES(GetInt16, SetInt16, Smi, Value, 2)
-TYPED_DATA_NATIVES(GetUint16, SetUint16, Smi, Value, 2)
-TYPED_DATA_NATIVES(GetInt32, SetInt32, Integer, AsInt64Value, 4)
-TYPED_DATA_NATIVES(GetUint32, SetUint32, Integer, AsInt64Value, 4)
-TYPED_DATA_NATIVES(GetInt64, SetInt64, Integer, AsInt64Value, 8)
+TYPED_DATA_NATIVES(GetInt8, SetInt8, Smi, Value, 1, int8_t)
+TYPED_DATA_NATIVES(GetUint8, SetUint8, Smi, Value, 1, uint8_t)
+TYPED_DATA_NATIVES(GetInt16, SetInt16, Smi, Value, 2, int16_t)
+TYPED_DATA_NATIVES(GetUint16, SetUint16, Smi, Value, 2, uint16_t)
+TYPED_DATA_NATIVES(GetInt32, SetInt32, Integer, AsInt64Value, 4, int32_t)
+TYPED_DATA_NATIVES(GetUint32, SetUint32, Integer, AsInt64Value, 4, uint32_t)
+TYPED_DATA_NATIVES(GetInt64, SetInt64, Integer, AsInt64Value, 8, int64_t)
 TYPED_DATA_UINT64_NATIVES(GetUint64, SetUint64, Integer)
-TYPED_DATA_NATIVES(GetFloat32, SetFloat32, Double, value, 4)
-TYPED_DATA_NATIVES(GetFloat64, SetFloat64, Double, value, 8)
-TYPED_DATA_NATIVES(GetFloat32x4, SetFloat32x4, Float32x4, value, 16)
-TYPED_DATA_NATIVES(GetInt32x4, SetInt32x4, Int32x4, value, 16)
+TYPED_DATA_NATIVES(GetFloat32, SetFloat32, Double, value, 4, float)
+TYPED_DATA_NATIVES(GetFloat64, SetFloat64, Double, value, 8, double)
+TYPED_DATA_NATIVES(
+    GetFloat32x4, SetFloat32x4, Float32x4, value, 16, simd128_value_t)
+TYPED_DATA_NATIVES(GetInt32x4, SetInt32x4, Int32x4, value, 16, simd128_value_t)
+TYPED_DATA_NATIVES(
+    GetFloat64x2, SetFloat64x2, Float64x2, value, 16, simd128_value_t)
 
 
 DEFINE_NATIVE_ENTRY(ByteData_ToEndianInt16, 2) {
@@ -326,8 +333,9 @@ DEFINE_NATIVE_ENTRY(ByteData_ToEndianUint16, 2) {
 DEFINE_NATIVE_ENTRY(ByteData_ToEndianInt32, 2) {
   GET_NON_NULL_NATIVE_ARGUMENT(Integer, host_value, arguments->NativeArgAt(0));
   GET_NON_NULL_NATIVE_ARGUMENT(Bool, little_endian, arguments->NativeArgAt(1));
-  ASSERT(host_value.AsInt64Value() <= kMaxInt32);
-  int32_t value = host_value.AsInt64Value();
+  ASSERT((host_value.AsInt64Value() >= kMinInt32) ||
+         (host_value.AsInt64Value() <= kMaxInt32));
+  int32_t value = static_cast<int32_t>(host_value.AsInt64Value());
   if (little_endian.value()) {
     value = Utils::HostToLittleEndian32(value);
   } else {
@@ -341,7 +349,7 @@ DEFINE_NATIVE_ENTRY(ByteData_ToEndianUint32, 2) {
   GET_NON_NULL_NATIVE_ARGUMENT(Integer, host_value, arguments->NativeArgAt(0));
   GET_NON_NULL_NATIVE_ARGUMENT(Bool, little_endian, arguments->NativeArgAt(1));
   ASSERT(host_value.AsInt64Value() <= kMaxUint32);
-  uint32_t value = host_value.AsInt64Value();
+  uint32_t value = static_cast<uint32_t>(host_value.AsInt64Value());
   if (little_endian.value()) {
     value = Utils::HostToLittleEndian32(value);
   } else {

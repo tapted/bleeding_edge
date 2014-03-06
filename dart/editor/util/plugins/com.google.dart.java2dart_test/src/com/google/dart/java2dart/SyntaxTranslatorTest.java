@@ -16,7 +16,7 @@ package com.google.dart.java2dart;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
-import com.google.dart.engine.ast.ASTNode;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.utilities.io.PrintStringWriter;
 import com.google.dart.java2dart.util.ToFormattedSourceVisitor;
@@ -33,9 +33,9 @@ import static org.fest.assertions.Assertions.assertThat;
  */
 public class SyntaxTranslatorTest extends AbstractSemanticTest {
   /**
-   * @return the formatted Dart source dump of the given {@link ASTNode}.
+   * @return the formatted Dart source dump of the given {@link AstNode}.
    */
-  private static String toFormattedSource(ASTNode node) {
+  private static String toFormattedSource(AstNode node) {
     PrintStringWriter writer = new PrintStringWriter();
     node.accept(new ToFormattedSourceVisitor(writer));
     String result = writer.toString();
@@ -194,6 +194,50 @@ public class SyntaxTranslatorTest extends AbstractSemanticTest {
         "   * Some comment.",
         "   */",
         "  void foo() {",
+        "  }",
+        "}");
+  }
+
+  public void test_commentLine_beforeStatement_blockStyle() throws Exception {
+    parseJava(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "public class A {",
+        "  void main() {",
+        "    /*",
+        "     * aaa",
+        "     * bbb",
+        "     */",
+        "    int v = 0;",
+        "  }",
+        "}");
+    assertDartSource(
+        "class A {",
+        "  void main() {",
+        "    /*",
+        "     * aaa",
+        "     * bbb",
+        "     */",
+        "    int v = 0;",
+        "  }",
+        "}");
+  }
+
+  public void test_commentLine_beforeStatement_lineStyle() throws Exception {
+    parseJava(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "public class A {",
+        "  void main() {",
+        "    // aaa",
+        "    // bbb",
+        "    int v = 0;",
+        "  }",
+        "}");
+    assertDartSource(
+        "class A {",
+        "  void main() {",
+        "    // aaa",
+        "    // bbb",
+        "    int v = 0;",
         "  }",
         "}");
   }
@@ -789,9 +833,7 @@ public class SyntaxTranslatorTest extends AbstractSemanticTest {
         "}");
     assertDartSource(//
         "/**",
-        " *",
         " * * foo bar",
-        " *",
         " */",
         "class A {",
         "}");
@@ -1504,9 +1546,7 @@ public class SyntaxTranslatorTest extends AbstractSemanticTest {
     assertDartSource(//
         "class A {",
         "  void test() {",
-        "    {",
-        "      print(0);",
-        "    }",
+        "    print(0);",
         "  }",
         "}");
   }

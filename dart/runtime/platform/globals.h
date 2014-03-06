@@ -73,20 +73,28 @@
 #endif
 
 struct simd128_value_t {
-  float storage[4];
+  union {
+    float float_storage[4];
+    int32_t int_storage[4];
+    double double_storage[2];
+  };
   simd128_value_t& readFrom(const float* v) {
-    storage[0] = v[0];
-    storage[1] = v[1];
-    storage[2] = v[2];
-    storage[3] = v[3];
+    float_storage[0] = v[0];
+    float_storage[1] = v[1];
+    float_storage[2] = v[2];
+    float_storage[3] = v[3];
     return *this;
   }
   simd128_value_t& readFrom(const int32_t* v) {
-    const float* vv = reinterpret_cast<const float*>(v);
-    storage[0] = vv[0];
-    storage[1] = vv[1];
-    storage[2] = vv[2];
-    storage[3] = vv[3];
+    int_storage[0] = v[0];
+    int_storage[1] = v[1];
+    int_storage[2] = v[2];
+    int_storage[3] = v[3];
+    return *this;
+  }
+  simd128_value_t& readFrom(const double* v) {
+    double_storage[0] = v[0];
+    double_storage[1] = v[1];
     return *this;
   }
   simd128_value_t& readFrom(const simd128_value_t* v) {
@@ -94,17 +102,20 @@ struct simd128_value_t {
     return *this;
   }
   void writeTo(float* v) {
-    v[0] = storage[0];
-    v[1] = storage[1];
-    v[2] = storage[2];
-    v[3] = storage[3];
+    v[0] = float_storage[0];
+    v[1] = float_storage[1];
+    v[2] = float_storage[2];
+    v[3] = float_storage[3];
   }
   void writeTo(int32_t* v) {
-    float* vv = reinterpret_cast<float*>(v);
-    vv[0] = storage[0];
-    vv[1] = storage[1];
-    vv[2] = storage[2];
-    vv[3] = storage[3];
+    v[0] = int_storage[0];
+    v[1] = int_storage[1];
+    v[2] = int_storage[2];
+    v[3] = int_storage[3];
+  }
+  void writeTo(double* v) {
+    v[0] = double_storage[0];
+    v[1] = double_storage[1];
   }
   void writeTo(simd128_value_t* v) {
     *v = *this;
@@ -254,11 +265,6 @@ const uint64_t kMaxUint64 = DART_2PART_UINT64_C(0xFFFFFFFF, FFFFFFFF);
 // integers.
 typedef intptr_t word;
 typedef uintptr_t uword;
-
-#if defined(TARGET_OS_WINDOWS) || defined(TARGET_OS_MACOS)
-// off64_t is not defined on Windows or Mac OS.
-typedef int64_t off64_t;
-#endif
 
 // Byte sizes.
 const int kWordSize = sizeof(word);
@@ -469,13 +475,13 @@ inline D bit_copy(const S& source) {
 #if !defined(TEMP_FAILURE_RETRY)
 // TEMP_FAILURE_RETRY is defined in unistd.h on some platforms. The
 // definition below is copied from Linux and adapted to avoid lint
-// errors (type long int changed to int64_t and do/while split on
+// errors (type long int changed to intptr_t and do/while split on
 // separate lines with body in {}s).
 #define TEMP_FAILURE_RETRY(expression)                                         \
-    ({ int64_t __result;                                                       \
+    ({ intptr_t __result;                                                      \
        do {                                                                    \
-         __result = static_cast<int64_t>(expression);                          \
-       } while (__result == -1L && errno == EINTR);                            \
+         __result = (expression);                                              \
+       } while ((__result == -1L) && (errno == EINTR));                        \
        __result; })
 #endif  // !defined(TEMP_FAILURE_RETRY)
 

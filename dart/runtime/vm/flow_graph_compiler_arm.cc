@@ -9,6 +9,7 @@
 
 #include "vm/ast_printer.h"
 #include "vm/compiler.h"
+#include "vm/cpu.h"
 #include "vm/dart_entry.h"
 #include "vm/deopt_instructions.h"
 #include "vm/il_printer.h"
@@ -26,6 +27,7 @@ DECLARE_FLAG(int, optimization_counter_threshold);
 DECLARE_FLAG(int, reoptimization_counter_threshold);
 DECLARE_FLAG(bool, enable_type_checks);
 DECLARE_FLAG(bool, eliminate_type_checks);
+DECLARE_FLAG(bool, enable_simd_inline);
 
 
 FlowGraphCompiler::~FlowGraphCompiler() {
@@ -39,6 +41,11 @@ FlowGraphCompiler::~FlowGraphCompiler() {
 
 bool FlowGraphCompiler::SupportsUnboxedMints() {
   return false;
+}
+
+
+bool FlowGraphCompiler::SupportsUnboxedFloat32x4() {
+  return TargetCPUFeatures::neon_supported() && FLAG_enable_simd_inline;
 }
 
 
@@ -244,8 +251,8 @@ FlowGraphCompiler::GenerateInstantiatedTypeWithArgumentsTest(
   const intptr_t num_type_args = type_class.NumTypeArguments();
   const intptr_t num_type_params = type_class.NumTypeParameters();
   const intptr_t from_index = num_type_args - num_type_params;
-  const AbstractTypeArguments& type_arguments =
-      AbstractTypeArguments::ZoneHandle(type.arguments());
+  const TypeArguments& type_arguments =
+      TypeArguments::ZoneHandle(type.arguments());
   const bool is_raw_type = type_arguments.IsNull() ||
       type_arguments.IsRaw(from_index, num_type_params);
   // Signature class is an instantiated parameterized type.
@@ -417,24 +424,16 @@ RawSubtypeTestCache* FlowGraphCompiler::GenerateUninstantiatedTypeTest(
     // Load instantiator (or null) and instantiator type arguments on stack.
     __ ldr(R1, Address(SP, 0));  // Get instantiator type arguments.
     // R1: instantiator type arguments.
-    // Check if type argument is dynamic.
+    // Check if type arguments are null, i.e. equivalent to vector of dynamic.
     __ CompareImmediate(R1, reinterpret_cast<intptr_t>(Object::null()));
     __ b(is_instance_lbl, EQ);
-    // Can handle only type arguments that are instances of TypeArguments.
-    // (runtime checks canonicalize type arguments).
-    Label fall_through;
-    __ CompareClassId(R1, kTypeArgumentsCid, R2);
-    __ b(&fall_through, NE);
     __ ldr(R2,
         FieldAddress(R1, TypeArguments::type_at_offset(type_param.index())));
     // R2: concrete type of type.
     // Check if type argument is dynamic.
     __ CompareObject(R2, Type::ZoneHandle(Type::DynamicType()));
     __ b(is_instance_lbl, EQ);
-    __ CompareImmediate(R2, reinterpret_cast<intptr_t>(Object::null()));
-    __ b(is_instance_lbl, EQ);
-    const Type& object_type = Type::ZoneHandle(Type::ObjectType());
-    __ CompareObject(R2, object_type);
+    __ CompareObject(R2, Type::ZoneHandle(Type::ObjectType()));
     __ b(is_instance_lbl, EQ);
 
     // For Smi check quickly against int and num interfaces.
@@ -446,6 +445,7 @@ RawSubtypeTestCache* FlowGraphCompiler::GenerateUninstantiatedTypeTest(
     __ CompareObject(R2, Type::ZoneHandle(Type::Number()));
     __ b(is_instance_lbl, EQ);
     // Smi must be handled in runtime.
+    Label fall_through;
     __ b(&fall_through);
 
     __ Bind(&not_smi);
@@ -503,20 +503,6 @@ RawSubtypeTestCache* FlowGraphCompiler::GenerateInlineInstanceof(
   if (type.IsVoidType()) {
     // A non-null value is returned from a void function, which will result in a
     // type error. A null value is handled prior to executing this inline code.
-    return SubtypeTestCache::null();
-  }
-  if (TypeCheckAsClassEquality(type)) {
-    const intptr_t type_cid = Class::Handle(type.type_class()).id();
-    const Register kInstanceReg = R0;
-    __ tst(kInstanceReg, ShifterOperand(kSmiTagMask));
-    if (type_cid == kSmiCid) {
-      __ b(is_instance_lbl, EQ);
-    } else {
-      __ b(is_not_instance_lbl, EQ);
-      __ CompareClassId(kInstanceReg, type_cid, R3);
-      __ b(is_instance_lbl, EQ);
-    }
-    __ b(is_not_instance_lbl);
     return SubtypeTestCache::null();
   }
   if (type.IsInstantiated()) {
@@ -718,76 +704,10 @@ void FlowGraphCompiler::GenerateAssertAssignable(intptr_t token_pos,
 }
 
 
-void FlowGraphCompiler::EmitTrySyncMove(intptr_t dest_offset,
-                                        Location loc,
-                                        bool* push_emitted) {
-  if (loc.IsConstant()) {
-    if (!*push_emitted) {
-      __ Push(R0);
-      *push_emitted = true;
-    }
-    __ LoadObject(R0, loc.constant());
-    __ StoreToOffset(kWord, R0, FP, dest_offset);
-  } else if (loc.IsRegister()) {
-    if (*push_emitted && (loc.reg() == R0)) {
-      __ ldr(R0, Address(SP, 0));
-      __ StoreToOffset(kWord, R0, FP, dest_offset);
-    } else {
-      __ StoreToOffset(kWord, loc.reg(), FP, dest_offset);
-    }
-  } else {
-    const intptr_t src_offset = loc.ToStackSlotOffset();
-    if (src_offset != dest_offset) {
-      if (!*push_emitted) {
-        __ Push(R0);
-        *push_emitted = true;
-      }
-      __ LoadFromOffset(kWord, R0, FP, src_offset);
-      __ StoreToOffset(kWord, R0, FP, dest_offset);
-    }
-  }
-}
-
-
-void FlowGraphCompiler::EmitTrySync(Instruction* instr, intptr_t try_index) {
-  ASSERT(is_optimizing());
-  Environment* env = instr->env();
-  CatchBlockEntryInstr* catch_block =
-      flow_graph().graph_entry()->GetCatchEntry(try_index);
-  const GrowableArray<Definition*>* idefs = catch_block->initial_definitions();
-  // Parameters.
-  intptr_t i = 0;
-  bool push_emitted = false;
-  const intptr_t num_non_copied_params = flow_graph().num_non_copied_params();
-  const intptr_t param_base =
-      kParamEndSlotFromFp + num_non_copied_params;
-  for (; i < num_non_copied_params; ++i) {
-    if ((*idefs)[i]->IsConstant()) continue;  // Common constants
-    Location loc = env->LocationAt(i);
-    EmitTrySyncMove((param_base - i) * kWordSize, loc, &push_emitted);
-  }
-
-  // Process locals. Skip exception_var and stacktrace_var.
-  intptr_t local_base = kFirstLocalSlotFromFp + num_non_copied_params;
-  intptr_t ex_idx = local_base - catch_block->exception_var().index();
-  intptr_t st_idx = local_base - catch_block->stacktrace_var().index();
-  for (; i < flow_graph().variable_count(); ++i) {
-    if (i == ex_idx || i == st_idx) continue;
-    if ((*idefs)[i]->IsConstant()) continue;
-    Location loc = env->LocationAt(i);
-    EmitTrySyncMove((local_base - i) * kWordSize, loc, &push_emitted);
-    // Update safepoint bitmap to indicate that the target location
-    // now contains a pointer.
-    instr->locs()->stack_bitmap()->Set(i - num_non_copied_params, true);
-  }
-  if (push_emitted) {
-    __ Pop(R0);
-  }
-}
-
-
 void FlowGraphCompiler::EmitInstructionEpilogue(Instruction* instr) {
-  if (is_optimizing()) return;
+  if (is_optimizing()) {
+    return;
+  }
   Definition* defn = instr->AsDefinition();
   if ((defn != NULL) && defn->is_used()) {
     __ Push(defn->locs()->out().reg());
@@ -1037,7 +957,7 @@ void FlowGraphCompiler::GenerateInlinedSetter(intptr_t offset) {
 void FlowGraphCompiler::EmitFrameEntry() {
   const Function& function = parsed_function().function();
   if (CanOptimizeFunction() &&
-      function.is_optimizable() &&
+      function.IsOptimizable() &&
       (!is_optimizing() || may_reoptimize())) {
     const Register function_reg = R6;
 
@@ -1461,9 +1381,11 @@ void FlowGraphCompiler::EmitEqualityRegConstCompare(Register reg,
       __ BranchLinkPatchable(
           &StubCode::UnoptimizedIdenticalWithNumberCheckLabel());
     }
-    AddCurrentDescriptor(PcDescriptors::kRuntimeCall,
-                         Isolate::kNoDeoptId,
-                         token_pos);
+    if (token_pos != Scanner::kNoSourcePos) {
+      AddCurrentDescriptor(PcDescriptors::kRuntimeCall,
+                           Isolate::kNoDeoptId,
+                           token_pos);
+    }
     __ Drop(1);  // Discard constant.
     __ Pop(reg);  // Restore 'reg'.
     return;
@@ -1487,9 +1409,11 @@ void FlowGraphCompiler::EmitEqualityRegRegCompare(Register left,
       __ BranchLinkPatchable(
           &StubCode::UnoptimizedIdenticalWithNumberCheckLabel());
     }
-    AddCurrentDescriptor(PcDescriptors::kRuntimeCall,
-                         Isolate::kNoDeoptId,
-                         token_pos);
+    if (token_pos != Scanner::kNoSourcePos) {
+      AddCurrentDescriptor(PcDescriptors::kRuntimeCall,
+                           Isolate::kNoDeoptId,
+                           token_pos);
+    }
     // Stub returns result in flags (result of a cmpl, we need ZF computed).
     __ Pop(right);
     __ Pop(left);

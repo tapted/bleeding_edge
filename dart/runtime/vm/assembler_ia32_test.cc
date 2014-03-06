@@ -6,6 +6,7 @@
 #if defined(TARGET_ARCH_IA32)
 
 #include "vm/assembler.h"
+#include "vm/cpu.h"
 #include "vm/os.h"
 #include "vm/unit_test.h"
 #include "vm/virtual_memory.h"
@@ -1499,6 +1500,300 @@ ASSEMBLER_TEST_RUN(PackedUnpackHighPair, test) {
 }
 
 
+ASSEMBLER_TEST_GENERATE(PackedDoubleAdd, assembler) {
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant0 = { 1.0, 2.0 };
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant1 = { 3.0, 4.0 };
+  __ movups(XMM0, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ movups(XMM1, Address::Absolute(reinterpret_cast<uword>(&constant1)));
+  __ addpd(XMM0, XMM1);
+  __ pushl(EAX);
+  __ pushl(EAX);
+  __ movsd(Address(ESP, 0), XMM0);
+  __ fldl(Address(ESP, 0));
+  __ popl(EAX);
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedDoubleAdd, test) {
+  typedef double (*PackedDoubleAdd)();
+  double res = reinterpret_cast<PackedDoubleAdd>(test->entry())();
+  EXPECT_FLOAT_EQ(4.0, res, 0.000001f);
+}
+
+
+ASSEMBLER_TEST_GENERATE(PackedDoubleSub, assembler) {
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant0 = { 1.0, 2.0 };
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant1 = { 3.0, 4.0 };
+  __ movups(XMM0, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ movups(XMM1, Address::Absolute(reinterpret_cast<uword>(&constant1)));
+  __ subpd(XMM0, XMM1);
+  __ pushl(EAX);
+  __ pushl(EAX);
+  __ movsd(Address(ESP, 0), XMM0);
+  __ fldl(Address(ESP, 0));
+  __ popl(EAX);
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedDoubleSub, test) {
+  typedef double (*PackedDoubleSub)();
+  double res = reinterpret_cast<PackedDoubleSub>(test->entry())();
+  EXPECT_FLOAT_EQ(-2.0, res, 0.000001f);
+}
+
+
+ASSEMBLER_TEST_GENERATE(PackedDoubleNegate, assembler) {
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant0 = { 1.0, 2.0 };
+  __ movups(XMM0, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ negatepd(XMM0);
+  __ pushl(EAX);
+  __ pushl(EAX);
+  __ movsd(Address(ESP, 0), XMM0);
+  __ fldl(Address(ESP, 0));
+  __ popl(EAX);
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedDoubleNegate, test) {
+  typedef double (*PackedDoubleNegate)();
+  double res = reinterpret_cast<PackedDoubleNegate>(test->entry())();
+  EXPECT_FLOAT_EQ(-1.0, res, 0.000001f);
+}
+
+
+ASSEMBLER_TEST_GENERATE(PackedDoubleAbsolute, assembler) {
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant0 = { -1.0, 2.0 };
+  __ movups(XMM0, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ abspd(XMM0);
+  __ pushl(EAX);
+  __ pushl(EAX);
+  __ movsd(Address(ESP, 0), XMM0);
+  __ fldl(Address(ESP, 0));
+  __ popl(EAX);
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedDoubleAbsolute, test) {
+  typedef double (*PackedDoubleAbsolute)();
+  double res = reinterpret_cast<PackedDoubleAbsolute>(test->entry())();
+  EXPECT_FLOAT_EQ(1.0, res, 0.000001f);
+}
+
+
+ASSEMBLER_TEST_GENERATE(PackedDoubleMul, assembler) {
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant0 = { 3.0, 2.0 };
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant1 = { 3.0, 4.0 };
+  __ movups(XMM0, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ movups(XMM1, Address::Absolute(reinterpret_cast<uword>(&constant1)));
+  __ mulpd(XMM0, XMM1);
+  __ pushl(EAX);
+  __ pushl(EAX);
+  __ movsd(Address(ESP, 0), XMM0);
+  __ fldl(Address(ESP, 0));
+  __ popl(EAX);
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedDoubleMul, test) {
+  typedef double (*PackedDoubleMul)();
+  double res = reinterpret_cast<PackedDoubleMul>(test->entry())();
+  EXPECT_FLOAT_EQ(9.0, res, 0.000001f);
+}
+
+
+ASSEMBLER_TEST_GENERATE(PackedDoubleDiv, assembler) {
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant0 = { 9.0, 2.0 };
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant1 = { 3.0, 4.0 };
+  __ movups(XMM0, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ movups(XMM1, Address::Absolute(reinterpret_cast<uword>(&constant1)));
+  __ divpd(XMM0, XMM1);
+  __ pushl(EAX);
+  __ pushl(EAX);
+  __ movsd(Address(ESP, 0), XMM0);
+  __ fldl(Address(ESP, 0));
+  __ popl(EAX);
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedDoubleDiv, test) {
+  typedef double (*PackedDoubleDiv)();
+  double res = reinterpret_cast<PackedDoubleDiv>(test->entry())();
+  EXPECT_FLOAT_EQ(3.0, res, 0.000001f);
+}
+
+
+ASSEMBLER_TEST_GENERATE(PackedDoubleSqrt, assembler) {
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant0 = { 16.0, 2.0 };
+  __ movups(XMM0, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ sqrtpd(XMM0);
+  __ pushl(EAX);
+  __ pushl(EAX);
+  __ movsd(Address(ESP, 0), XMM0);
+  __ fldl(Address(ESP, 0));
+  __ popl(EAX);
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedDoubleSqrt, test) {
+  typedef double (*PackedDoubleSqrt)();
+  double res = reinterpret_cast<PackedDoubleSqrt>(test->entry())();
+  EXPECT_FLOAT_EQ(4.0, res, 0.000001f);
+}
+
+
+ASSEMBLER_TEST_GENERATE(PackedDoubleMin, assembler) {
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant0 = { 9.0, 2.0 };
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant1 = { 3.0, 4.0 };
+  __ movups(XMM0, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ movups(XMM1, Address::Absolute(reinterpret_cast<uword>(&constant1)));
+  __ minpd(XMM0, XMM1);
+  __ pushl(EAX);
+  __ pushl(EAX);
+  __ movsd(Address(ESP, 0), XMM0);
+  __ fldl(Address(ESP, 0));
+  __ popl(EAX);
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedDoubleMin, test) {
+  typedef double (*PackedDoubleMin)();
+  double res = reinterpret_cast<PackedDoubleMin>(test->entry())();
+  EXPECT_FLOAT_EQ(3.0, res, 0.000001f);
+}
+
+
+ASSEMBLER_TEST_GENERATE(PackedDoubleMax, assembler) {
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant0 = { 9.0, 2.0 };
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant1 = { 3.0, 4.0 };
+  __ movups(XMM0, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ movups(XMM1, Address::Absolute(reinterpret_cast<uword>(&constant1)));
+  __ maxpd(XMM0, XMM1);
+  __ pushl(EAX);
+  __ pushl(EAX);
+  __ movsd(Address(ESP, 0), XMM0);
+  __ fldl(Address(ESP, 0));
+  __ popl(EAX);
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedDoubleMax, test) {
+  typedef double (*PackedDoubleMax)();
+  double res = reinterpret_cast<PackedDoubleMax>(test->entry())();
+  EXPECT_FLOAT_EQ(9.0, res, 0.000001f);
+}
+
+
+ASSEMBLER_TEST_GENERATE(PackedDoubleToSingle, assembler) {
+  static const struct ALIGN16 {
+    double a;
+    double b;
+  } constant0 = { 9.0, 2.0 };
+  __ movups(XMM1, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ cvtpd2ps(XMM0, XMM1);
+  __ pushl(EAX);
+  __ movss(Address(ESP, 0), XMM0);
+  __ flds(Address(ESP, 0));
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedDoubleToSingle, test) {
+  typedef float (*PackedDoubleToSingle)();
+  float res = reinterpret_cast<PackedDoubleToSingle>(test->entry())();
+  EXPECT_FLOAT_EQ(9.0f, res, 0.000001f);
+}
+
+
+ASSEMBLER_TEST_GENERATE(PackedSingleToDouble, assembler) {
+  static const struct ALIGN16 {
+    float a;
+    float b;
+    float c;
+    float d;
+  } constant0 = { 9.0f, 2.0f, 3.0f, 4.0f };
+  __ movups(XMM1, Address::Absolute(reinterpret_cast<uword>(&constant0)));
+  __ cvtps2pd(XMM0, XMM1);
+  __ pushl(EAX);
+  __ pushl(EAX);
+  __ movsd(Address(ESP, 0), XMM0);
+  __ fldl(Address(ESP, 0));
+  __ popl(EAX);
+  __ popl(EAX);
+  __ ret();
+}
+
+
+ASSEMBLER_TEST_RUN(PackedSingleToDouble, test) {
+  typedef double (*PackedSingleToDouble)();
+  double res = reinterpret_cast<PackedSingleToDouble>(test->entry())();
+  EXPECT_FLOAT_EQ(9.0f, res, 0.000001f);
+}
+
+
 ASSEMBLER_TEST_GENERATE(SingleFPOperationsStack, assembler) {
   __ movl(EAX, Immediate(bit_cast<int32_t, float>(12.3f)));
   __ movd(XMM0, EAX);
@@ -2514,7 +2809,7 @@ ASSEMBLER_TEST_RUN(Orpd, test) {
 
 
 ASSEMBLER_TEST_GENERATE(Pextrd0, assembler) {
-  if (CPUFeatures::sse4_1_supported()) {
+  if (TargetCPUFeatures::sse4_1_supported()) {
     __ movsd(XMM0, Address(ESP, kWordSize));
     __ pextrd(EAX, XMM0, Immediate(0));
   }
@@ -2523,7 +2818,7 @@ ASSEMBLER_TEST_GENERATE(Pextrd0, assembler) {
 
 
 ASSEMBLER_TEST_RUN(Pextrd0, test) {
-  if (CPUFeatures::sse4_1_supported()) {
+  if (TargetCPUFeatures::sse4_1_supported()) {
     typedef int32_t (*PextrdCode0)(double d);
     int32_t res = reinterpret_cast<PextrdCode0>(test->entry())(123456789);
     EXPECT_EQ(0x54000000, res);
@@ -2532,7 +2827,7 @@ ASSEMBLER_TEST_RUN(Pextrd0, test) {
 
 
 ASSEMBLER_TEST_GENERATE(Pextrd1, assembler) {
-  if (CPUFeatures::sse4_1_supported()) {
+  if (TargetCPUFeatures::sse4_1_supported()) {
     __ movsd(XMM0, Address(ESP, kWordSize));
     __ pextrd(EAX, XMM0, Immediate(1));
   }
@@ -2541,7 +2836,7 @@ ASSEMBLER_TEST_GENERATE(Pextrd1, assembler) {
 
 
 ASSEMBLER_TEST_RUN(Pextrd1, test) {
-  if (CPUFeatures::sse4_1_supported()) {
+  if (TargetCPUFeatures::sse4_1_supported()) {
     typedef int32_t (*PextrdCode1)(double d);
     int32_t res = reinterpret_cast<PextrdCode1>(test->entry())(123456789);
     EXPECT_EQ(0x419d6f34, res);
@@ -2550,7 +2845,7 @@ ASSEMBLER_TEST_RUN(Pextrd1, test) {
 
 
 ASSEMBLER_TEST_GENERATE(Pmovsxdq, assembler) {
-  if (CPUFeatures::sse4_1_supported()) {
+  if (TargetCPUFeatures::sse4_1_supported()) {
     __ movsd(XMM0, Address(ESP, kWordSize));
     __ pmovsxdq(XMM0, XMM0);
     __ pextrd(EAX, XMM0, Immediate(1));
@@ -2560,7 +2855,7 @@ ASSEMBLER_TEST_GENERATE(Pmovsxdq, assembler) {
 
 
 ASSEMBLER_TEST_RUN(Pmovsxdq, test) {
-  if (CPUFeatures::sse4_1_supported()) {
+  if (TargetCPUFeatures::sse4_1_supported()) {
     typedef int32_t (*PmovsxdqCode)(double d);
     int32_t res = reinterpret_cast<PmovsxdqCode>(test->entry())(123456789);
     EXPECT_EQ(0, res);
@@ -2569,7 +2864,7 @@ ASSEMBLER_TEST_RUN(Pmovsxdq, test) {
 
 
 ASSEMBLER_TEST_GENERATE(Pcmpeqq, assembler) {
-  if (CPUFeatures::sse4_1_supported()) {
+  if (TargetCPUFeatures::sse4_1_supported()) {
     __ movsd(XMM0, Address(ESP, kWordSize));
     __ xorpd(XMM1, XMM1);
     __ pcmpeqq(XMM0, XMM1);
@@ -2580,7 +2875,7 @@ ASSEMBLER_TEST_GENERATE(Pcmpeqq, assembler) {
 
 
 ASSEMBLER_TEST_RUN(Pcmpeqq, test) {
-  if (CPUFeatures::sse4_1_supported()) {
+  if (TargetCPUFeatures::sse4_1_supported()) {
     typedef int32_t (*PcmpeqqCode)(double d);
     int32_t res = reinterpret_cast<PcmpeqqCode>(test->entry())(0);
     EXPECT_EQ(-1, res);

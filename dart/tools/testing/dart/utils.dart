@@ -10,6 +10,15 @@ import 'dart:convert';
 
 part 'legacy_path.dart';
 
+// This is the maximum time we expect stdout/stderr of subprocesses to deliver
+// data after we've got the exitCode.
+const Duration MAX_STDIO_DELAY = const Duration(seconds: 30);
+
+String MAX_STDIO_DELAY_PASSED_MESSAGE =
+"""Not waiting for stdout/stderr from subprocess anymore 
+($MAX_STDIO_DELAY passed). Please note that this could be an indicator 
+that there is a hanging process which we were unable to kill.""";
+
 class DebugLogger {
   static IOSink _sink;
 
@@ -178,7 +187,7 @@ class Locations {
     if (location != null && location != '') {
       return location;
     }
-    final browserLocations = const {
+    var browserLocations = {
         'firefox': const {
           'windows': 'C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe',
           'linux': 'firefox',
@@ -205,6 +214,7 @@ class Locations {
         'ie10': const {
           'windows': 'C:\\Program Files\\Internet Explorer\\iexplore.exe'
         }};
+    browserLocations['ff'] = browserLocations['firefox'];
 
     assert(browserLocations[browserName] != null);
     location = browserLocations[browserName][Platform.operatingSystem];
@@ -232,7 +242,50 @@ class HashCodeBuilder {
     _value = ((_value * 31) ^ object.hashCode)  & 0x3FFFFFFF;
   }
 
+  void addJson(Object object) {
+    if (object == null || object is num || object is String) {
+      add(object);
+    } else if (object is List) {
+      object.forEach(addJson);
+    } else if (object is Map) {
+      object.forEach((k, v) { addJson(k); addJson(value); });
+    } else {
+      throw new Exception("Can't build hashcode for non json-like object "
+          "(${object.runtimeType})");
+    }
+  }
+
   int get value => _value;
+}
+
+bool deepJsonCompare(Object a, Object b) {
+  if (a == null || a is num || a is String) {
+    return a == b;
+  } else if (a is List) {
+    if (b is List) {
+      if (a.length != b.length) return false;
+
+      for (int i = 0; i < a.length; i++) {
+        if (!deepJsonCompare(a[i], b[i])) return false;
+      }
+      return true;
+    }
+    return false;
+  } else if (a is Map) {
+    if (b is Map) {
+      if (a.length != b.length) return false;
+
+      for (var key in a.keys) {
+        if (!b.containsKey(key)) return false;
+        if (!deepJsonCompare(a[key], b[key])) return false;
+      }
+      return true;
+    }
+    return false;
+  } else {
+    throw new Exception("Can't compare two non json-like objects "
+        "(a: ${a.runtimeType}, b: ${b.runtimeType})");
+  }
 }
 
 class UniqueObject {

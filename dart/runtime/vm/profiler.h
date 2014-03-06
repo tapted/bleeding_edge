@@ -16,7 +16,9 @@ namespace dart {
 // Forward declarations.
 class JSONArray;
 class JSONStream;
-struct Sample;
+class ProfilerCodeRegionTable;
+class Sample;
+class SampleBuffer;
 
 // Profiler
 class Profiler : public AllStatic {
@@ -24,16 +26,19 @@ class Profiler : public AllStatic {
   static void InitOnce();
   static void Shutdown();
 
+  static void SetSampleDepth(intptr_t depth);
+  static void SetSamplePeriod(intptr_t period);
+
   static void InitProfilingForIsolate(Isolate* isolate,
-                                      bool shared_buffer = false);
+                                      bool shared_buffer = true);
   static void ShutdownProfilingForIsolate(Isolate* isolate);
 
   static void BeginExecution(Isolate* isolate);
   static void EndExecution(Isolate* isolate);
 
-  static void PrintToJSONStream(Isolate* isolate, JSONStream* stream);
-
-  static void WriteTracing(Isolate* isolate);
+  static void PrintToJSONStream(Isolate* isolate, JSONStream* stream,
+                                bool full);
+  static void WriteProfile(Isolate* isolate);
 
   static SampleBuffer* sample_buffer() {
     return sample_buffer_;
@@ -42,12 +47,6 @@ class Profiler : public AllStatic {
  private:
   static bool initialized_;
   static Monitor* monitor_;
-
-  static void WriteTracingSample(Isolate* isolate, intptr_t pid,
-                                 Sample* sample, JSONArray& events);
-
-  static void RecordTickInterruptCallback(const InterruptedThreadState& state,
-                                          void* data);
 
   static void RecordSampleInterruptCallback(const InterruptedThreadState& state,
                                             void* data);
@@ -74,45 +73,131 @@ class IsolateProfilerData {
 };
 
 
-// Profile sample.
-struct Sample {
-  static const char* kLookupSymbol;
-  static const char* kNoSymbol;
-  static const char* kNoFrame;
-  static const intptr_t kNumStackFrames = 6;
-  enum SampleType {
-    kIsolateStart,
-    kIsolateStop,
-    kIsolateSample,
-  };
-  int64_t timestamp;
-  ThreadId tid;
-  Isolate* isolate;
-  uintptr_t pcs[kNumStackFrames];
-  SampleType type;
-  uint16_t vm_tags;
-  uint16_t runtime_tags;
+class SampleVisitor {
+ public:
+  explicit SampleVisitor(Isolate* isolate) : isolate_(isolate), visited_(0) { }
+  virtual ~SampleVisitor() {}
 
-  void Init(SampleType type, Isolate* isolate, int64_t timestamp, ThreadId tid);
+  virtual void VisitSample(Sample* sample) = 0;
+
+  intptr_t visited() const {
+    return visited_;
+  }
+
+  void IncrementVisited() {
+    visited_++;
+  }
+
+  Isolate* isolate() const {
+    return isolate_;
+  }
+
+ private:
+  Isolate* isolate_;
+  intptr_t visited_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(SampleVisitor);
+};
+
+// The maximum number of stack frames a sample can hold.
+#define kSampleFramesSize 256
+
+// Each Sample holds a stack trace from an isolate.
+class Sample {
+ public:
+  void Init(Isolate* isolate, int64_t timestamp, ThreadId tid) {
+    timestamp_ = timestamp;
+    tid_ = tid;
+    isolate_ = isolate;
+    for (intptr_t i = 0; i < kSampleFramesSize; i++) {
+      pcs_[i] = 0;
+    }
+  }
+
+  // Isolate sample was taken from.
+  Isolate* isolate() const {
+    return isolate_;
+  }
+
+  // Timestamp sample was taken at.
+  int64_t timestamp() const {
+    return timestamp_;
+  }
+
+  // Get stack trace entry.
+  uword At(intptr_t i) const {
+    ASSERT(i >= 0);
+    ASSERT(i < kSampleFramesSize);
+    return pcs_[i];
+  }
+
+  // Set stack trace entry.
+  void SetAt(intptr_t i, uword pc) {
+    ASSERT(i >= 0);
+    ASSERT(i < kSampleFramesSize);
+    pcs_[i] = pc;
+  }
+
+ private:
+  int64_t timestamp_;
+  ThreadId tid_;
+  Isolate* isolate_;
+  uword pcs_[kSampleFramesSize];
 };
 
 
-// Ring buffer of samples.
+// Ring buffer of Samples that is (usually) shared by many isolates.
 class SampleBuffer {
  public:
   static const intptr_t kDefaultBufferCapacity = 120000;  // 2 minutes @ 1000hz.
 
-  explicit SampleBuffer(intptr_t capacity = kDefaultBufferCapacity);
-  ~SampleBuffer();
+  explicit SampleBuffer(intptr_t capacity = kDefaultBufferCapacity) {
+    samples_ = reinterpret_cast<Sample*>(calloc(capacity, sizeof(*samples_)));
+    capacity_ = capacity;
+    cursor_ = 0;
+  }
+
+  ~SampleBuffer() {
+    if (samples_ != NULL) {
+      free(samples_);
+      samples_ = NULL;
+      cursor_ = 0;
+      capacity_ = 0;
+    }
+  }
 
   intptr_t capacity() const { return capacity_; }
 
   Sample* ReserveSample();
 
-  Sample* GetSample(intptr_t i) const {
-    ASSERT(i >= 0);
-    ASSERT(i < capacity_);
-    return &samples_[i];
+  Sample* At(intptr_t idx) const {
+    ASSERT(idx >= 0);
+    ASSERT(idx < capacity_);
+    return &samples_[idx];
+  }
+
+  void VisitSamples(SampleVisitor* visitor) {
+    ASSERT(visitor != NULL);
+    Sample sample;
+    const intptr_t length = capacity();
+    for (intptr_t i = 0; i < length; i++) {
+      // Copy the sample.
+      sample = *At(i);
+      if (sample.isolate() != visitor->isolate()) {
+        // Another isolate.
+        continue;
+      }
+      if (sample.timestamp() == 0) {
+        // Empty.
+        continue;
+      }
+      if (sample.At(0) == 0) {
+        // No frames.
+        continue;
+      }
+      visitor->IncrementVisited();
+      visitor->VisitSample(&sample);
+    }
   }
 
  private:
@@ -121,35 +206,6 @@ class SampleBuffer {
   uintptr_t cursor_;
 
   DISALLOW_COPY_AND_ASSIGN(SampleBuffer);
-};
-
-
-class ProfilerSampleStackWalker : public ValueObject {
- public:
-  ProfilerSampleStackWalker(Sample* sample,
-                            uintptr_t stack_lower,
-                            uintptr_t stack_upper,
-                            uintptr_t pc,
-                            uintptr_t fp,
-                            uintptr_t sp);
-
-  int walk();
-
- private:
-  uword* CallerPC(uword* fp);
-  uword* CallerFP(uword* fp);
-
-  bool ValidInstructionPointer(uword* pc);
-
-  bool ValidFramePointer(uword* fp);
-
-  Sample* sample_;
-  const uintptr_t stack_lower_;
-  const uintptr_t stack_upper_;
-  const uintptr_t original_pc_;
-  const uintptr_t original_fp_;
-  const uintptr_t original_sp_;
-  uintptr_t lower_bound_;
 };
 
 

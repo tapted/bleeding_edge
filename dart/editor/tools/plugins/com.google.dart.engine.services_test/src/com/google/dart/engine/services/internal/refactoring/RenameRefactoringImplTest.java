@@ -15,78 +15,29 @@
 package com.google.dart.engine.services.internal.refactoring;
 
 import com.google.dart.engine.AnalysisEngine;
-import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.ast.SimpleIdentifier;
 import com.google.dart.engine.context.AnalysisContext;
-import com.google.dart.engine.context.ChangeSet;
 import com.google.dart.engine.element.Element;
-import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.PrefixElement;
 import com.google.dart.engine.internal.index.IndexContributor;
 import com.google.dart.engine.services.change.Change;
 import com.google.dart.engine.services.refactoring.RefactoringFactory;
 import com.google.dart.engine.services.refactoring.RenameRefactoring;
-import com.google.dart.engine.services.status.RefactoringStatusSeverity;
 import com.google.dart.engine.source.DartUriResolver;
-import com.google.dart.engine.source.FileBasedSource;
-import com.google.dart.engine.source.Source;
 import com.google.dart.engine.source.SourceFactory;
-import com.google.dart.engine.utilities.io.FileUtilities2;
 
 /**
  * Abstract test for testing {@link RenameRefactoring}s.
  */
 public abstract class RenameRefactoringImplTest extends RefactoringImplTest {
-  /**
-   * Helper for creating and analyzing separate {@link AnalysisContext}s.
-   */
-  protected final class ContextHelper {
-    public final AnalysisContext context;
-    public final SourceFactory sourceFactory;
-
-    public ContextHelper() {
-      context = newAnalysisContext();
-      sourceFactory = context.getSourceFactory();
-    }
-
-    public Source addSource(String path, String code) {
-      Source source = new FileBasedSource(
-          sourceFactory.getContentCache(),
-          FileUtilities2.createFile(path));
-      // add source
-      {
-        sourceFactory.setContents(source, "");
-        ChangeSet changeSet = new ChangeSet();
-        changeSet.added(source);
-        context.applyChanges(changeSet);
-      }
-      // update source
-      context.setContents(source, code);
-      return source;
-    }
-
-    public CompilationUnit analyzeSingleUnitLibrary(Source source) throws Exception {
-      LibraryElement libraryElement = context.computeLibraryElement(source);
-      return context.resolveCompilationUnit(source, libraryElement);
-    }
-  }
-
   protected RenameRefactoring refactoring;
-
   protected Change refactoringChange;
 
   /**
    * Asserts that {@link #refactoring} status is OK.
    */
   protected final void assertRefactoringStatusOK() throws Exception {
-    assertRefactoringStatus(
-        refactoring.checkInitialConditions(pm),
-        RefactoringStatusSeverity.OK,
-        null);
-    assertRefactoringStatus(
-        refactoring.checkFinalConditions(pm),
-        RefactoringStatusSeverity.OK,
-        null);
+    assertRefactoringStatusOK(refactoring);
   }
 
   /**

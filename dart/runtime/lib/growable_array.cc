@@ -13,8 +13,8 @@
 namespace dart {
 
 DEFINE_NATIVE_ENTRY(GrowableList_allocate, 2) {
-  const AbstractTypeArguments& type_arguments =
-      AbstractTypeArguments::CheckedHandle(arguments->NativeArgAt(0));
+  const TypeArguments& type_arguments =
+      TypeArguments::CheckedHandle(arguments->NativeArgAt(0));
   GET_NON_NULL_NATIVE_ARGUMENT(Array, data, arguments->NativeArgAt(1));
   if ((data.Length() <= 0)) {
     const Integer& index = Integer::Handle(Integer::New(data.Length()));
@@ -89,6 +89,13 @@ DEFINE_NATIVE_ENTRY(GrowableList_setData, 2) {
   ASSERT(data.Length() > 0);
   array.SetData(data);
   return Object::null();
+}
+
+
+DEFINE_NATIVE_ENTRY(Internal_makeListFixedLength, 1) {
+  GET_NON_NULL_NATIVE_ARGUMENT(GrowableObjectArray, array,
+                               arguments->NativeArgAt(0));
+  return Array::MakeArray(array);
 }
 
 }  // namespace dart

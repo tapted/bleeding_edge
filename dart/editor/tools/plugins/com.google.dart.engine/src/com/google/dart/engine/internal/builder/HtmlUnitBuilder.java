@@ -13,15 +13,12 @@
  */
 package com.google.dart.engine.internal.builder;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.dart.engine.AnalysisEngine;
-import com.google.dart.engine.ast.Expression;
 import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.element.HtmlScriptElement;
 import com.google.dart.engine.error.AnalysisError;
 import com.google.dart.engine.error.ErrorCode;
 import com.google.dart.engine.error.HtmlWarningCode;
-import com.google.dart.engine.html.ast.EmbeddedExpression;
 import com.google.dart.engine.html.ast.HtmlScriptTagNode;
 import com.google.dart.engine.html.ast.HtmlUnit;
 import com.google.dart.engine.html.ast.XmlAttributeNode;
@@ -38,7 +35,6 @@ import com.google.dart.engine.internal.resolver.Library;
 import com.google.dart.engine.internal.resolver.LibraryResolver;
 import com.google.dart.engine.source.Source;
 import com.google.dart.engine.utilities.io.UriUtilities;
-import com.google.dart.engine.utilities.source.LineInfo;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -66,12 +62,6 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
    * The modification time of the source for which an element is being built.
    */
   private long modificationStamp;
-
-  /**
-   * The line information associated with the source for which an element is being built, or
-   * {@code null} if we are not building an element.
-   */
-  private LineInfo lineInfo;
 
   /**
    * The HTML element being built.
@@ -107,18 +97,6 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
    * Build the HTML element for the given source.
    * 
    * @param source the source describing the compilation unit
-   * @return the HTML element that was built
-   * @throws AnalysisException if the analysis could not be performed
-   */
-  @VisibleForTesting
-  public HtmlElementImpl buildHtmlElement(Source source) throws AnalysisException {
-    return buildHtmlElement(source, source.getModificationStamp(), context.parseHtmlUnit(source));
-  }
-
-  /**
-   * Build the HTML element for the given source.
-   * 
-   * @param source the source describing the compilation unit
    * @param modificationStamp the modification time of the source for which an element is being
    *          built
    * @param unit the AST structure representing the HTML
@@ -127,7 +105,6 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
   public HtmlElementImpl buildHtmlElement(Source source, long modificationStamp, HtmlUnit unit)
       throws AnalysisException {
     this.modificationStamp = modificationStamp;
-    lineInfo = context.computeLineInfo(source);
     HtmlElementImpl result = new HtmlElementImpl(context, source.getShortName());
     result.setSource(source);
     htmlElement = result;
@@ -179,7 +156,9 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
           errorListener.addAll(resolver.getErrorListener());
         } catch (AnalysisException exception) {
           //TODO (danrubel): Handle or forward the exception
-          AnalysisEngine.getInstance().getLogger().logError(exception);
+          AnalysisEngine.getInstance().getLogger().logError(
+              "Could not resolve script tag",
+              exception);
         }
         node.setScriptElement(script);
         scripts.add(script);
@@ -195,7 +174,7 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
                 htmlSource,
                 scriptSourcePath);
             script.setScriptSource(scriptSource);
-            if (scriptSource == null || !scriptSource.exists()) {
+            if (!context.exists(scriptSource)) {
               reportValueError(
                   HtmlWarningCode.URI_DOES_NOT_EXIST,
                   scriptAttribute,
@@ -230,9 +209,6 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
 
   @Override
   public Void visitXmlAttributeNode(XmlAttributeNode node) {
-    for (EmbeddedExpression expression : node.getExpressions()) {
-      resolveExpression(expression.getExpression());
-    }
     return null;
   }
 
@@ -243,9 +219,6 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
     }
     parentNodes.add(node);
     try {
-      for (EmbeddedExpression expression : node.getExpressions()) {
-        resolveExpression(expression.getExpression());
-      }
       node.visitChildren(this);
     } finally {
       parentNodes.remove(node);
@@ -261,7 +234,7 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
    */
   private XmlAttributeNode getScriptSourcePath(XmlTagNode node) {
     for (XmlAttributeNode attribute : node.getAttributes()) {
-      if (attribute.getName().getLexeme().equals(SRC)) {
+      if (attribute.getName().equals(SRC)) {
         return attribute;
       }
     }
@@ -283,7 +256,7 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
       } else {
         builder.append(", ");
       }
-      String tagName = pathNode.getTag().getLexeme();
+      String tagName = pathNode.getTag();
       if (pathNode == node) {
         builder.append("*");
         builder.append(tagName);
@@ -305,7 +278,8 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
    * @param length the number of characters to be highlighted
    * @param arguments the arguments used to compose the error message
    */
-  private void reportError(ErrorCode errorCode, int offset, int length, Object... arguments) {
+  private void reportErrorForOffset(ErrorCode errorCode, int offset, int length,
+      Object... arguments) {
     errorListener.onError(new AnalysisError(
         htmlElement.getSource(),
         offset,
@@ -325,13 +299,8 @@ public class HtmlUnitBuilder implements XmlVisitor<Void> {
    */
   private void reportValueError(ErrorCode errorCode, XmlAttributeNode attribute,
       Object... arguments) {
-    int offset = attribute.getValue().getOffset() + 1;
-    int length = attribute.getValue().getLength() - 2;
-    reportError(errorCode, offset, length, arguments);
-  }
-
-  private void resolveExpression(Expression expression) {
-    // TODO(brianwilkerson) Implement this. We need to figure out the right context in which to
-    // resolve the expression.
+    int offset = attribute.getValueToken().getOffset() + 1;
+    int length = attribute.getValueToken().getLength() - 2;
+    reportErrorForOffset(errorCode, offset, length, arguments);
   }
 }

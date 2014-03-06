@@ -299,8 +299,8 @@ class ArrayNode : public AstNode {
     ASSERT(!type_.IsNull());
     ASSERT(type_.IsFinalized());
     // Type may be uninstantiated when creating a generic list literal.
-    ASSERT((type_.arguments() == AbstractTypeArguments::null()) ||
-           ((AbstractTypeArguments::Handle(type_.arguments()).Length() == 1)));
+    ASSERT((type_.arguments() == TypeArguments::null()) ||
+           ((TypeArguments::Handle(type_.arguments()).Length() == 1)));
   }
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ArrayNode);
@@ -509,11 +509,15 @@ class ReturnNode : public AstNode {
   explicit ReturnNode(intptr_t token_pos)
       : AstNode(token_pos),
         value_(new LiteralNode(token_pos, Instance::ZoneHandle())),
-        inlined_finally_list_() { }
+        inlined_finally_list_(),
+        saved_return_value_var_(NULL) { }
   // Return from a non-void function.
   ReturnNode(intptr_t token_pos,
              AstNode* value)
-      : AstNode(token_pos), value_(value), inlined_finally_list_() {
+      : AstNode(token_pos),
+        value_(value),
+        inlined_finally_list_(),
+        saved_return_value_var_(NULL) {
     ASSERT(value_ != NULL);
   }
 
@@ -529,6 +533,13 @@ class ReturnNode : public AstNode {
     inlined_finally_list_.Add(finally_node);
   }
 
+  LocalVariable* saved_return_value_var() const {
+    return saved_return_value_var_;
+  }
+  void set_saved_return_value_var(LocalVariable* var) {
+    saved_return_value_var_ = var;
+  }
+
   virtual void VisitChildren(AstNodeVisitor* visitor) const {
     if (value() != NULL) {
       value()->Visit(visitor);
@@ -540,6 +551,7 @@ class ReturnNode : public AstNode {
  private:
   AstNode* value_;
   GrowableArray<InlinedFinallyNode*> inlined_finally_list_;
+  LocalVariable* saved_return_value_var_;
 
   DISALLOW_COPY_AND_ASSIGN(ReturnNode);
 };
@@ -1007,6 +1019,7 @@ class JumpNode : public AstNode {
   Token::Kind kind_;
   SourceLabel* label_;
   GrowableArray<InlinedFinallyNode*> inlined_finally_list_;
+
   DISALLOW_IMPLICIT_CONSTRUCTORS(JumpNode);
 };
 
@@ -1538,7 +1551,7 @@ class ClosureCallNode : public AstNode {
 class ConstructorCallNode : public AstNode {
  public:
   ConstructorCallNode(intptr_t token_pos,
-                      const AbstractTypeArguments& type_arguments,
+                      const TypeArguments& type_arguments,
                       const Function& constructor,
                       ArgumentListNode* arguments)
       : AstNode(token_pos),
@@ -1550,7 +1563,7 @@ class ConstructorCallNode : public AstNode {
     ASSERT(arguments_ != NULL);
   }
 
-  const AbstractTypeArguments& type_arguments() const {
+  const TypeArguments& type_arguments() const {
     return type_arguments_;
   }
   const Function& constructor() const { return constructor_; }
@@ -1563,7 +1576,7 @@ class ConstructorCallNode : public AstNode {
   DECLARE_COMMON_NODE_FUNCTIONS(ConstructorCallNode);
 
  private:
-  const AbstractTypeArguments& type_arguments_;
+  const TypeArguments& type_arguments_;
   const Function& constructor_;
   ArgumentListNode* arguments_;
 

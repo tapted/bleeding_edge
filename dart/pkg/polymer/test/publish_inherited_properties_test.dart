@@ -53,12 +53,12 @@ main() {
   setUp(() => Polymer.onReady);
 
   test('published properties', () {
-    published(tag) => (query('polymer-element[name=$tag]')
+    published(tag) => (querySelector('polymer-element[name=$tag]')
         as PolymerDeclaration).publishedProperties;
 
-    expect(published('x-zot'), [#Foo, #Bar, #zot, #m]);
-    expect(published('x-squid'), [#Foo, #Bar, #zot, #m, #baz, #squid]);
-    expect(published('x-noscript'), [#Foo, #Bar, #zot, #m]);
+    expect(published('x-zot'), ['Foo', 'Bar', 'zot', 'm']);
+    expect(published('x-squid'), ['Foo', 'Bar', 'zot', 'm', 'baz', 'squid']);
+    expect(published('x-noscript'), ['Foo', 'Bar', 'zot', 'm']);
     // TODO(sigmund): uncomment, see above
     // expect(published('x-squid'), [#Foo, #Bar, #zot, #zap, #baz, #squid]);
   });

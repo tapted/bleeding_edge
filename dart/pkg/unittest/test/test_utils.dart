@@ -36,12 +36,12 @@ void shouldFail(value, Matcher matcher, expected, {bool isAsync: false}) {
     if (expected is String) {
       expect(errorString, equalsIgnoringWhitespace(expected));
     } else {
-     expect(errorString.replaceAll('\n',''), expected);
+      expect(errorString.replaceAll('\n', ''), expected);
     }
   }
 
   if (isAsync) {
-    Timer.run(expectAsync0(afterTest));
+    Timer.run(expectAsync(afterTest));
   } else {
     afterTest();
   }
@@ -57,7 +57,7 @@ void shouldPass(value, Matcher matcher, {bool isAsync: false}) {
     expect(errorCount, equals(0));
   }
   if (isAsync) {
-    Timer.run(expectAsync0(afterTest));
+    Timer.run(expectAsync(afterTest));
   } else {
     afterTest();
   }

@@ -35,7 +35,9 @@ class Heap;
 class ICData;
 class Instance;
 class IsolateProfilerData;
-class LongJump;
+class IsolateSpawnState;
+class InterruptableThreadState;
+class LongJumpScope;
 class MessageHandler;
 class Mutex;
 class Object;
@@ -58,7 +60,6 @@ class StackZone;
 class StubCode;
 class TypeArguments;
 class TypeParameter;
-class ObjectHistogram;
 class ObjectIdRing;
 
 
@@ -70,9 +71,21 @@ class ObjectIdRing;
   V(Function)                                                                  \
   V(Field)                                                                     \
   V(Class)                                                                     \
-  V(AbstractType)                                                              \
   V(TypeParameter)                                                             \
   V(TypeArguments)                                                             \
+
+
+class IsolateVisitor {
+ public:
+  IsolateVisitor() {}
+  virtual ~IsolateVisitor() {}
+
+  virtual void VisitIsolate(Isolate* isolate) = 0;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IsolateVisitor);
+};
+
 
 class Isolate : public BaseIsolate {
  public:
@@ -90,6 +103,8 @@ class Isolate : public BaseIsolate {
 
   // Register a newly introduced class.
   void RegisterClass(const Class& cls);
+  void RegisterClassAt(intptr_t index, const Class& cls);
+  void ValidateClassTable();
 
   // Visit all object pointers.
   void VisitObjectPointers(ObjectPointerVisitor* visitor,
@@ -110,7 +125,8 @@ class Isolate : public BaseIsolate {
     return OFFSET_OF(Isolate, class_table_);
   }
 
-  ObjectHistogram* object_histogram() { return object_histogram_; }
+  bool cha_used() const { return cha_used_; }
+  void set_cha_used(bool value) { cha_used_ = value; }
 
   MegamorphicCacheTable* megamorphic_cache_table() {
     return &megamorphic_cache_table_;
@@ -126,6 +142,12 @@ class Isolate : public BaseIsolate {
   const char* name() const { return name_; }
 
   int64_t start_time() const { return start_time_; }
+
+  // Creates the pin port (responsible for stopping the isolate from being
+  // destroyed).
+  void CreatePinPort();
+  // Closes pin port.
+  void ClosePinPort();
 
   Dart_Port main_port() { return main_port_; }
   void set_main_port(Dart_Port port) {
@@ -161,8 +183,8 @@ class Isolate : public BaseIsolate {
   StubCode* stub_code() const { return stub_code_; }
   void set_stub_code(StubCode* value) { stub_code_ = value; }
 
-  LongJump* long_jump_base() const { return long_jump_base_; }
-  void set_long_jump_base(LongJump* value) { long_jump_base_ = value; }
+  LongJumpScope* long_jump_base() const { return long_jump_base_; }
+  void set_long_jump_base(LongJumpScope* value) { long_jump_base_ = value; }
 
   TimerList& timer_list() { return timer_list_; }
 
@@ -206,7 +228,7 @@ class Isolate : public BaseIsolate {
   uword saved_stack_limit() const { return saved_stack_limit_; }
 
   // Retrieve the stack address bounds.
-  bool GetStackBounds(uintptr_t* lower, uintptr_t* upper);
+  bool GetStackBounds(uword* lower, uword* upper);
 
   static uword GetSpecifiedStackSize();
 
@@ -237,8 +259,8 @@ class Isolate : public BaseIsolate {
   bool is_runnable() const { return is_runnable_; }
   void set_is_runnable(bool value) { is_runnable_ = value; }
 
-  uword spawn_data() const { return spawn_data_; }
-  void set_spawn_data(uword value) { spawn_data_ = value; }
+  IsolateSpawnState* spawn_state() const { return spawn_state_; }
+  void set_spawn_state(IsolateSpawnState* value) { spawn_state_ = value; }
 
   static const intptr_t kNoDeoptId = -1;
   static const intptr_t kDeoptIdStep = 2;
@@ -297,6 +319,13 @@ class Isolate : public BaseIsolate {
   }
   static Dart_IsolateCreateCallback CreateCallback() {
     return create_callback_;
+  }
+
+  static void SetServiceCreateCallback(Dart_ServiceIsolateCreateCalback cb) {
+    service_create_callback_ = cb;
+  }
+  static Dart_ServiceIsolateCreateCalback ServiceCreateCallback() {
+    return service_create_callback_;
   }
 
   static void SetInterruptCallback(Dart_IsolateInterruptCallback cb) {
@@ -371,8 +400,6 @@ class Isolate : public BaseIsolate {
     deopt_context_ = value;
   }
 
-  static char* GetStatus(const char* request);
-
   intptr_t BlockClassFinalization() {
     ASSERT(defer_finalization_count_ >= 0);
     return defer_finalization_count_++;
@@ -396,9 +423,22 @@ class Isolate : public BaseIsolate {
     profiler_data_ = profiler_data;
   }
 
-  IsolateProfilerData* profiler_data() {
+  IsolateProfilerData* profiler_data() const {
     return profiler_data_;
   }
+
+  void PrintToJSONStream(JSONStream* stream);
+
+  void set_thread_state(InterruptableThreadState* state) {
+    ASSERT((thread_state_ == NULL) || (state == NULL));
+    thread_state_ = state;
+  }
+
+  InterruptableThreadState* thread_state() const {
+    return thread_state_;
+  }
+
+  static void VisitIsolates(IsolateVisitor* visitor);
 
  private:
   Isolate();
@@ -406,12 +446,6 @@ class Isolate : public BaseIsolate {
   void BuildName(const char* name_prefix);
   void PrintInvokedFunctions();
 
-  static bool FetchStacktrace();
-  static bool FetchStackFrameDetails();
-  char* GetStatusDetails();
-  char* GetStatusStacktrace();
-  char* GetStatusStackFrame(intptr_t index);
-  char* DoStacktraceInterrupt(Dart_IsolateInterruptCallback cb);
   template<class T> T* AllocateReusableHandle();
 
   static ThreadLocalKey isolate_key;
@@ -422,6 +456,7 @@ class Isolate : public BaseIsolate {
   Dart_MessageNotifyCallback message_notify_callback_;
   char* name_;
   int64_t start_time_;
+  Dart_Port pin_port_;
   Dart_Port main_port_;
   Heap* heap_;
   ObjectStore* object_store_;
@@ -436,14 +471,14 @@ class Isolate : public BaseIsolate {
   bool single_step_;
   Random random_;
   Simulator* simulator_;
-  LongJump* long_jump_base_;
+  LongJumpScope* long_jump_base_;
   TimerList timer_list_;
   intptr_t deopt_id_;
   Mutex* mutex_;  // protects stack_limit_ and saved_stack_limit_.
   uword stack_limit_;
   uword saved_stack_limit_;
   MessageHandler* message_handler_;
-  uword spawn_data_;
+  IsolateSpawnState* spawn_state_;
   bool is_runnable_;
   GcPrologueCallbacks gc_prologue_callbacks_;
   GcEpilogueCallbacks gc_epilogue_callbacks_;
@@ -453,13 +488,18 @@ class Isolate : public BaseIsolate {
   // Status support.
   char* stacktrace_;
   intptr_t stack_frame_index_;
-  ObjectHistogram* object_histogram_;
+
+  bool cha_used_;
 
   // Ring buffer of objects assigned an id.
   ObjectIdRing* object_id_ring_;
 
   IsolateProfilerData* profiler_data_;
   Mutex profiler_data_mutex_;
+  InterruptableThreadState* thread_state_;
+
+  // Isolate list next pointer.
+  Isolate* next_;
 
   // Reusable handles support.
 #define REUSABLE_HANDLE_FIELDS(object)                                         \
@@ -479,9 +519,18 @@ class Isolate : public BaseIsolate {
   static Dart_FileCloseCallback file_close_callback_;
   static Dart_EntropySource entropy_source_callback_;
   static Dart_IsolateInterruptCallback vmstats_callback_;
+  static Dart_ServiceIsolateCreateCalback service_create_callback_;
+
+  // Manage list of existing isolates.
+  static void AddIsolateTolist(Isolate* isolate);
+  static void RemoveIsolateFromList(Isolate* isolate);
+  static void CheckForDuplicateThreadState(InterruptableThreadState* state);
+  static Monitor* isolates_list_monitor_;
+  static Isolate* isolates_list_head_;
 
   friend class ReusableHandleScope;
   friend class ReusableObjectHandleScope;
+
   DISALLOW_COPY_AND_ASSIGN(Isolate);
 };
 

@@ -2,21 +2,25 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-/** Common methods used by transfomers. */
+/// Common methods used by transfomers.
 library polymer.src.build.common;
 
 import 'dart:async';
+import 'dart:math' show min, max;
 
+import 'package:analyzer/src/generated/ast.dart';
+import 'package:analyzer/src/generated/error.dart';
+import 'package:analyzer/src/generated/parser.dart';
+import 'package:analyzer/src/generated/scanner.dart';
 import 'package:barback/barback.dart';
 import 'package:html5lib/dom.dart' show Document;
 import 'package:html5lib/parser.dart' show HtmlParser;
 import 'package:path/path.dart' as path;
+import 'package:observe/transformer.dart' show ObservableTransformer;
 import 'package:source_maps/span.dart' show Span;
 
-/**
- * Parses an HTML file [contents] and returns a DOM-like tree. Adds emitted
- * error/warning to [logger].
- */
+/// Parses an HTML file [contents] and returns a DOM-like tree. Adds emitted
+/// error/warning to [logger].
 Document _parseHtml(String contents, String sourcePath, TransformLogger logger,
     {bool checkDocType: true}) {
   // TODO(jmesserly): make HTTP encoding configurable
@@ -34,46 +38,43 @@ Document _parseHtml(String contents, String sourcePath, TransformLogger logger,
   return document;
 }
 
-/** Additional options used by polymer transformers */
+/// Additional options used by polymer transformers
 class TransformOptions {
-  /**
-   * List of entrypoints paths. The paths are relative to the package root and
-   * are represented using posix style, which matches the representation used in
-   * asset ids in barback. If null, anything under 'web/' or 'test/' is
-   * considered an entry point.
-   */
+  /// List of entrypoints paths. The paths are relative to the package root and
+  /// are represented using posix style, which matches the representation used
+  /// in asset ids in barback. If null, anything under 'web/' or 'test/' is
+  /// considered an entry point.
   final List<String> entryPoints;
 
-  /**
-   * True to enable Content Security Policy.
-   * This means the HTML page will include *.dart.precompiled.js
-   *
-   * This flag has no effect unless [directlyIncludeJS] is enabled.
-   */
+  /// True to enable Content Security Policy.
+  /// This means the HTML page will include *.dart.precompiled.js
+  ///
+  /// This flag has no effect unless [directlyIncludeJS] is enabled.
   final bool contentSecurityPolicy;
 
-  /**
-   * True to include the compiled JavaScript directly from the HTML page.
-   * If enabled this will remove "packages/browser/dart.js" and replace
-   * `type="application/dart"` scripts with equivalent *.dart.js files.
-   *
-   * If [contentSecurityPolicy] enabled, this will reference files
-   * named *.dart.precompiled.js.
-   */
+  /// True to include the compiled JavaScript directly from the HTML page.
+  /// If enabled this will remove "packages/browser/dart.js" and replace
+  /// `type="application/dart"` scripts with equivalent *.dart.js files.
+  ///
+  /// If [contentSecurityPolicy] enabled, this will reference files
+  /// named *.dart.precompiled.js.
   final bool directlyIncludeJS;
 
-  /**
-   * Run transformers to create a releasable app. For example, include the
-   * minified versions of the polyfills rather than the debug versions.
-   */
+  /// Run transformers to create a releasable app. For example, include the
+  /// minified versions of the polyfills rather than the debug versions.
   final bool releaseMode;
 
+  /// True to run liner on all html files before starting other phases.
+  // TODO(jmesserly): instead of this flag, we should only run linter on
+  // reachable (entry point+imported) html if deploying. See dartbug.com/17199.
+  final bool lint;
+
   TransformOptions({entryPoints, this.contentSecurityPolicy: false,
-      this.directlyIncludeJS: true, this.releaseMode: true})
+      this.directlyIncludeJS: true, this.releaseMode: true, this.lint: true})
       : entryPoints = entryPoints == null ? null
           : entryPoints.map(_systemToAssetPath).toList();
 
-  /** Whether an asset with [id] is an entry point HTML file. */
+  /// Whether an asset with [id] is an entry point HTML file.
   bool isHtmlEntryPoint(AssetId id) {
     if (id.extension != '.html') return false;
 
@@ -86,7 +87,7 @@ class TransformOptions {
   }
 }
 
-/** Mixin for polymer transformers. */
+/// Mixin for polymer transformers.
 abstract class PolymerTransformer {
   TransformOptions get options;
 
@@ -102,8 +103,7 @@ abstract class PolymerTransformer {
   Future<Document> readAsHtml(AssetId id, Transform transform) {
     var primaryId = transform.primaryInput.id;
     bool samePackage = id.package == primaryId.package;
-    var url = samePackage ? id.path
-        : assetUrlFor(id, primaryId, transform.logger, allowAssetUrl: true);
+    var url = spanUrlFor(id, transform);
     return transform.readInputAsString(id).then((content) {
       return _parseHtml(content, url, transform.logger,
         checkDocType: samePackage && options.isHtmlEntryPoint(id));
@@ -116,37 +116,92 @@ abstract class PolymerTransformer {
   String toString() => 'polymer ($runtimeType)';
 }
 
-/** Create an [AssetId] for a [url] seen in the [source] asset. */
+/// Gets the appropriate URL to use in a [Span] to produce messages
+/// (e.g. warnings) for users. This will attempt to format the URL in the most
+/// useful way:
+///
+/// - If the asset is within the primary package, then use the [id.path],
+///   the user will know it is a file from their own code.
+/// - If the asset is from another package, then use [assetUrlFor], this will
+///   likely be a "package:" url to the file in the other package, which is
+///   enough for users to identify where the error is.
+String spanUrlFor(AssetId id, Transform transform) {
+  var primaryId = transform.primaryInput.id;
+  bool samePackage = id.package == primaryId.package;
+  return samePackage ? id.path
+      : assetUrlFor(id, primaryId, transform.logger, allowAssetUrl: true);
+}
+
+/// Transformer phases which should be applied to the Polymer package.
+List<List<Transformer>> get phasesForPolymer =>
+    [[new ObservableTransformer(['lib/src/instance.dart'])]];
+
+/// Create an [AssetId] for a [url] seen in the [source] asset. By default this
+/// is used to resolve relative urls that occur in HTML assets, including
+/// cross-package urls of the form "packages/foo/bar.html". Dart "package:"
+/// urls are not resolved unless [source] is Dart file (has a .dart extension).
 // TODO(sigmund): delete once this is part of barback (dartbug.com/12610)
-AssetId resolve(AssetId source, String url, TransformLogger logger, Span span) {
+AssetId resolve(AssetId source, String url, TransformLogger logger, Span span,
+    {bool allowAbsolute: false}) {
   if (url == null || url == '') return null;
   var uri = Uri.parse(url);
   var urlBuilder = path.url;
   if (uri.host != '' || uri.scheme != '' || urlBuilder.isAbsolute(url)) {
-    logger.error('absolute paths not allowed: "$url"', span: span);
+    if (source.extension == '.dart' && uri.scheme == 'package') {
+      var index = uri.path.indexOf('/');
+      if (index != -1) {
+        return new AssetId(uri.path.substring(0, index),
+            'lib${uri.path.substring(index)}');
+      }
+    }
+
+    if (!allowAbsolute) {
+      logger.error('absolute paths not allowed: "$url"', span: span);
+    }
     return null;
-  }
-
-  var segments = urlBuilder.split(url);
-  var prefix = segments[0];
-  var entryFolder = !source.path.startsWith('lib/') &&
-      !source.path.startsWith('asset/');
-
-  // URLs of the form "packages/foo/bar" seen under entry folders (like web/,
-  // test/, example/, etc) are resolved as an asset in another package.
-  if (entryFolder && (prefix == 'packages' || prefix == 'assets')) {
-    return _extractOtherPackageId(0, segments, logger, span);
   }
 
   var targetPath = urlBuilder.normalize(
       urlBuilder.join(urlBuilder.dirname(source.path), url));
+  var segments = urlBuilder.split(targetPath);
+  var sourceSegments = urlBuilder.split(source.path);
+  assert (sourceSegments.length > 0);
+  var topFolder = sourceSegments[0];
+  var entryFolder = topFolder != 'lib' && topFolder != 'asset';
 
-  // Relative URLs of the form "../../packages/foo/bar" in an asset under lib/
-  // or asset/ are also resolved as an asset in another package.
-  segments = urlBuilder.split(targetPath);
-  if (!entryFolder && segments.length > 1 && segments[0] == '..' &&
-      (segments[1] == 'packages' || segments[1] == 'assets')) {
-    return _extractOtherPackageId(1, segments, logger, span);
+  // Find the first 'packages/'  or 'assets/' segment:
+  var packagesIndex = segments.indexOf('packages');
+  var assetsIndex = segments.indexOf('assets');
+  var index = (packagesIndex >= 0 && assetsIndex >= 0)
+      ? min(packagesIndex, assetsIndex)
+      : max(packagesIndex, assetsIndex);
+  if (index > -1) {
+    if (entryFolder) {
+      // URLs of the form "packages/foo/bar" seen under entry folders (like
+      // web/, test/, example/, etc) are resolved as an asset in another
+      // package. 'packages' can be used anywhere, there is no need to walk up
+      // where the entrypoint file was.
+      return _extractOtherPackageId(index, segments, logger, span);
+    } else if (index == 1 && segments[0] == '..') {
+      // Relative URLs of the form "../../packages/foo/bar" in an asset under
+      // lib/ or asset/ are also resolved as an asset in another package, but we
+      // check that the relative path goes all the way out where the packages
+      // folder lives (otherwise the app would not work in Dartium). Since
+      // [targetPath] has been normalized, "packages" or "assets" should be at
+      // index 1.
+      return _extractOtherPackageId(1, segments, logger, span);
+    } else {
+      var prefix = segments[index];
+      var fixedSegments = [];
+      fixedSegments.addAll(sourceSegments.map((_) => '..'));
+      fixedSegments.addAll(segments.sublist(index));
+      var fixedUrl = urlBuilder.joinAll(fixedSegments);
+      logger.error('Invalid url to reach to another package: $url. Path '
+          'reaching to other packages must first reach up all the '
+          'way to the $prefix folder. For example, try changing the url above '
+          'to: $fixedUrl', span: span);
+      return null;
+    }
   }
 
   // Otherwise, resolve as a path in the same package.
@@ -168,10 +223,8 @@ AssetId _extractOtherPackageId(int index, List segments,
       path.url.join(folder, path.url.joinAll(segments.sublist(index + 2))));
 }
 
-/**
- * Generate the import url for a file described by [id], referenced by a file
- * with [sourceId].
- */
+/// Generate the import url for a file described by [id], referenced by a file
+/// with [sourceId].
 // TODO(sigmund): this should also be in barback (dartbug.com/12610)
 String assetUrlFor(AssetId id, AssetId sourceId, TransformLogger logger,
     {bool allowAssetUrl: false}) {
@@ -201,8 +254,24 @@ String assetUrlFor(AssetId id, AssetId sourceId, TransformLogger logger,
 }
 
 
-/** Convert system paths to asset paths (asset paths are posix style). */
+/// Convert system paths to asset paths (asset paths are posix style).
 String _systemToAssetPath(String assetPath) {
   if (path.Style.platform != path.Style.windows) return assetPath;
   return path.posix.joinAll(path.split(assetPath));
+}
+
+
+/// Parse [code] using analyzer.
+CompilationUnit parseCompilationUnit(String code) {
+  var errorListener = new _ErrorCollector();
+  var reader = new CharSequenceReader(code);
+  var scanner = new Scanner(null, reader, errorListener);
+  var token = scanner.tokenize();
+  var parser = new Parser(null, errorListener);
+  return parser.parseCompilationUnit(token);
+}
+
+class _ErrorCollector extends AnalysisErrorListener {
+  final errors = <AnalysisError>[];
+  onError(error) => errors.add(error);
 }

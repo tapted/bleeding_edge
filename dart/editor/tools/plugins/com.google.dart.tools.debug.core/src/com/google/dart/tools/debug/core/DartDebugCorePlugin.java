@@ -15,7 +15,6 @@ package com.google.dart.tools.debug.core;
 
 import com.google.dart.tools.core.DartCoreDebug;
 import com.google.dart.tools.core.utilities.general.StringUtilities;
-import com.google.dart.tools.debug.core.pubserve.PubServeLaunchConfigurationDelegate;
 import com.google.dart.tools.debug.core.pubserve.PubServeManager;
 import com.google.dart.tools.debug.core.util.BrowserManager;
 import com.google.dart.tools.debug.core.util.ResourceChangeManager;
@@ -101,10 +100,9 @@ public class DartDebugCorePlugin extends Plugin {
 
   public static final String PREFS_BREAK_ON_EXCEPTIONS = "breakOnExceptions";
 
-  public static final String PREFS_SHOW_RUN_RESUME_DIALOG = "showRunResumeDialog";
+  public static final String PREFS_INVOKE_TOSTRING = "invokeToString";
 
-  // TODO(keertip): preference used to clear manage launches dialog settings, remove before M6 
-  private static final String PREFS_CLEAR_LAUNCHES_DIALOG_SETTINGS = "launchesDialogSettings";
+  public static final String PREFS_SHOW_RUN_RESUME_DIALOG = "showRunResumeDialog";
 
   private static long loggingStart = System.currentTimeMillis();
 
@@ -259,10 +257,6 @@ public class DartDebugCorePlugin extends Plugin {
     return getPrefs().get(PREFS_BROWSER_NAME, "");
   }
 
-  public boolean getClearDialogSettings() {
-    return getPrefs().getBoolean(PREFS_CLEAR_LAUNCHES_DIALOG_SETTINGS, true);
-  }
-
   /**
    * Returns the path to the Dart VM executable, if it has been set. Otherwise, this method returns
    * the empty string.
@@ -271,6 +265,10 @@ public class DartDebugCorePlugin extends Plugin {
    */
   public String getDartVmExecutablePath() {
     return getPrefs().get(PREFS_DART_VM_PATH, "");
+  }
+
+  public boolean getInvokeToString() {
+    return getPrefs().getBoolean(PREFS_INVOKE_TOSTRING, true);
   }
 
   public boolean getIsDefaultBrowser() {
@@ -321,16 +319,6 @@ public class DartDebugCorePlugin extends Plugin {
     }
   }
 
-  public void setClearLaunchesDialogSettings(boolean value) {
-    getPrefs().putBoolean(PREFS_CLEAR_LAUNCHES_DIALOG_SETTINGS, value);
-
-    try {
-      getPrefs().flush();
-    } catch (BackingStoreException exception) {
-      logError(exception);
-    }
-  }
-
   /**
    * Set the path to the Dart VM executable.
    * 
@@ -346,9 +334,12 @@ public class DartDebugCorePlugin extends Plugin {
     }
   }
 
+  public void setInvokeToString(boolean value) {
+    getPrefs().putBoolean(PREFS_INVOKE_TOSTRING, value);
+  }
+
   public void setShowRunResumeDialogPref(boolean value) {
     getPrefs().putBoolean(PREFS_SHOW_RUN_RESUME_DIALOG, value);
-
   }
 
   public void setUserAgentManager(IUserAgentManager userAgentManager) {
@@ -391,7 +382,6 @@ public class DartDebugCorePlugin extends Plugin {
 
     BrowserManager.getManager().dispose();
     PubServeManager.getManager().dispose();
-    PubServeLaunchConfigurationDelegate.dispose();
 
     if (debugEventListener != null) {
       DebugPlugin.getDefault().removeDebugEventListener(debugEventListener);

@@ -36,6 +36,71 @@ public class HintCodeTest extends ResolverTestCase {
     verify(source);
   }
 
+  public void fail_overriddingPrivateMember_getter() throws Exception {
+    Source source = addSource(createSource(//
+        "import 'lib1.dart';",
+        "class B extends A {",
+        "  get _g => 0;",
+        "}"));
+    Source source2 = addSource("/lib1.dart", createSource(//
+        "library lib1;",
+        "class A {",
+        "  get _g => 0;",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.OVERRIDDING_PRIVATE_MEMBER);
+    verify(source, source2);
+  }
+
+  public void fail_overriddingPrivateMember_method() throws Exception {
+    Source source = addSource(createSource(//
+        "import 'lib1.dart';",
+        "class B extends A {",
+        "  _m(int x) => 0;",
+        "}"));
+    Source source2 = addSource("/lib1.dart", createSource(//
+        "library lib1;",
+        "class A {",
+        "  _m(int x) => 0;",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.OVERRIDDING_PRIVATE_MEMBER);
+    verify(source, source2);
+  }
+
+  public void fail_overriddingPrivateMember_method2() throws Exception {
+    Source source = addSource(createSource(//
+        "import 'lib1.dart';",
+        "class B extends A {}",
+        "class C extends B {",
+        "  _m(int x) => 0;",
+        "}"));
+    Source source2 = addSource("/lib1.dart", createSource(//
+        "library lib1;",
+        "class A {",
+        "  _m(int x) => 0;",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.OVERRIDDING_PRIVATE_MEMBER);
+    verify(source, source2);
+  }
+
+  public void fail_overriddingPrivateMember_setter() throws Exception {
+    Source source = addSource(createSource(//
+        "import 'lib1.dart';",
+        "class B extends A {",
+        "  set _s(int x) {}",
+        "}"));
+    Source source2 = addSource("/lib1.dart", createSource(//
+        "library lib1;",
+        "class A {",
+        "  set _s(int x) {}",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.OVERRIDDING_PRIVATE_MEMBER);
+    verify(source, source2);
+  }
+
   public void fail_overrideEqualsButNotHashCode() throws Exception {
     Source source = addSource(createSource(//
         "class A {",
@@ -330,7 +395,7 @@ public class HintCodeTest extends ResolverTestCase {
     Source source = addSource(createSource(//
         "class A {",
         "  @deprecated",
-        "  A operator+(A a) {}",
+        "  A operator+(A a) { return a; }",
         "}",
         "f(A a) {",
         "  A b;",
@@ -606,69 +671,67 @@ public class HintCodeTest extends ResolverTestCase {
     verify(source);
   }
 
-  public void test_overriddingPrivateMember_getter() throws Exception {
+  public void test_missingReturn_function() throws Exception {
     Source source = addSource(createSource(//
-        "import 'lib1.dart';",
-        "class B extends A {",
-        "  get _g => 0;",
-        "}"));
-    Source source2 = addSource("/lib1.dart", createSource(//
-        "library lib1;",
-        "class A {",
-        "  get _g => 0;",
-        "}"));
+    "int f() {}"));
     resolve(source);
-    assertErrors(source, HintCode.OVERRIDDING_PRIVATE_MEMBER);
-    verify(source, source2);
+    assertErrors(source, HintCode.MISSING_RETURN);
+    verify(source);
   }
 
-  public void test_overriddingPrivateMember_method() throws Exception {
+  public void test_missingReturn_method() throws Exception {
     Source source = addSource(createSource(//
-        "import 'lib1.dart';",
-        "class B extends A {",
-        "  _m(int x) => 0;",
-        "}"));
-    Source source2 = addSource("/lib1.dart", createSource(//
-        "library lib1;",
         "class A {",
-        "  _m(int x) => 0;",
+        "  int m() {}",
         "}"));
     resolve(source);
-    assertErrors(source, HintCode.OVERRIDDING_PRIVATE_MEMBER);
-    verify(source, source2);
+    assertErrors(source, HintCode.MISSING_RETURN);
+    verify(source);
   }
 
-  public void test_overriddingPrivateMember_method2() throws Exception {
+  public void test_overrideOnNonOverridingGetter_invalid() throws Exception {
     Source source = addSource(createSource(//
-        "import 'lib1.dart';",
-        "class B extends A {}",
-        "class C extends B {",
-        "  _m(int x) => 0;",
-        "}"));
-    Source source2 = addSource("/lib1.dart", createSource(//
-        "library lib1;",
+        "library dart.core;",
+        "const override = null;",
         "class A {",
-        "  _m(int x) => 0;",
+        "}",
+        "class B extends A {",
+        "  @override",
+        "  int get m => 1;",
         "}"));
     resolve(source);
-    assertErrors(source, HintCode.OVERRIDDING_PRIVATE_MEMBER);
-    verify(source, source2);
+    assertErrors(source, HintCode.OVERRIDE_ON_NON_OVERRIDING_GETTER);
+    verify(source);
   }
 
-  public void test_overriddingPrivateMember_setter() throws Exception {
+  public void test_overrideOnNonOverridingMethod_invalid() throws Exception {
     Source source = addSource(createSource(//
-        "import 'lib1.dart';",
-        "class B extends A {",
-        "  set _s(int x) {}",
-        "}"));
-    Source source2 = addSource("/lib1.dart", createSource(//
-        "library lib1;",
+        "library dart.core;",
+        "const override = null;",
         "class A {",
-        "  set _s(int x) {}",
+        "}",
+        "class B extends A {",
+        "  @override",
+        "  int m() => 1;",
         "}"));
     resolve(source);
-    assertErrors(source, HintCode.OVERRIDDING_PRIVATE_MEMBER);
-    verify(source, source2);
+    assertErrors(source, HintCode.OVERRIDE_ON_NON_OVERRIDING_METHOD);
+    verify(source);
+  }
+
+  public void test_overrideOnNonOverridingSetter_invalid() throws Exception {
+    Source source = addSource(createSource(//
+        "library dart.core;",
+        "const override = null;",
+        "class A {",
+        "}",
+        "class B extends A {",
+        "  @override",
+        "  set m(int x) {}",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.OVERRIDE_ON_NON_OVERRIDING_SETTER);
+    verify(source);
   }
 
   public void test_typeCheck_type_is_Null() throws Exception {
@@ -959,6 +1022,86 @@ public class HintCodeTest extends ResolverTestCase {
     assertErrors(source, HintCode.UNUSED_IMPORT);
     assertNoErrors(source2);
     verify(source, source2);
+  }
+
+  public void test_useOfVoidResult_assignmentExpression_function() throws Exception {
+    Source source = addSource(createSource(//
+        "void f() {}",
+        "class A {",
+        "  n() {",
+        "    var a;",
+        "    a = f();",
+        "  }",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.USE_OF_VOID_RESULT);
+    verify(source);
+  }
+
+  public void test_useOfVoidResult_assignmentExpression_method() throws Exception {
+    Source source = addSource(createSource(//
+        "class A {",
+        "  void m() {}",
+        "  n() {",
+        "    var a;",
+        "    a = m();",
+        "  }",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.USE_OF_VOID_RESULT);
+    verify(source);
+  }
+
+  public void test_useOfVoidResult_inForLoop() throws Exception {
+    Source source = addSource(createSource(//
+        "class A {",
+        "  void m() {}",
+        "  n() {",
+        "    for(var a = m();;) {}",
+        "  }",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.USE_OF_VOID_RESULT);
+    verify(source);
+  }
+
+  public void test_useOfVoidResult_variableDeclaration_function() throws Exception {
+    Source source = addSource(createSource(//
+        "void f() {}",
+        "class A {",
+        "  n() {",
+        "    var a = f();",
+        "  }",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.USE_OF_VOID_RESULT);
+    verify(source);
+  }
+
+  public void test_useOfVoidResult_variableDeclaration_method() throws Exception {
+    Source source = addSource(createSource(//
+        "class A {",
+        "  void m() {}",
+        "  n() {",
+        "    var a = m();",
+        "  }",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.USE_OF_VOID_RESULT);
+    verify(source);
+  }
+
+  public void test_useOfVoidResult_variableDeclaration_method2() throws Exception {
+    Source source = addSource(createSource(//
+        "class A {",
+        "  void m() {}",
+        "  n() {",
+        "    var a = m(), b = m();",
+        "  }",
+        "}"));
+    resolve(source);
+    assertErrors(source, HintCode.USE_OF_VOID_RESULT, HintCode.USE_OF_VOID_RESULT);
+    verify(source);
   }
 
 }

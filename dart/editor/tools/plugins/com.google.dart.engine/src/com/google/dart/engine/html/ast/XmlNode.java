@@ -14,6 +14,7 @@
 package com.google.dart.engine.html.ast;
 
 import com.google.dart.engine.AnalysisEngine;
+import com.google.dart.engine.element.Element;
 import com.google.dart.engine.html.ast.visitor.ToSourceVisitor;
 import com.google.dart.engine.html.ast.visitor.XmlVisitor;
 import com.google.dart.engine.html.scanner.Token;
@@ -35,6 +36,11 @@ public abstract class XmlNode {
   private XmlNode parent;
 
   /**
+   * The element associated with this node or {@code null} if the receiver is not resolved.
+   */
+  private Element element;
+
+  /**
    * Use the given visitor to visit this node.
    * 
    * @param visitor the visitor that will visit this node
@@ -48,6 +54,15 @@ public abstract class XmlNode {
    * @return the first token or {@code null} if none
    */
   public abstract Token getBeginToken();
+
+  /**
+   * Return the element associated with this node.
+   * 
+   * @return the element or {@code null} if the receiver is not resolved
+   */
+  public Element getElement() {
+    return element;
+  }
 
   /**
    * Return the offset of the character immediately following the last character of this node's
@@ -108,6 +123,15 @@ public abstract class XmlNode {
     return parent;
   }
 
+  /**
+   * Set the element associated with this node.
+   * 
+   * @param element the element
+   */
+  public void setElement(Element element) {
+    this.element = element;
+  }
+
   @Override
   public String toString() {
     PrintStringWriter writer = new PrintStringWriter();
@@ -160,9 +184,9 @@ public abstract class XmlNode {
    */
   private void appendIdentifier(StringBuilder builder, XmlNode node) {
     if (node instanceof XmlTagNode) {
-      builder.append(((XmlTagNode) node).getTag().getLexeme());
+      builder.append(((XmlTagNode) node).getTag());
     } else if (node instanceof XmlAttributeNode) {
-      builder.append(((XmlAttributeNode) node).getName().getLexeme());
+      builder.append(((XmlAttributeNode) node).getName());
     } else {
       builder.append("htmlUnit");
     }
@@ -201,6 +225,7 @@ public abstract class XmlNode {
     while (current != null) {
       if (current == this) {
         AnalysisEngine.getInstance().getLogger().logError(
+            "Circular structure while setting an XML node's parent",
             new IllegalArgumentException(buildRecursiveStructureMessage(newParent)));
         return;
       }

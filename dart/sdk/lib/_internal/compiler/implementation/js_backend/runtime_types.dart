@@ -275,9 +275,9 @@ class RuntimeTypes {
     for (DartType instantiatedType in universe.instantiatedTypes) {
       if (instantiatedType.kind == TypeKind.INTERFACE) {
         InterfaceType interface = instantiatedType;
-        Member member = interface.lookupMember(Compiler.CALL_OPERATOR_NAME);
-        if (member != null) {
-          instantiatedTypes.add(member.computeType(compiler));
+        FunctionType callType = interface.callType;
+        if (callType != null) {
+          instantiatedTypes.add(callType);
         }
       }
     }
@@ -602,6 +602,17 @@ class RuntimeTypes {
          index++, variables = variables.tail) {
       if (variables.head.element == variable) return index;
     }
+    throw invariant(variable, false,
+                    message: "Couldn't find type-variable index");
+  }
+
+  /// Return all classes that are referenced in the type of the function, i.e.,
+  /// in the return type or the argument types.
+  Set<ClassElement> getReferencedClasses(FunctionType type) {
+    FunctionArgumentCollector collector =
+        new FunctionArgumentCollector(backend);
+    collector.collect(type);
+    return collector.classes;
   }
 }
 

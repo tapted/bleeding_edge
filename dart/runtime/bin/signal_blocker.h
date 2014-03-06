@@ -13,6 +13,8 @@
 
 #include <signal.h>  // NOLINT
 
+#include "platform/thread.h"
+
 namespace dart {
 namespace bin {
 
@@ -24,12 +26,26 @@ class ThreadSignalBlocker {
     sigaddset(&signal_mask, sig);
     // Add sig to signal mask.
     int r = pthread_sigmask(SIG_BLOCK, &signal_mask, &old);
+    USE(r);
+    ASSERT(r == 0);
+  }
+
+  ThreadSignalBlocker(int sigs_count, const int sigs[]) {
+    sigset_t signal_mask;
+    sigemptyset(&signal_mask);
+    for (int i = 0; i < sigs_count; i++) {
+      sigaddset(&signal_mask, sigs[i]);
+    }
+    // Add sig to signal mask.
+    int r = pthread_sigmask(SIG_BLOCK, &signal_mask, &old);
+    USE(r);
     ASSERT(r == 0);
   }
 
   ~ThreadSignalBlocker() {
     // Restore signal mask.
     int r = pthread_sigmask(SIG_SETMASK, &old, NULL);
+    USE(r);
     ASSERT(r == 0);
   }
 
@@ -40,10 +56,10 @@ class ThreadSignalBlocker {
 
 #define TEMP_FAILURE_RETRY_BLOCK_SIGNALS(expression)                           \
     ({ ThreadSignalBlocker tsb(SIGPROF);                                       \
-       int64_t __result;                                                       \
+       intptr_t __result;                                                      \
        do {                                                                    \
-         __result = static_cast<int64_t>(expression);                          \
-       } while (__result == -1L && errno == EINTR);                            \
+         __result = (expression);                                              \
+       } while ((__result == -1L) && (errno == EINTR));                        \
        __result; })
 
 #define VOID_TEMP_FAILURE_RETRY_BLOCK_SIGNALS(expression)                      \

@@ -170,7 +170,7 @@
     {
       'target_name': 'libdart_io',
       'type': 'static_library',
-      'toolsets':['target', 'host'],
+      'toolsets': ['host', 'target'],
       'include_dirs': [
         '..',
       ],
@@ -205,6 +205,19 @@
           },
         }],
       ],
+      'configurations': {
+        'Dart_Android_Base': {
+          'target_conditions': [
+            ['_toolset=="target"', {
+              'defines': [
+                # Needed for sources outside of nss that include pr and ssl
+                # header files. 
+                'MDCPUCFG="md/_linux.cfg"',
+              ],
+            }],
+          ],
+        },
+      },
     },
     {
       'target_name': 'libdart_withcore',
@@ -243,7 +256,6 @@
       'dependencies': [
         'libdart_withcore',
         'libdart_builtin',
-        'libdart_io',
       ],
       'include_dirs': [
         '..',
@@ -264,12 +276,15 @@
           'link_settings': {
             'libraries': [ '-lws2_32.lib', '-lRpcrt4.lib' ],
           },
-       }],
+        }],
+        # Normally, we should not have flags conditional on OS==android, but
+        # here we must because gen_snapshot is compiled for the host during
+        # and Android cross-build, and these flags are not set anywhere else.
         ['OS=="android"', {
           'link_settings': {
             'libraries': [ '-ldl', '-lrt' ],
           },
-       }]
+        }]
       ],
     },
     {
@@ -353,6 +368,9 @@
             'python',
             'tools/create_resources.py',
             '--output', '<(resources_cc_file)',
+            '--outer_namespace', 'dart',
+            '--inner_namespace', 'bin',
+            '--table_name', 'service_bin',
             '--root_prefix', 'bin/',
             '<@(_sources)'
           ],
@@ -380,7 +398,6 @@
         'builtin_nolib.cc',
         'builtin.h',
         'io_natives.h',
-        'resources.h',
         'vmservice.h',
         'vmservice_impl.cc',
         'vmservice_impl.h',
@@ -400,30 +417,16 @@
             },
           },
         }],
-        ['OS=="linux"', {
+      ],
+      'configurations': {
+        'Dart_Linux_Base': {
           # Have the linker add all symbols to the dynamic symbol table
           # so that extensions can look them up dynamically in the binary.
           'ldflags': [
             '-rdynamic',
           ],
-        }],
-        ['OS=="android"', {
-          'link_settings': {
-            'ldflags': [
-              '-z',
-              'muldefs',
-            ],
-            'ldflags!': [
-              '-Wl,--exclude-libs=ALL,-shared',
-            ],
-            'libraries': [
-              '-llog',
-              '-lc',
-              '-lz',
-            ],
-          },
-        }],
-      ],
+        },
+      },
     },
     {
       # dart binary without any snapshot built in.
@@ -444,7 +447,6 @@
         'builtin_natives.cc',
         'builtin.h',
         'io_natives.h',
-        'resources.h',
         'vmservice.h',
         'vmservice_impl.cc',
         'vmservice_impl.h',
@@ -468,31 +470,16 @@
             },
           },
         }],
-        ['OS=="linux"', {
+      ],
+      'configurations': {
+        'Dart_Linux_Base': {
           # Have the linker add all symbols to the dynamic symbol table
           # so that extensions can look them up dynamically in the binary.
           'ldflags': [
             '-rdynamic',
           ],
-        }],
-
-        ['OS=="android"', {
-          'link_settings': {
-            'ldflags': [
-              '-z',
-              'muldefs',
-            ],
-            'ldflags!': [
-              '-Wl,--exclude-libs=ALL,-shared',
-            ],
-            'libraries': [
-              '-llog',
-              '-lc',
-              '-lz',
-            ],
-          },
-        }],
-      ],
+        },
+      },
     },
     {
       'target_name': 'process_test',
@@ -504,7 +491,6 @@
     {
       'target_name': 'run_vm_tests',
       'type': 'executable',
-      'toolsets':['target'],
       'dependencies': [
         'libdart_withcore',
         'libdart_builtin',
@@ -549,132 +535,54 @@
         ['OS=="win"', {
           'link_settings': {
             'libraries': [ '-lws2_32.lib', '-lRpcrt4.lib', '-lwinmm.lib' ],
-          },
-        }],
-        ['OS=="android"', {
-
-          'link_settings': {
-            'ldflags': [
-              '-z',
-              'muldefs',
-            ],
-            'ldflags!': [
-              '-Wl,--exclude-libs=ALL,-shared',
-            ],
-            'libraries': [
-              '-Wl,--start-group',
-              '-Wl,--end-group',
-              '-llog',
-              '-lc',
-              '-lz',
-            ],
           },
         }],
       ],
     },
     {
-      'target_name': 'run_vm_tests.host',
-      'type': 'executable',
-      'toolsets':['host'],
+      'target_name': 'test_extension',
+      'type': 'shared_library',
       'dependencies': [
-        'libdart_withcore',
-        'libdart_builtin',
-        'libdart_io',
-        'generate_snapshot_file#host',
-        'generate_snapshot_test_dat_file#host',
+        'dart',
       ],
       'include_dirs': [
         '..',
-        '<(gen_source_dir)',
+      ],
+      'cflags!': [
+        '-Wnon-virtual-dtor',
+        '-Woverloaded-virtual',
+        '-fno-rtti',
+        '-fvisibility-inlines-hidden',
+        '-Wno-conversion-null',
       ],
       'sources': [
-        'run_vm_tests.cc',
-        'builtin_natives.cc',
-        'builtin_nolib.cc',
-        'builtin.h',
-        'io_natives.h',
-        # Include generated source files.
-        '<(snapshot_cc_file)',
-        '<(builtin_cc_file)',
-        '<(io_cc_file)',
-        '<(io_patch_cc_file)',
-      ],
-      'includes': [
-        'builtin_impl_sources.gypi',
-        '../platform/platform_sources.gypi',
-        '../vm/vm_sources.gypi',
+        'test_extension.c',
+        'test_extension_dllmain_win.cc',
       ],
       'defines': [
-        'TESTING',
-      ],
-      # Only include _test.[cc|h] files.
-      'sources/': [
-        ['exclude', '\\.(cc|h)$'],
-        ['include', 'run_vm_tests.cc'],
-        ['include', 'builtin_nolib.cc'],
-        ['include', 'builtin_natives.cc'],
-        ['include', '_gen\\.cc$'],
-        ['include', '_test\\.(cc|h)$'],
+        # The only effect of DART_SHARED_LIB is to export the Dart API.
+        'DART_SHARED_LIB',
       ],
       'conditions': [
         ['OS=="win"', {
-          'link_settings': {
-            'libraries': [ '-lws2_32.lib', '-lRpcrt4.lib', '-lwinmm.lib' ],
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'AdditionalDependencies': [ 'dart.lib' ],
+              'AdditionalLibraryDirectories': [ '<(PRODUCT_DIR)' ],
+            },
           },
+        }],
+        ['OS=="mac"', {
+          'xcode_settings': {
+            'OTHER_LDFLAGS': [ '-undefined', 'dynamic_lookup' ],
+          },
+        }],
+        ['OS=="linux"', {
+          'cflags': [
+            '-fPIC',
+          ],
         }],
       ],
     },
   ],
-  'conditions': [
-    ['OS!="android"', {
-      'targets': [
-        {
-          'target_name': 'test_extension',
-          'type': 'shared_library',
-          'dependencies': [
-            'dart',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'cflags!': [
-            '-Wnon-virtual-dtor',
-            '-Woverloaded-virtual',
-            '-fno-rtti',
-            '-fvisibility-inlines-hidden',
-            '-Wno-conversion-null',
-          ],
-          'sources': [
-            'test_extension.c',
-            'test_extension_dllmain_win.cc',
-          ],
-          'defines': [
-            # The only effect of DART_SHARED_LIB is to export the Dart API.
-            'DART_SHARED_LIB',
-          ],
-          'conditions': [
-            ['OS=="win"', {
-              'msvs_settings': {
-                'VCLinkerTool': {
-                  'AdditionalDependencies': [ 'dart.lib' ],
-                  'AdditionalLibraryDirectories': [ '<(PRODUCT_DIR)' ],
-                },
-              },
-            }],
-            ['OS=="mac"', {
-              'xcode_settings': {
-                'OTHER_LDFLAGS': [ '-undefined', 'dynamic_lookup' ],
-              },
-            }],
-            ['OS=="linux"', {
-              'cflags': [
-                '-fPIC',
-              ],
-            }],
-          ],
-        },
-      ],
-    }],
-  ],
 }
-

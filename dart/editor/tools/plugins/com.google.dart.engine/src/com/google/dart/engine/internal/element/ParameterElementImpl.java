@@ -29,12 +29,12 @@ public class ParameterElementImpl extends VariableElementImpl implements Paramet
   /**
    * Is {@code true} if this variable is potentially mutated somewhere in its scope.
    */
-  private boolean isPotentiallyMutatedInScope;
+  private boolean potentiallyMutatedInScope;
 
   /**
    * Is {@code true} if this variable is potentially mutated somewhere in closure.
    */
-  private boolean isPotentiallyMutatedInClosure;
+  private boolean potentiallyMutatedInClosure;
 
   /**
    * An array containing all of the parameters defined by this parameter element. There will only be
@@ -137,26 +137,26 @@ public class ParameterElementImpl extends VariableElementImpl implements Paramet
 
   @Override
   public boolean isPotentiallyMutatedInClosure() {
-    return isPotentiallyMutatedInClosure;
+    return potentiallyMutatedInClosure;
   }
 
   @Override
   public boolean isPotentiallyMutatedInScope() {
-    return isPotentiallyMutatedInScope;
+    return potentiallyMutatedInScope;
   }
 
   /**
    * Specifies that this variable is potentially mutated somewhere in closure.
    */
   public void markPotentiallyMutatedInClosure() {
-    isPotentiallyMutatedInClosure = true;
+    potentiallyMutatedInClosure = true;
   }
 
   /**
    * Specifies that this variable is potentially mutated somewhere in its scope.
    */
   public void markPotentiallyMutatedInScope() {
-    isPotentiallyMutatedInScope = true;
+    potentiallyMutatedInScope = true;
   }
 
   /**
@@ -225,11 +225,23 @@ public class ParameterElementImpl extends VariableElementImpl implements Paramet
         left = "[";
         right = "]";
         break;
+      case REQUIRED:
+        // No need to change the default.
+        break;
     }
     builder.append(left);
+    appendToWithoutDelimiters(builder);
+    builder.append(right);
+  }
+
+  /**
+   * Append the type and name of this parameter to the given builder.
+   * 
+   * @param builder the builder to which the type and name are to be appended
+   */
+  protected void appendToWithoutDelimiters(StringBuilder builder) {
     builder.append(getType());
     builder.append(" ");
     builder.append(getDisplayName());
-    builder.append(right);
   }
 }

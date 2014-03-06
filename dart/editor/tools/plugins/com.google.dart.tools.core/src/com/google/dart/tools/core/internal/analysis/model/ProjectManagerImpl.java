@@ -35,8 +35,10 @@ import com.google.dart.tools.core.analysis.model.ProjectListener;
 import com.google.dart.tools.core.analysis.model.ProjectManager;
 import com.google.dart.tools.core.analysis.model.PubFolder;
 import com.google.dart.tools.core.analysis.model.ResolvedEvent;
+import com.google.dart.tools.core.analysis.model.ResolvedHtmlEvent;
 import com.google.dart.tools.core.analysis.model.ResourceMap;
 import com.google.dart.tools.core.builder.BuildEvent;
+import com.google.dart.tools.core.instrumentation.InstrumentationLogger;
 import com.google.dart.tools.core.internal.builder.AnalysisEngineParticipant;
 import com.google.dart.tools.core.internal.builder.AnalysisMarkerManager;
 import com.google.dart.tools.core.internal.builder.AnalysisWorker;
@@ -86,6 +88,11 @@ public class ProjectManagerImpl extends ContextManagerImpl implements ProjectMan
     @Override
     public void resolved(ResolvedEvent event) {
       index.indexUnit(event.getContext(), event.getUnit());
+    }
+
+    @Override
+    public void resolvedHtml(ResolvedHtmlEvent event) {
+      index.indexHtmlUnit(event.getContext(), event.getUnit());
     }
   };
 
@@ -302,6 +309,13 @@ public class ProjectManagerImpl extends ContextManagerImpl implements ProjectMan
   }
 
   @Override
+  public void hookListeners() {
+    resource.getWorkspace().addResourceChangeListener(resourceChangeListener);
+    ignoreManager.addListener(ignoreListener);
+    AnalysisWorker.addListener(indexNotifier);
+  }
+
+  @Override
   public boolean isClientLibrary(Source librarySource) {
     IResource resource = getResource(librarySource);
     if (resource != null) {
@@ -374,6 +388,15 @@ public class ProjectManagerImpl extends ContextManagerImpl implements ProjectMan
   }
 
   @Override
+  public String resolvePathToPackage(IResource resource, String path) {
+    Project project = getProject(resource.getProject());
+    if (project != null) {
+      return project.resolvePathToPackage(path);
+    }
+    return null;
+  }
+
+  @Override
   public IFileInfo resolveUriToFileInfo(IResource relativeTo, String uri) {
     Project project = getProject(relativeTo.getProject());
     if (project != null) {
@@ -404,9 +427,7 @@ public class ProjectManagerImpl extends ContextManagerImpl implements ProjectMan
         index.run();
       }
     }.start();
-    resource.getWorkspace().addResourceChangeListener(resourceChangeListener);
-    ignoreManager.addListener(ignoreListener);
-    AnalysisWorker.addListener(indexNotifier);
+    InstrumentationLogger.ensureLoggerStarted();
     new AnalysisWorker(this, getSdkContext()).performAnalysisInBackground();
     analyzeAllProjects();
   }
@@ -457,9 +478,7 @@ public class ProjectManagerImpl extends ContextManagerImpl implements ProjectMan
             String name = proxy.getName();
             if (isDartLikeFileName(name) || isHtmlLikeFileName(name)) {
               if (proxy.requestResource().getLocation() != null) {
-                Source source = new FileBasedSource(
-                    context.getSourceFactory().getContentCache(),
-                    proxy.requestResource().getLocation().toFile());
+                Source source = new FileBasedSource(proxy.requestResource().getLocation().toFile());
                 sources.add(source);
               }
             }
@@ -468,7 +487,8 @@ public class ProjectManagerImpl extends ContextManagerImpl implements ProjectMan
           }
           return true;
         }
-      }, 0);
+      },
+          0);
     } catch (CoreException e) {
       DartCore.logError(e);
     }
@@ -482,7 +502,7 @@ public class ProjectManagerImpl extends ContextManagerImpl implements ProjectMan
       if (resource != null) {
         AnalysisContext context = getContext(resource);
         if (resource instanceof IFile) {
-          changeSet.removed(getSource((IFile) resource));
+          changeSet.removedSource(getSource((IFile) resource));
         } else {
           changeSet.removedContainer(new DirectoryBasedSourceContainer(new File(path)));
         }
@@ -498,16 +518,16 @@ public class ProjectManagerImpl extends ContextManagerImpl implements ProjectMan
       List<Source> sources = new ArrayList<Source>();
       IResource resource = getResourceFromPath(path);
 
-      if (resource != null) {
+      if (resource != null && resource.isAccessible()) {
         AnalysisContext context = getContext(resource);
         if (resource instanceof IFile) {
           Source source = getSource((IFile) resource);
           sources.add(source);
-          changeSet.added(source);
+          changeSet.addedSource(source);
         } else {
           sources = getSourcesIn(resource);
           for (Source source : sources) {
-            changeSet.added(source);
+            changeSet.addedSource(source);
           }
         }
 

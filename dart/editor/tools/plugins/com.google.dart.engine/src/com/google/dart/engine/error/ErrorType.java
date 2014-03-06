@@ -57,7 +57,12 @@ public enum ErrorType {
   /**
    * Syntactic errors are errors produced as a result of input that does not conform to the grammar.
    */
-  SYNTACTIC_ERROR(ErrorSeverity.ERROR);
+  SYNTACTIC_ERROR(ErrorSeverity.ERROR),
+
+  /**
+   * Angular specific semantic problems.
+   */
+  ANGULAR(ErrorSeverity.INFO);
 
   /**
    * The severity of this type of error.

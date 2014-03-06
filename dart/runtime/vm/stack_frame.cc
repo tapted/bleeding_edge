@@ -150,7 +150,7 @@ RawCode* StackFrame::LookupDartCode() const {
   // that the code is called while a GC is in progress, that is ok.
   NoGCScope no_gc;
   RawCode* code = GetCodeObject();
-  ASSERT(code == Code::null() || code->ptr()->function_ != Function::null());
+  ASSERT(code == Code::null() || code->ptr()->owner_ != Function::null());
   return code;
 }
 
@@ -365,6 +365,7 @@ EntryFrame* StackFrameIterator::NextEntryFrame() {
 
 InlinedFunctionsIterator::InlinedFunctionsIterator(const Code& code, uword pc)
   : index_(0),
+    num_materializations_(0),
     code_(Code::Handle(code.raw())),
     deopt_info_(DeoptInfo::Handle()),
     function_(Function::Handle()),
@@ -386,6 +387,7 @@ InlinedFunctionsIterator::InlinedFunctionsIterator(const Code& code, uword pc)
     const Array& deopt_table = Array::Handle(code_.deopt_info_array());
     ASSERT(!deopt_table.IsNull());
     deopt_info_.ToInstructions(deopt_table, &deopt_instructions_);
+    num_materializations_ = deopt_info_.NumMaterializations();
     object_table_ = code_.object_table();
     Advance();
   }
@@ -426,7 +428,7 @@ intptr_t InlinedFunctionsIterator::GetDeoptFpOffset() const {
        index++) {
     DeoptInstr* deopt_instr = deopt_instructions_[index];
     if (deopt_instr->kind() == DeoptInstr::kCallerFp) {
-      return index;
+      return (index - num_materializations_);
     }
   }
   UNREACHABLE();

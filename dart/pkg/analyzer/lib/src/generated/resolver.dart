@@ -1,3 +1,7 @@
+// Copyright (c) 2014, the Dart project authors.  Please see the AUTHORS file
+// for details. All rights reserved. Use of this source code is governed by a
+// BSD-style license that can be found in the LICENSE file.
+
 // This code was auto-generated, is not intended to be edited, and is subject to
 // significant change. Please see the README file for more information.
 
@@ -21,10 +25,761 @@ import 'engine.dart';
 import 'constant.dart';
 
 /**
+ * Instances of the class `AngularCompilationUnitBuilder` build an Angular specific element
+ * model for a single compilation unit.
+ */
+class AngularCompilationUnitBuilder {
+  static String _NG_COMPONENT = "NgComponent";
+
+  static String _NG_CONTROLLER = "NgController";
+
+  static String _NG_DIRECTIVE = "NgDirective";
+
+  static String _NG_FILTER = "NgFilter";
+
+  static String _NAME = "name";
+
+  static String _SELECTOR = "selector";
+
+  static String _PUBLISH_AS = "publishAs";
+
+  static String _TEMPLATE_URL = "templateUrl";
+
+  static String _CSS_URL = "cssUrl";
+
+  static String _NG_ATTR = "NgAttr";
+
+  static String _NG_CALLBACK = "NgCallback";
+
+  static String _NG_ONE_WAY = "NgOneWay";
+
+  static String _NG_ONE_WAY_ONE_TIME = "NgOneWayOneTime";
+
+  static String _NG_TWO_WAY = "NgTwoWay";
+
+  static Element getElement(AstNode node, int offset) {
+    // maybe node is not SimpleStringLiteral
+    if (node is! SimpleStringLiteral) {
+      return null;
+    }
+    SimpleStringLiteral literal = node as SimpleStringLiteral;
+    // maybe has AngularElement
+    {
+      Element element = literal.toolkitElement;
+      if (element is AngularElement) {
+        return element;
+      }
+    }
+    // prepare enclosing ClassDeclaration
+    ClassDeclaration classDeclaration = node.getAncestor((node) => node is ClassDeclaration);
+    if (classDeclaration == null) {
+      return null;
+    }
+    // prepare ClassElement
+    ClassElement classElement = classDeclaration.element;
+    if (classElement == null) {
+      return null;
+    }
+    // check toolkit objects
+    for (ToolkitObjectElement toolkitObject in classElement.toolkitObjects) {
+      List<AngularPropertyElement> properties = AngularPropertyElement.EMPTY_ARRAY;
+      // maybe name
+      if (toolkitObject is AngularElement) {
+        if (isNameCoveredByLiteral(toolkitObject, node)) {
+          return toolkitObject;
+        }
+      }
+      // try selector
+      if (toolkitObject is AngularHasSelectorElement) {
+        AngularHasSelectorElement hasSelector = toolkitObject;
+        AngularSelectorElement selector = hasSelector.selector;
+        if (isNameCoveredByLiteral(selector, node)) {
+          return selector;
+        }
+      }
+      // try properties of AngularComponentElement
+      if (toolkitObject is AngularComponentElement) {
+        AngularComponentElement component = toolkitObject;
+        properties = component.properties;
+      }
+      // try properties of AngularDirectiveElement
+      if (toolkitObject is AngularDirectiveElement) {
+        AngularDirectiveElement directive = toolkitObject;
+        properties = directive.properties;
+      }
+      // check properties
+      for (AngularPropertyElement property in properties) {
+        // property name (use complete node range)
+        if (isNameCoveredByLiteral(property, node)) {
+          return property;
+        }
+        // field name (use complete node range, including @, => and <=>)
+        FieldElement field = property.field;
+        if (field != null) {
+          int fieldOffset = property.fieldNameOffset;
+          int fieldEnd = fieldOffset + field.name.length;
+          if (node.offset <= fieldOffset && fieldEnd < node.end) {
+            return field;
+          }
+        }
+      }
+    }
+    // no Element
+    return null;
+  }
+
+  /**
+   * Parses given selector text and returns [AngularSelectorElement]. May be `null` if
+   * cannot parse.
+   */
+  static AngularSelectorElement parseSelector(int offset, String text) {
+    // [attribute]
+    if (StringUtilities.startsWithChar(text, 0x5B) && StringUtilities.endsWithChar(text, 0x5D)) {
+      int nameOffset = offset + 1;
+      String attributeName = text.substring(1, text.length - 1);
+      // TODO(scheglov) report warning if there are spaces between [ and identifier
+      return new HasAttributeSelectorElementImpl(attributeName, nameOffset);
+    }
+    // .class
+    if (StringUtilities.startsWithChar(text, 0x2E)) {
+      int nameOffset = offset + 1;
+      String className = text.substring(1, text.length);
+      return new AngularHasClassSelectorElementImpl(className, nameOffset);
+    }
+    // tag[attribute]
+    if (StringUtilities.endsWithChar(text, 0x5D)) {
+      int index = StringUtilities.indexOf1(text, 0, 0x5B);
+      if (index != -1) {
+        String tagName = text.substring(0, index);
+        String attributeName = text.substring(index + 1, text.length - 1);
+        if (StringUtilities.isTagName(tagName)) {
+          return new IsTagHasAttributeSelectorElementImpl(tagName, attributeName);
+        }
+      }
+    }
+    // tag
+    if (StringUtilities.isTagName(text)) {
+      return new AngularTagSelectorElementImpl(text, offset);
+    }
+    return null;
+  }
+
+  /**
+   * Returns the [FieldElement] of the first field in the given [FieldDeclaration].
+   */
+  static FieldElement getOnlyFieldElement(FieldDeclaration fieldDeclaration) {
+    NodeList<VariableDeclaration> fields = fieldDeclaration.fields.variables;
+    return fields[0].element as FieldElement;
+  }
+
+  /**
+   * If given [Annotation] has one argument and it is [SimpleStringLiteral], returns it,
+   * otherwise returns `null`.
+   */
+  static SimpleStringLiteral getOnlySimpleStringLiteralArgument(Annotation annotation) {
+    SimpleStringLiteral nameLiteral = null;
+    ArgumentList argsNode = annotation.arguments;
+    if (argsNode != null) {
+      NodeList<Expression> args = argsNode.arguments;
+      if (args.length == 1) {
+        Expression arg = args[0];
+        if (arg is SimpleStringLiteral) {
+          nameLiteral = arg;
+        }
+      }
+    }
+    return nameLiteral;
+  }
+
+  /**
+   * Checks if the name range of the given [Element] is completely covered by the given
+   * [SimpleStringLiteral].
+   */
+  static bool isNameCoveredByLiteral(Element element, AstNode node) {
+    if (element != null) {
+      String name = element.name;
+      if (name != null) {
+        int nameOffset = element.nameOffset;
+        int nameEnd = nameOffset + name.length;
+        return node.offset <= nameOffset && nameEnd < node.end;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Parses given [SimpleStringLiteral] using [parseSelector].
+   */
+  static AngularSelectorElement parseSelectorFromString(SimpleStringLiteral literal) {
+    int offset = literal.valueOffset;
+    String text = literal.stringValue;
+    return parseSelector(offset, text);
+  }
+
+  /**
+   * The listener to which errors will be reported.
+   */
+  AnalysisErrorListener _errorListener;
+
+  /**
+   * The source containing the unit that will be analyzed.
+   */
+  Source _source;
+
+  /**
+   * The compilation unit with built Dart element models.
+   */
+  CompilationUnit _unit;
+
+  /**
+   * The [ClassDeclaration] that is currently being analyzed.
+   */
+  ClassDeclaration _classDeclaration;
+
+  /**
+   * The [ClassElementImpl] that is currently being analyzed.
+   */
+  ClassElementImpl _classElement;
+
+  /**
+   * The [ToolkitObjectElement]s to set for [classElement].
+   */
+  List<ToolkitObjectElement> _classToolkitObjects = [];
+
+  /**
+   * The [Annotation] that is currently being analyzed.
+   */
+  Annotation _annotation;
+
+  /**
+   * Initialize a newly created compilation unit element builder.
+   *
+   * @param errorListener the listener to which errors will be reported.
+   * @param source the source containing the unit that will be analyzed
+   * @param unit the compilation unit with built Dart element models
+   */
+  AngularCompilationUnitBuilder(AnalysisErrorListener errorListener, Source source, CompilationUnit unit) {
+    this._errorListener = errorListener;
+    this._source = source;
+    this._unit = unit;
+  }
+
+  /**
+   * Builds Angular specific element models and adds them to the existing Dart elements.
+   */
+  void build() {
+    parseViews();
+    // process classes
+    for (CompilationUnitMember unitMember in _unit.declarations) {
+      if (unitMember is ClassDeclaration) {
+        this._classDeclaration = unitMember;
+        this._classElement = _classDeclaration.element as ClassElementImpl;
+        this._classToolkitObjects.clear();
+        // process annotations
+        NodeList<Annotation> annotations = _classDeclaration.metadata;
+        for (Annotation annotation in annotations) {
+          // verify annotation
+          if (annotation.arguments == null) {
+            continue;
+          }
+          this._annotation = annotation;
+          // @NgFilter
+          if (isAngularAnnotation(annotation, _NG_FILTER)) {
+            parseNgFilter();
+            continue;
+          }
+          // @NgComponent
+          if (isAngularAnnotation(annotation, _NG_COMPONENT)) {
+            parseNgComponent();
+            continue;
+          }
+          // @NgController
+          if (isAngularAnnotation(annotation, _NG_CONTROLLER)) {
+            parseNgController();
+            continue;
+          }
+          // @NgDirective
+          if (isAngularAnnotation(annotation, _NG_DIRECTIVE)) {
+            parseNgDirective();
+            continue;
+          }
+        }
+        // set toolkit objects
+        if (!_classToolkitObjects.isEmpty) {
+          List<ToolkitObjectElement> objects = _classToolkitObjects;
+          _classElement.toolkitObjects = new List.from(objects);
+        }
+      }
+    }
+  }
+
+  /**
+   * @return the argument [Expression] with given name form [annotation], may be
+   *         `null` if not found.
+   */
+  Expression getArgument(String name) {
+    List<Expression> arguments = _annotation.arguments.arguments;
+    for (Expression argument in arguments) {
+      if (argument is NamedExpression) {
+        NamedExpression namedExpression = argument;
+        String argumentName = namedExpression.name.label.name;
+        if (name == argumentName) {
+          return namedExpression.expression;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * @return the [String] value of the named argument.
+   */
+  String getStringArgument(String name) => getStringLiteral(name).value;
+
+  /**
+   * @return the offset of the value of the named argument.
+   */
+  int getStringArgumentOffset(String name) {
+    Expression argument = getArgument(name);
+    return (argument as SimpleStringLiteral).valueOffset;
+  }
+
+  /**
+   * @return the [SimpleStringLiteral] of the named argument.
+   */
+  SimpleStringLiteral getStringLiteral(String name) {
+    Expression argument = getArgument(name);
+    return argument as SimpleStringLiteral;
+  }
+
+  /**
+   * Checks if [namedArguments] has string value for the argument with the given name.
+   */
+  bool hasStringArgument(String name) {
+    Expression argument = getArgument(name);
+    return argument is SimpleStringLiteral;
+  }
+
+  /**
+   * Checks if given [Annotation] is an annotation with required name.
+   */
+  bool isAngularAnnotation(Annotation annotation, String name) {
+    Element element = annotation.element;
+    if (element is ConstructorElement) {
+      ConstructorElement constructorElement = element;
+      return constructorElement.returnType.displayName == name;
+    }
+    return false;
+  }
+
+  void parseNgComponent() {
+    bool isValid = true;
+    // publishAs
+    String name = null;
+    int nameOffset = -1;
+    if (hasStringArgument(_PUBLISH_AS)) {
+      name = getStringArgument(_PUBLISH_AS);
+      nameOffset = getStringArgumentOffset(_PUBLISH_AS);
+    }
+    // selector
+    AngularSelectorElement selector = null;
+    if (!hasStringArgument(_SELECTOR)) {
+      reportErrorForAnnotation(AngularCode.MISSING_SELECTOR, []);
+      isValid = false;
+    } else {
+      SimpleStringLiteral selectorLiteral = getStringLiteral(_SELECTOR);
+      selector = parseSelectorFromString(selectorLiteral);
+      if (selector == null) {
+        reportErrorForArgument(_SELECTOR, AngularCode.CANNOT_PARSE_SELECTOR, [selectorLiteral]);
+        isValid = false;
+      }
+    }
+    // templateUrl
+    String templateUri = null;
+    int templateUriOffset = -1;
+    if (hasStringArgument(_TEMPLATE_URL)) {
+      templateUri = getStringArgument(_TEMPLATE_URL);
+      templateUriOffset = getStringArgumentOffset(_TEMPLATE_URL);
+    }
+    // cssUrl
+    String styleUri = null;
+    int styleUriOffset = -1;
+    if (hasStringArgument(_CSS_URL)) {
+      styleUri = getStringArgument(_CSS_URL);
+      styleUriOffset = getStringArgumentOffset(_CSS_URL);
+    }
+    // create
+    if (isValid) {
+      AngularComponentElementImpl element = new AngularComponentElementImpl(name, nameOffset, _annotation.offset);
+      element.selector = selector;
+      element.templateUri = templateUri;
+      element.templateUriOffset = templateUriOffset;
+      element.styleUri = styleUri;
+      element.styleUriOffset = styleUriOffset;
+      element.properties = parseNgComponentProperties();
+      element.scopeProperties = parseScopeProperties();
+      _classToolkitObjects.add(element);
+    }
+  }
+
+  /**
+   * Parses [AngularPropertyElement]s from [annotation] and [classDeclaration].
+   */
+  List<AngularPropertyElement> parseNgComponentProperties() {
+    List<AngularPropertyElement> properties = [];
+    parseNgComponentProperties_fromMap(properties);
+    parseNgComponentProperties_fromFields(properties);
+    return new List.from(properties);
+  }
+
+  /**
+   * Parses [AngularPropertyElement]s from [annotation].
+   */
+  void parseNgComponentProperties_fromFields(List<AngularPropertyElement> properties) {
+    NodeList<ClassMember> members = _classDeclaration.members;
+    for (ClassMember member in members) {
+      if (member is FieldDeclaration) {
+        FieldDeclaration fieldDeclaration = member;
+        for (Annotation annotation in fieldDeclaration.metadata) {
+          // prepare property kind (if property annotation at all)
+          AngularPropertyKind kind = null;
+          if (isAngularAnnotation(annotation, _NG_ATTR)) {
+            kind = AngularPropertyKind.ATTR;
+          } else if (isAngularAnnotation(annotation, _NG_CALLBACK)) {
+            kind = AngularPropertyKind.CALLBACK;
+          } else if (isAngularAnnotation(annotation, _NG_ONE_WAY)) {
+            kind = AngularPropertyKind.ONE_WAY;
+          } else if (isAngularAnnotation(annotation, _NG_ONE_WAY_ONE_TIME)) {
+            kind = AngularPropertyKind.ONE_WAY_ONE_TIME;
+          } else if (isAngularAnnotation(annotation, _NG_TWO_WAY)) {
+            kind = AngularPropertyKind.TWO_WAY;
+          }
+          // add property
+          if (kind != null) {
+            SimpleStringLiteral nameLiteral = getOnlySimpleStringLiteralArgument(annotation);
+            FieldElement field = getOnlyFieldElement(fieldDeclaration);
+            if (nameLiteral != null && field != null) {
+              AngularPropertyElementImpl property = new AngularPropertyElementImpl(nameLiteral.value, nameLiteral.valueOffset);
+              property.field = field;
+              property.propertyKind = kind;
+              properties.add(property);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Parses [AngularPropertyElement]s from [annotation].
+   */
+  void parseNgComponentProperties_fromMap(List<AngularPropertyElement> properties) {
+    Expression mapExpression = getArgument("map");
+    // may be not properties
+    if (mapExpression == null) {
+      return;
+    }
+    // prepare map literal
+    if (mapExpression is! MapLiteral) {
+      reportErrorForNode(AngularCode.INVALID_PROPERTY_MAP, mapExpression, []);
+      return;
+    }
+    MapLiteral mapLiteral = mapExpression as MapLiteral;
+    // analyze map entries
+    for (MapLiteralEntry entry in mapLiteral.entries) {
+      // prepare property name
+      Expression nameExpression = entry.key;
+      if (nameExpression is! SimpleStringLiteral) {
+        reportErrorForNode(AngularCode.INVALID_PROPERTY_NAME, nameExpression, []);
+        continue;
+      }
+      SimpleStringLiteral nameLiteral = nameExpression as SimpleStringLiteral;
+      String name = nameLiteral.value;
+      int nameOffset = nameLiteral.valueOffset;
+      // prepare field specification
+      Expression specExpression = entry.value;
+      if (specExpression is! SimpleStringLiteral) {
+        reportErrorForNode(AngularCode.INVALID_PROPERTY_SPEC, specExpression, []);
+        continue;
+      }
+      SimpleStringLiteral specLiteral = specExpression as SimpleStringLiteral;
+      String spec = specLiteral.value;
+      // parse binding kind and field name
+      AngularPropertyKind kind;
+      int fieldNameOffset;
+      if (StringUtilities.startsWithChar(spec, 0x40)) {
+        kind = AngularPropertyKind.ATTR;
+        fieldNameOffset = 1;
+      } else if (StringUtilities.startsWithChar(spec, 0x26)) {
+        kind = AngularPropertyKind.CALLBACK;
+        fieldNameOffset = 1;
+      } else if (StringUtilities.startsWith3(spec, 0, 0x3D, 0x3E, 0x21)) {
+        kind = AngularPropertyKind.ONE_WAY_ONE_TIME;
+        fieldNameOffset = 3;
+      } else if (StringUtilities.startsWith2(spec, 0, 0x3D, 0x3E)) {
+        kind = AngularPropertyKind.ONE_WAY;
+        fieldNameOffset = 2;
+      } else if (StringUtilities.startsWith3(spec, 0, 0x3C, 0x3D, 0x3E)) {
+        kind = AngularPropertyKind.TWO_WAY;
+        fieldNameOffset = 3;
+      } else {
+        reportErrorForNode(AngularCode.INVALID_PROPERTY_KIND, specLiteral, [spec]);
+        continue;
+      }
+      String fieldName = spec.substring(fieldNameOffset);
+      fieldNameOffset += specLiteral.valueOffset;
+      // prepare field
+      PropertyAccessorElement setter = _classElement.type.lookUpSetter(fieldName, _classElement.library);
+      if (setter == null) {
+        reportErrorForOffset(AngularCode.INVALID_PROPERTY_FIELD, fieldNameOffset, fieldName.length, [fieldName]);
+        continue;
+      }
+      FieldElement field = setter.variable as FieldElement;
+      // add property
+      AngularPropertyElementImpl property = new AngularPropertyElementImpl(name, nameOffset);
+      property.field = field;
+      property.propertyKind = kind;
+      property.fieldNameOffset = fieldNameOffset;
+      properties.add(property);
+    }
+  }
+
+  void parseNgController() {
+    bool isValid = true;
+    // publishAs
+    if (!hasStringArgument(_PUBLISH_AS)) {
+      reportErrorForAnnotation(AngularCode.MISSING_PUBLISH_AS, []);
+      isValid = false;
+    }
+    // selector
+    AngularSelectorElement selector = null;
+    if (!hasStringArgument(_SELECTOR)) {
+      reportErrorForAnnotation(AngularCode.MISSING_SELECTOR, []);
+      isValid = false;
+    } else {
+      SimpleStringLiteral selectorLiteral = getStringLiteral(_SELECTOR);
+      selector = parseSelectorFromString(selectorLiteral);
+      if (selector == null) {
+        reportErrorForArgument(_SELECTOR, AngularCode.CANNOT_PARSE_SELECTOR, [selectorLiteral]);
+        isValid = false;
+      }
+    }
+    // create
+    if (isValid) {
+      String name = getStringArgument(_PUBLISH_AS);
+      int nameOffset = getStringArgumentOffset(_PUBLISH_AS);
+      AngularControllerElementImpl element = new AngularControllerElementImpl(name, nameOffset);
+      element.selector = selector;
+      _classToolkitObjects.add(element);
+    }
+  }
+
+  void parseNgDirective() {
+    bool isValid = true;
+    // selector
+    AngularSelectorElement selector = null;
+    if (!hasStringArgument(_SELECTOR)) {
+      reportErrorForAnnotation(AngularCode.MISSING_SELECTOR, []);
+      isValid = false;
+    } else {
+      SimpleStringLiteral selectorLiteral = getStringLiteral(_SELECTOR);
+      selector = parseSelectorFromString(selectorLiteral);
+      if (selector == null) {
+        reportErrorForArgument(_SELECTOR, AngularCode.CANNOT_PARSE_SELECTOR, [selectorLiteral]);
+        isValid = false;
+      }
+    }
+    // create
+    if (isValid) {
+      int offset = _annotation.offset;
+      AngularDirectiveElementImpl element = new AngularDirectiveElementImpl(offset);
+      element.selector = selector;
+      element.properties = parseNgComponentProperties();
+      _classToolkitObjects.add(element);
+    }
+  }
+
+  void parseNgFilter() {
+    bool isValid = true;
+    // name
+    if (!hasStringArgument(_NAME)) {
+      reportErrorForAnnotation(AngularCode.MISSING_NAME, []);
+      isValid = false;
+    }
+    // create
+    if (isValid) {
+      String name = getStringArgument(_NAME);
+      int nameOffset = getStringArgumentOffset(_NAME);
+      _classToolkitObjects.add(new AngularFilterElementImpl(name, nameOffset));
+    }
+  }
+
+  List<AngularScopePropertyElement> parseScopeProperties() {
+    List<AngularScopePropertyElement> properties = [];
+    _classDeclaration.accept(new RecursiveAstVisitor_AngularCompilationUnitBuilder_parseScopeProperties(properties));
+    return new List.from(properties);
+  }
+
+  /**
+   * Create [AngularViewElement] for each valid <code>view('template.html')</code> invocation,
+   * where <code>view</code> is <code>ViewFactory</code>.
+   */
+  void parseViews() {
+    List<AngularViewElement> views = [];
+    _unit.accept(new RecursiveAstVisitor_AngularCompilationUnitBuilder_parseViews(views));
+    if (!views.isEmpty) {
+      List<AngularViewElement> viewArray = new List.from(views);
+      (_unit.element as CompilationUnitElementImpl).angularViews = viewArray;
+    }
+  }
+
+  void reportErrorForAnnotation(ErrorCode errorCode, List<Object> arguments) {
+    reportErrorForNode(errorCode, _annotation, arguments);
+  }
+
+  void reportErrorForArgument(String argumentName, ErrorCode errorCode, List<Object> arguments) {
+    Expression argument = getArgument(argumentName);
+    reportErrorForNode(errorCode, argument, arguments);
+  }
+
+  void reportErrorForNode(ErrorCode errorCode, AstNode node, List<Object> arguments) {
+    int offset = node.offset;
+    int length = node.length;
+    reportErrorForOffset(errorCode, offset, length, arguments);
+  }
+
+  void reportErrorForOffset(ErrorCode errorCode, int offset, int length, List<Object> arguments) {
+    _errorListener.onError(new AnalysisError.con2(_source, offset, length, errorCode, arguments));
+  }
+}
+
+class RecursiveAstVisitor_AngularCompilationUnitBuilder_parseScopeProperties extends RecursiveAstVisitor<Object> {
+  List<AngularScopePropertyElement> properties;
+
+  RecursiveAstVisitor_AngularCompilationUnitBuilder_parseScopeProperties(this.properties) : super();
+
+  Object visitAssignmentExpression(AssignmentExpression node) {
+    addProperty(node);
+    return super.visitAssignmentExpression(node);
+  }
+
+  void addProperty(AssignmentExpression node) {
+    // try to find "name" in scope[name]
+    SimpleStringLiteral nameNode = getNameNode(node.leftHandSide);
+    if (nameNode == null) {
+      return;
+    }
+    // prepare unique
+    String name = nameNode.stringValue;
+    if (hasPropertyWithName(name)) {
+      return;
+    }
+    // do add property
+    int nameOffset = nameNode.valueOffset;
+    AngularScopePropertyElement property = new AngularScopePropertyElementImpl(name, nameOffset, node.rightHandSide.bestType);
+    nameNode.toolkitElement = property;
+    properties.add(property);
+  }
+
+  SimpleStringLiteral getNameNode(Expression node) {
+    if (node is IndexExpression) {
+      IndexExpression indexExpression = node;
+      Expression target = indexExpression.target;
+      Expression index = indexExpression.index;
+      if (index is SimpleStringLiteral && isContext(target)) {
+        return index;
+      }
+    }
+    return null;
+  }
+
+  bool hasPropertyWithName(String name) {
+    for (AngularScopePropertyElement property in properties) {
+      if (property.name == name) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool isContext(Expression target) {
+    if (target is PrefixedIdentifier) {
+      PrefixedIdentifier prefixed = target;
+      SimpleIdentifier prefix = prefixed.prefix;
+      SimpleIdentifier identifier = prefixed.identifier;
+      return (identifier.name == "context") && isScope(prefix);
+    }
+    return false;
+  }
+
+  bool isScope(Expression target) {
+    if (target != null) {
+      Type2 type = target.bestType;
+      if (type is InterfaceType) {
+        InterfaceType interfaceType = type;
+        return interfaceType.name == "Scope";
+      }
+    }
+    return false;
+  }
+}
+
+class RecursiveAstVisitor_AngularCompilationUnitBuilder_parseViews extends RecursiveAstVisitor<Object> {
+  List<AngularViewElement> views;
+
+  RecursiveAstVisitor_AngularCompilationUnitBuilder_parseViews(this.views) : super();
+
+  Object visitMethodInvocation(MethodInvocation node) {
+    addView(node);
+    return super.visitMethodInvocation(node);
+  }
+
+  void addView(MethodInvocation node) {
+    // only one argument
+    List<Expression> arguments = node.argumentList.arguments;
+    if (arguments.length != 1) {
+      return;
+    }
+    // String literal
+    Expression argument = arguments[0];
+    if (argument is! SimpleStringLiteral) {
+      return;
+    }
+    SimpleStringLiteral literal = argument as SimpleStringLiteral;
+    // just view('template')
+    if (node.realTarget != null) {
+      return;
+    }
+    // should be ViewFactory
+    if (!isViewFactory(node.methodName)) {
+      return;
+    }
+    // add AngularViewElement
+    String templateUri = literal.stringValue;
+    int templateUriOffset = literal.valueOffset;
+    views.add(new AngularViewElementImpl(templateUri, templateUriOffset));
+  }
+
+  bool isViewFactory(Expression target) {
+    if (target is SimpleIdentifier) {
+      SimpleIdentifier identifier = target;
+      Element element = identifier.staticElement;
+      if (element is VariableElement) {
+        VariableElement variable = element;
+        Type2 type = variable.type;
+        if (type is InterfaceType) {
+          InterfaceType interfaceType = type;
+          return interfaceType.name == "ViewFactory";
+        }
+      }
+    }
+    return false;
+  }
+}
+
+/**
  * Instances of the class `CompilationUnitBuilder` build an element model for a single
  * compilation unit.
- *
- * @coverage dart.engine.resolver
  */
 class CompilationUnitBuilder {
   /**
@@ -62,10 +817,8 @@ class CompilationUnitBuilder {
 /**
  * Instances of the class `ElementBuilder` traverse an AST structure and build the element
  * model representing the AST structure.
- *
- * @coverage dart.engine.resolver
  */
-class ElementBuilder extends RecursiveASTVisitor<Object> {
+class ElementBuilder extends RecursiveAstVisitor<Object> {
   /**
    * The element holder associated with the element that is currently being built.
    */
@@ -92,6 +845,12 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
    * currently processing nodes within a class.
    */
   List<FunctionTypeImpl> _functionTypesToFix = null;
+
+  /**
+   * A table mapping field names to field elements for the fields defined in the current class, or
+   * `null` if we are not in the scope of a class.
+   */
+  Map<String, FieldElement> _fieldMap;
 
   /**
    * Initialize a newly created element builder to build the elements for a compilation unit.
@@ -133,7 +892,23 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
     ElementHolder holder = new ElementHolder();
     _isValidMixin = true;
     _functionTypesToFix = new List<FunctionTypeImpl>();
-    visitChildren(holder, node);
+    //
+    // Process field declarations before constructors and methods so that field formal parameters
+    // can be correctly resolved to their fields.
+    //
+    ElementHolder previousHolder = _currentHolder;
+    _currentHolder = holder;
+    try {
+      List<ClassMember> nonFields = new List<ClassMember>();
+      node.visitChildren(new UnifyingAstVisitor_ElementBuilder_visitClassDeclaration(this, nonFields));
+      buildFieldMap(holder.fieldsWithoutFlushing);
+      int count = nonFields.length;
+      for (int i = 0; i < count; i++) {
+        nonFields[i].accept(this);
+      }
+    } finally {
+      _currentHolder = previousHolder;
+    }
     SimpleIdentifier className = node.name;
     ClassElementImpl element = new ClassElementImpl(className);
     List<TypeParameterElement> typeParameters = holder.typeParameters;
@@ -143,6 +918,9 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
     element.type = interfaceType;
     List<ConstructorElement> constructors = holder.constructors;
     if (constructors.length == 0) {
+      //
+      // Create the default constructor.
+      //
       constructors = createDefaultConstructors(interfaceType);
     }
     element.abstract = node.abstractKeyword != null;
@@ -159,6 +937,7 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
     _functionTypesToFix = null;
     _currentHolder.addType(element);
     className.staticElement = element;
+    _fieldMap = null;
     holder.validate();
     return null;
   }
@@ -177,6 +956,7 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
     InterfaceTypeImpl interfaceType = new InterfaceTypeImpl.con1(element);
     interfaceType.typeArguments = typeArguments;
     element.type = interfaceType;
+    // set default constructor
     element.constructors = createDefaultConstructors(interfaceType);
     for (FunctionTypeImpl functionType in _functionTypesToFix) {
       functionType.typeArguments = typeArguments;
@@ -199,7 +979,7 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
       _inFunction = wasInFunction;
     }
     SimpleIdentifier constructorName = node.name;
-    ConstructorElementImpl element = new ConstructorElementImpl(constructorName);
+    ConstructorElementImpl element = new ConstructorElementImpl.con1(constructorName);
     if (node.factoryKeyword != null) {
       element.factory = true;
     }
@@ -239,16 +1019,22 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
 
   Object visitDefaultFormalParameter(DefaultFormalParameter node) {
     ElementHolder holder = new ElementHolder();
-    SimpleIdentifier parameterName = node.parameter.identifier;
+    NormalFormalParameter normalParameter = node.parameter;
+    SimpleIdentifier parameterName = normalParameter.identifier;
     ParameterElementImpl parameter;
-    if (node.parameter is FieldFormalParameter) {
+    if (normalParameter is FieldFormalParameter) {
       parameter = new DefaultFieldFormalParameterElementImpl(parameterName);
+      FieldElement field = _fieldMap == null ? null : _fieldMap[parameterName.name];
+      if (field != null) {
+        (parameter as DefaultFieldFormalParameterElementImpl).field = field;
+      }
     } else {
       parameter = new DefaultParameterElementImpl(parameterName);
     }
     parameter.const3 = node.isConst;
     parameter.final2 = node.isFinal;
     parameter.parameterKind = node.kind;
+    // set initializer, default value range
     Expression defaultValue = node.defaultValue;
     if (defaultValue != null) {
       visit(holder, defaultValue);
@@ -261,10 +1047,11 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
       parameter.initializer = initializer;
       parameter.setDefaultValueRange(defaultValue.offset, defaultValue.length);
     }
+    // visible range
     setParameterVisibleRange(node, parameter);
     _currentHolder.addParameter(parameter);
     parameterName.staticElement = parameter;
-    node.parameter.accept(this);
+    normalParameter.accept(this);
     holder.validate();
     return null;
   }
@@ -283,13 +1070,20 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
   Object visitFieldFormalParameter(FieldFormalParameter node) {
     if (node.parent is! DefaultFormalParameter) {
       SimpleIdentifier parameterName = node.identifier;
+      FieldElement field = _fieldMap == null ? null : _fieldMap[parameterName.name];
       FieldFormalParameterElementImpl parameter = new FieldFormalParameterElementImpl(parameterName);
       parameter.const3 = node.isConst;
       parameter.final2 = node.isFinal;
       parameter.parameterKind = node.kind;
+      if (field != null) {
+        parameter.field = field;
+      }
       _currentHolder.addParameter(parameter);
       parameterName.staticElement = parameter;
     }
+    //
+    // The children of this parameter include any parameters defined on the type of this parameter.
+    //
     ElementHolder holder = new ElementHolder();
     visitChildren(holder, node);
     (node.element as ParameterElementImpl).parameters = holder.parameters;
@@ -317,7 +1111,7 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
         element.localVariables = holder.localVariables;
         element.parameters = holder.parameters;
         if (_inFunction) {
-          Block enclosingBlock = node.getAncestor(Block);
+          Block enclosingBlock = node.getAncestor((node) => node is Block);
           if (enclosingBlock != null) {
             int functionEnd = node.offset + node.length;
             int blockEnd = enclosingBlock.offset + enclosingBlock.length;
@@ -330,6 +1124,7 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
       } else {
         SimpleIdentifier propertyNameNode = node.name;
         if (propertyNameNode == null) {
+          // TODO(brianwilkerson) Report this internal error.
           return null;
         }
         String propertyName = propertyNameNode.name;
@@ -388,7 +1183,7 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
     element.localVariables = holder.localVariables;
     element.parameters = holder.parameters;
     if (_inFunction) {
-      Block enclosingBlock = node.getAncestor(Block);
+      Block enclosingBlock = node.getAncestor((node) => node is Block);
       if (enclosingBlock != null) {
         int functionEnd = node.offset + node.length;
         int blockEnd = enclosingBlock.offset + enclosingBlock.length;
@@ -433,6 +1228,9 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
       _currentHolder.addParameter(parameter);
       parameterName.staticElement = parameter;
     }
+    //
+    // The children of this parameter include any parameters defined on the type of this parameter.
+    //
     ElementHolder holder = new ElementHolder();
     visitChildren(holder, node);
     (node.element as ParameterElementImpl).parameters = holder.parameters;
@@ -595,9 +1393,10 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
         variable = new LocalVariableElementImpl(variableName);
       }
       element = variable;
-      Block enclosingBlock = node.getAncestor(Block);
+      Block enclosingBlock = node.getAncestor((node) => node is Block);
       int functionEnd = node.offset + node.length;
       int blockEnd = enclosingBlock.offset + enclosingBlock.length;
+      // TODO(brianwilkerson) This isn't right for variables declared in a for loop.
       variable.setVisibleRange(functionEnd, blockEnd - functionEnd - 1);
       _currentHolder.addLocalVariable(variable);
       variableName.staticElement = element;
@@ -658,13 +1457,28 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
   }
 
   /**
+   * Build the table mapping field names to field elements for the fields defined in the current
+   * class.
+   *
+   * @param fields the field elements defined in the current class
+   */
+  void buildFieldMap(List<FieldElement> fields) {
+    _fieldMap = new Map<String, FieldElement>();
+    int count = fields.length;
+    for (int i = 0; i < count; i++) {
+      FieldElement field = fields[i];
+      _fieldMap[field.name] = field;
+    }
+  }
+
+  /**
    * Creates the [ConstructorElement]s array with the single default constructor element.
    *
    * @param interfaceType the interface type for which to create a default constructor
    * @return the [ConstructorElement]s array with the single default constructor element
    */
   List<ConstructorElement> createDefaultConstructors(InterfaceTypeImpl interfaceType) {
-    ConstructorElementImpl constructor = new ConstructorElementImpl(null);
+    ConstructorElementImpl constructor = new ConstructorElementImpl.con1(null);
     constructor.synthetic = true;
     constructor.returnType = interfaceType;
     FunctionTypeImpl type = new FunctionTypeImpl.con1(constructor);
@@ -700,7 +1514,7 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
    * @return the body of the function that contains the given parameter
    */
   FunctionBody getFunctionBody(FormalParameter node) {
-    ASTNode parent = node.parent;
+    AstNode parent = node.parent;
     while (parent != null) {
       if (parent is ConstructorDeclaration) {
         return (parent as ConstructorDeclaration).body;
@@ -739,7 +1553,7 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
    * @param holder the holder that will gather elements that are built while visiting the children
    * @param node the node to be visited
    */
-  void visit(ElementHolder holder, ASTNode node) {
+  void visit(ElementHolder holder, AstNode node) {
     if (node != null) {
       ElementHolder previousHolder = _currentHolder;
       _currentHolder = holder;
@@ -757,7 +1571,7 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
    * @param holder the holder that will gather elements that are built while visiting the children
    * @param node the node whose children are to be visited
    */
-  void visitChildren(ElementHolder holder, ASTNode node) {
+  void visitChildren(ElementHolder holder, AstNode node) {
     if (node != null) {
       ElementHolder previousHolder = _currentHolder;
       _currentHolder = holder;
@@ -770,11 +1584,29 @@ class ElementBuilder extends RecursiveASTVisitor<Object> {
   }
 }
 
+class UnifyingAstVisitor_ElementBuilder_visitClassDeclaration extends UnifyingAstVisitor<Object> {
+  final ElementBuilder ElementBuilder_this;
+
+  List<ClassMember> nonFields;
+
+  UnifyingAstVisitor_ElementBuilder_visitClassDeclaration(this.ElementBuilder_this, this.nonFields) : super();
+
+  Object visitConstructorDeclaration(ConstructorDeclaration node) {
+    nonFields.add(node);
+    return null;
+  }
+
+  Object visitMethodDeclaration(MethodDeclaration node) {
+    nonFields.add(node);
+    return null;
+  }
+
+  Object visitNode(AstNode node) => node.accept(ElementBuilder_this);
+}
+
 /**
  * Instances of the class `ElementHolder` hold on to elements created while traversing an AST
  * structure so that they can be accessed when creating their enclosing element.
- *
- * @coverage dart.engine.resolver
  */
 class ElementHolder {
   List<PropertyAccessorElement> _accessors;
@@ -921,6 +1753,14 @@ class ElementHolder {
     }
     List<FieldElement> result = new List.from(_fields);
     _fields = null;
+    return result;
+  }
+
+  List<FieldElement> get fieldsWithoutFlushing {
+    if (_fields == null) {
+      return FieldElementImpl.EMPTY_ARRAY;
+    }
+    List<FieldElement> result = new List.from(_fields);
     return result;
   }
 
@@ -1128,12 +1968,6 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
   int _modificationStamp = 0;
 
   /**
-   * The line information associated with the source for which an element is being built, or
-   * `null` if we are not building an element.
-   */
-  LineInfo _lineInfo;
-
-  /**
    * The HTML element being built.
    */
   HtmlElementImpl _htmlElement;
@@ -1170,7 +2004,7 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
    * @return the HTML element that was built
    * @throws AnalysisException if the analysis could not be performed
    */
-  HtmlElementImpl buildHtmlElement(Source source) => buildHtmlElement2(source, source.modificationStamp, _context.parseHtmlUnit(source));
+  HtmlElementImpl buildHtmlElement(Source source) => buildHtmlElement2(source, _context.getModificationStamp(source), _context.parseHtmlUnit(source));
 
   /**
    * Build the HTML element for the given source.
@@ -1183,7 +2017,6 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
    */
   HtmlElementImpl buildHtmlElement2(Source source, int modificationStamp, ht.HtmlUnit unit) {
     this._modificationStamp = modificationStamp;
-    _lineInfo = _context.computeLineInfo(source);
     HtmlElementImpl result = new HtmlElementImpl(_context, source.shortName);
     result.source = source;
     _htmlElement = result;
@@ -1225,7 +2058,8 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
           _resolvedLibraries.addAll(resolver.resolvedLibraries);
           _errorListener.addAll(resolver.errorListener);
         } on AnalysisException catch (exception) {
-          AnalysisEngine.instance.logger.logError3(exception);
+          //TODO (danrubel): Handle or forward the exception
+          AnalysisEngine.instance.logger.logError2("Could not resolve script tag", exception);
         }
         node.scriptElement = script;
         _scripts.add(script);
@@ -1234,10 +2068,12 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
         if (scriptSourcePath != null) {
           try {
             scriptSourcePath = Uri.encodeFull(scriptSourcePath);
+            // Force an exception to be thrown if the URI is invalid so that we can report the
+            // problem.
             parseUriWithException(scriptSourcePath);
             Source scriptSource = _context.sourceFactory.resolveUri(htmlSource, scriptSourcePath);
             script.scriptSource = scriptSource;
-            if (scriptSource == null || !scriptSource.exists()) {
+            if (!_context.exists(scriptSource)) {
               reportValueError(HtmlWarningCode.URI_DOES_NOT_EXIST, scriptAttribute, [scriptSourcePath]);
             }
           } on URISyntaxException catch (exception) {
@@ -1266,12 +2102,7 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
     return null;
   }
 
-  Object visitXmlAttributeNode(ht.XmlAttributeNode node) {
-    for (ht.EmbeddedExpression expression in node.expressions) {
-      resolveExpression(expression.expression);
-    }
-    return null;
-  }
+  Object visitXmlAttributeNode(ht.XmlAttributeNode node) => null;
 
   Object visitXmlTagNode(ht.XmlTagNode node) {
     if (_parentNodes.contains(node)) {
@@ -1279,9 +2110,6 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
     }
     _parentNodes.add(node);
     try {
-      for (ht.EmbeddedExpression expression in node.expressions) {
-        resolveExpression(expression.expression);
-      }
       node.visitChildren(this);
     } finally {
       _parentNodes.remove(node);
@@ -1297,7 +2125,7 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
    */
   ht.XmlAttributeNode getScriptSourcePath(ht.XmlTagNode node) {
     for (ht.XmlAttributeNode attribute in node.attributes) {
-      if (attribute.name.lexeme == _SRC) {
+      if (attribute.name == _SRC) {
         return attribute;
       }
     }
@@ -1305,6 +2133,11 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
   }
 
   Object reportCircularity(ht.XmlTagNode node) {
+    //
+    // This should not be possible, but we have an error report that suggests that it happened at
+    // least once. This code will guard against infinite recursion and might help us identify the
+    // cause of the issue.
+    //
     JavaStringBuilder builder = new JavaStringBuilder();
     builder.append("Found circularity in XML nodes: ");
     bool first = true;
@@ -1314,7 +2147,7 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
       } else {
         builder.append(", ");
       }
-      String tagName = pathNode.tag.lexeme;
+      String tagName = pathNode.tag;
       if (identical(pathNode, node)) {
         builder.append("*");
         builder.append(tagName);
@@ -1336,7 +2169,7 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
    * @param length the number of characters to be highlighted
    * @param arguments the arguments used to compose the error message
    */
-  void reportError(ErrorCode errorCode, int offset, int length, List<Object> arguments) {
+  void reportErrorForOffset(ErrorCode errorCode, int offset, int length, List<Object> arguments) {
     _errorListener.onError(new AnalysisError.con2(_htmlElement.source, offset, length, errorCode, arguments));
   }
 
@@ -1350,22 +2183,17 @@ class HtmlUnitBuilder implements ht.XmlVisitor<Object> {
    * @param arguments the arguments used to compose the error message
    */
   void reportValueError(ErrorCode errorCode, ht.XmlAttributeNode attribute, List<Object> arguments) {
-    int offset = attribute.value.offset + 1;
-    int length = attribute.value.length - 2;
-    reportError(errorCode, offset, length, arguments);
-  }
-
-  void resolveExpression(Expression expression) {
+    int offset = attribute.valueToken.offset + 1;
+    int length = attribute.valueToken.length - 2;
+    reportErrorForOffset(errorCode, offset, length, arguments);
   }
 }
 
 /**
  * Instances of the class `BestPracticesVerifier` traverse an AST structure looking for
  * violations of Dart best practices.
- *
- * @coverage dart.engine.resolver
  */
-class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
+class BestPracticesVerifier extends RecursiveAstVisitor<Object> {
   static String _GETTER = "getter";
 
   static String _HASHCODE_GETTER_NAME = "hashCode";
@@ -1425,6 +2253,8 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
     sc.TokenType operatorType = node.operator.type;
     if (operatorType != sc.TokenType.EQ) {
       checkForDeprecatedMemberUse(node.bestElement, node);
+    } else {
+      checkForUseOfVoidResult(node.rightHandSide);
     }
     return super.visitAssignmentExpression(node);
   }
@@ -1439,6 +2269,8 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
     ClassElement outerClass = _enclosingClass;
     try {
       _enclosingClass = node.element;
+      // Commented out until we decide that we want this hint in the analyzer
+      //    checkForOverrideEqualsButNotHashCode(node);
       return super.visitClassDeclaration(node);
     } finally {
       _enclosingClass = outerClass;
@@ -1448,6 +2280,11 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
   Object visitExportDirective(ExportDirective node) {
     checkForDeprecatedMemberUse(node.uriElement, node);
     return super.visitExportDirective(node);
+  }
+
+  Object visitFunctionDeclaration(FunctionDeclaration node) {
+    checkForMissingReturn(node.returnType, node.functionExpression.body);
+    return super.visitFunctionDeclaration(node);
   }
 
   Object visitImportDirective(ImportDirective node) {
@@ -1471,7 +2308,9 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitMethodDeclaration(MethodDeclaration node) {
-    checkForOverridingPrivateMember(node);
+    // This was determined to not be a good hint, see: dartbug.com/16029
+    //checkForOverridingPrivateMember(node);
+    checkForMissingReturn(node.returnType, node.body);
     return super.visitMethodDeclaration(node);
   }
 
@@ -1491,13 +2330,18 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitSimpleIdentifier(SimpleIdentifier node) {
-    checkForDeprecatedMemberUse2(node);
+    checkForDeprecatedMemberUseAtIdentifier(node);
     return super.visitSimpleIdentifier(node);
   }
 
   Object visitSuperConstructorInvocation(SuperConstructorInvocation node) {
     checkForDeprecatedMemberUse(node.staticElement, node);
     return super.visitSuperConstructorInvocation(node);
+  }
+
+  Object visitVariableDeclaration(VariableDeclaration node) {
+    checkForUseOfVoidResult(node.initializer);
+    return super.visitVariableDeclaration(node);
   }
 
   /**
@@ -1520,10 +2364,13 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
       return false;
     }
     String rhsNameStr = typeName.name.name;
+    // if x is dynamic
     if (rhsType.isDynamic && rhsNameStr == sc.Keyword.DYNAMIC.syntax) {
       if (node.notOperator == null) {
+        // the is case
         _errorReporter.reportError2(HintCode.UNNECESSARY_TYPE_CHECK_TRUE, node, []);
       } else {
+        // the is not case
         _errorReporter.reportError2(HintCode.UNNECESSARY_TYPE_CHECK_FALSE, node, []);
       }
       return true;
@@ -1531,17 +2378,22 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
     Element rhsElement = rhsType.element;
     LibraryElement libraryElement = rhsElement != null ? rhsElement.library : null;
     if (libraryElement != null && libraryElement.isDartCore) {
+      // if x is Object or null is Null
       if (rhsType.isObject || (expression is NullLiteral && rhsNameStr == _NULL_TYPE_NAME)) {
         if (node.notOperator == null) {
+          // the is case
           _errorReporter.reportError2(HintCode.UNNECESSARY_TYPE_CHECK_TRUE, node, []);
         } else {
+          // the is not case
           _errorReporter.reportError2(HintCode.UNNECESSARY_TYPE_CHECK_FALSE, node, []);
         }
         return true;
       } else if (rhsNameStr == _NULL_TYPE_NAME) {
         if (node.notOperator == null) {
+          // the is case
           _errorReporter.reportError2(HintCode.TYPE_CHECK_IS_NULL, node, []);
         } else {
+          // the is not case
           _errorReporter.reportError2(HintCode.TYPE_CHECK_IS_NOT_NULL, node, []);
         }
         return true;
@@ -1559,11 +2411,13 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
    * @return `true` if and only if a hint code is generated on the passed node
    * @see HintCode#DEPRECATED_MEMBER_USE
    */
-  bool checkForDeprecatedMemberUse(Element element, ASTNode node) {
+  bool checkForDeprecatedMemberUse(Element element, AstNode node) {
     if (element != null && element.isDeprecated) {
       String displayName = element.displayName;
       if (element is ConstructorElement) {
-        ConstructorElement constructorElement = element as ConstructorElement;
+        // TODO(jwren) We should modify ConstructorElement.getDisplayName(), or have the logic
+        // centralized elsewhere, instead of doing this logic here.
+        ConstructorElement constructorElement = element;
         displayName = constructorElement.enclosingElement.displayName;
         if (!constructorElement.displayName.isEmpty) {
           displayName = "${displayName}.${constructorElement.displayName}";
@@ -1589,12 +2443,12 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
    * @return `true` if and only if a hint code is generated on the passed node
    * @see HintCode#DEPRECATED_MEMBER_USE
    */
-  bool checkForDeprecatedMemberUse2(SimpleIdentifier identifier) {
+  bool checkForDeprecatedMemberUseAtIdentifier(SimpleIdentifier identifier) {
     if (identifier.inDeclarationContext()) {
       return false;
     }
-    ASTNode parent = identifier.parent;
-    if ((parent is ConstructorName && identical(identifier, (parent as ConstructorName).name)) || (parent is SuperConstructorInvocation && identical(identifier, (parent as SuperConstructorInvocation).constructorName)) || parent is HideCombinator) {
+    AstNode parent = identifier.parent;
+    if ((parent is ConstructorName && identical(identifier, parent.name)) || (parent is SuperConstructorInvocation && identical(identifier, parent.constructorName)) || parent is HideCombinator) {
       return false;
     }
     return checkForDeprecatedMemberUse(identifier.bestElement, identifier);
@@ -1608,9 +2462,11 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
    * @see HintCode#DIVISION_OPTIMIZATION
    */
   bool checkForDivisionOptimizationHint(BinaryExpression node) {
+    // Return if the operator is not '/'
     if (node.operator.type != sc.TokenType.SLASH) {
       return false;
     }
+    // Return if the '/' operator is not defined in core, or if we don't know its static or propagated type
     MethodElement methodElement = node.bestElement;
     if (methodElement == null) {
       return false;
@@ -1619,6 +2475,7 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
     if (libraryElement != null && !libraryElement.isDartCore) {
       return false;
     }
+    // Report error if the (x/y) has toInt() invoked on it
     if (node.parent is ParenthesizedExpression) {
       ParenthesizedExpression parenthesizedExpression = wrapParenthesizedExpression(node.parent as ParenthesizedExpression);
       if (parenthesizedExpression.parent is MethodInvocation) {
@@ -1628,6 +2485,39 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
           return true;
         }
       }
+    }
+    return false;
+  }
+
+  /**
+   * Generate a hint for functions or methods that have a return type, but do not have a return
+   * statement on all branches. At the end of blocks with no return, Dart implicitly returns
+   * `null`, avoiding these implicit returns is considered a best practice.
+   *
+   * @param node the binary expression to check
+   * @param body the function body
+   * @return `true` if and only if a hint code is generated on the passed node
+   * @see HintCode#MISSING_RETURN
+   */
+  bool checkForMissingReturn(TypeName returnType, FunctionBody body) {
+    // Check that the method or function has a return type, and a function body
+    if (returnType == null || body == null) {
+      return false;
+    }
+    // Check that the body is a BlockFunctionBody
+    if (body is! BlockFunctionBody) {
+      return false;
+    }
+    // Check that the type is resolvable, and is not "void"
+    Type2 returnTypeType = returnType.type;
+    if (returnTypeType == null || returnTypeType.isVoid) {
+      return false;
+    }
+    // Check the block for a return statement, if not, create the hint
+    BlockFunctionBody blockFunctionBody = body as BlockFunctionBody;
+    if (!blockFunctionBody.accept(new ExitDetector())) {
+      _errorReporter.reportError2(HintCode.MISSING_RETURN, returnType, [returnTypeType.displayName]);
+      return true;
     }
     return false;
   }
@@ -1657,24 +2547,31 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
   }
 
   /**
-   * Check for the passed class declaration for the
-   * [HintCode#OVERRIDE_EQUALS_BUT_NOT_HASH_CODE] hint code.
+   * Checks that if the passed method declaration is private, it does not override a private member
+   * in a superclass.
    *
-   * @param node the class declaration to check
+   * @param node the method declaration to check
    * @return `true` if and only if a hint code is generated on the passed node
    * @see HintCode#OVERRIDDING_PRIVATE_MEMBER
    */
   bool checkForOverridingPrivateMember(MethodDeclaration node) {
+    // If not in an enclosing class, return false
     if (_enclosingClass == null) {
       return false;
     }
+    // If the member is not private, return false
     if (!Identifier.isPrivateName(node.name.name)) {
       return false;
     }
+    // Get the element of the member, if null, return false
     ExecutableElement executableElement = node.element;
     if (executableElement == null) {
       return false;
     }
+    // Loop through all of the superclasses looking for a matching method or accessor
+    // TODO(jwren) If the HintGenerator needs or has easy access to the InheritanceManager in the
+    // future then this could be refactored down to be more readable, however, since we are only
+    // looking through super classes (and not the entire interface graph) there is no pressing need
     String elementName = executableElement.name;
     bool isGetterOrSetter = executableElement is PropertyAccessorElement;
     InterfaceType superType = _enclosingClass.supertype;
@@ -1730,8 +2627,34 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
     TypeName typeName = node.type;
     Type2 lhsType = expression.staticType;
     Type2 rhsType = typeName.type;
+    // TODO(jwren) After dartbug.com/13732, revisit this, we should be able to remove the
+    // !(x instanceof TypeParameterType) checks.
     if (lhsType != null && rhsType != null && !lhsType.isDynamic && !rhsType.isDynamic && lhsType is! TypeParameterType && rhsType is! TypeParameterType && lhsType.isSubtypeOf(rhsType)) {
       _errorReporter.reportError2(HintCode.UNNECESSARY_CAST, node, []);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check for situations where the result of a method or function is used, when it returns 'void'.
+   *
+   * TODO(jwren) Many other situations of use could be covered. We currently cover the cases var x =
+   * m() and x = m(), but we could also cover cases such as m().x, m()[k], a + m(), f(m()), return
+   * m().
+   *
+   * @param node expression on the RHS of some assignment
+   * @return `true` if and only if a hint code is generated on the passed node
+   * @see HintCode#USE_OF_VOID_RESULT
+   */
+  bool checkForUseOfVoidResult(Expression expression) {
+    if (expression == null || expression is! MethodInvocation) {
+      return false;
+    }
+    MethodInvocation methodInvocation = expression as MethodInvocation;
+    if (identical(methodInvocation.staticType, VoidTypeImpl.instance)) {
+      SimpleIdentifier methodName = methodInvocation.methodName;
+      _errorReporter.reportError2(HintCode.USE_OF_VOID_RESULT, methodName, [methodName.name]);
       return true;
     }
     return false;
@@ -1741,10 +2664,8 @@ class BestPracticesVerifier extends RecursiveASTVisitor<Object> {
 /**
  * Instances of the class `Dart2JSVerifier` traverse an AST structure looking for hints for
  * code that will be compiled to JS, such as [HintCode#IS_DOUBLE].
- *
- * @coverage dart.engine.resolver
  */
-class Dart2JSVerifier extends RecursiveASTVisitor<Object> {
+class Dart2JSVerifier extends RecursiveAstVisitor<Object> {
   /**
    * The error reporter by which errors will be reported.
    */
@@ -1787,6 +2708,15 @@ class Dart2JSVerifier extends RecursiveASTVisitor<Object> {
       Element element = type.element;
       String typeNameStr = element.name;
       LibraryElement libraryElement = element.library;
+      //      if (typeNameStr.equals(INT_TYPE_NAME) && libraryElement != null
+      //          && libraryElement.isDartCore()) {
+      //        if (node.getNotOperator() == null) {
+      //          errorReporter.reportError(HintCode.IS_INT, node);
+      //        } else {
+      //          errorReporter.reportError(HintCode.IS_NOT_INT, node);
+      //        }
+      //        return true;
+      //      } else
       if (typeNameStr == _DOUBLE_TYPE_NAME && libraryElement != null && libraryElement.isDartCore) {
         if (node.notOperator == null) {
           _errorReporter.reportError2(HintCode.IS_DOUBLE, node, []);
@@ -1803,10 +2733,8 @@ class Dart2JSVerifier extends RecursiveASTVisitor<Object> {
 /**
  * Instances of the class `DeadCodeVerifier` traverse an AST structure looking for cases of
  * [HintCode#DEAD_CODE].
- *
- * @coverage dart.engine.resolver
  */
-class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
+class DeadCodeVerifier extends RecursiveAstVisitor<Object> {
   /**
    * The error reporter by which errors will be reported.
    */
@@ -1830,12 +2758,16 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
       if (!isDebugConstant(lhsCondition)) {
         ValidResult lhsResult = getConstantBooleanValue(lhsCondition);
         if (lhsResult != null) {
-          if (identical(lhsResult, ValidResult.RESULT_TRUE) && isBarBar) {
+          if (lhsResult.isTrue && isBarBar) {
+            // report error on else block: true || !e!
             _errorReporter.reportError2(HintCode.DEAD_CODE, node.rightOperand, []);
+            // only visit the LHS:
             safelyVisit(lhsCondition);
             return null;
-          } else if (identical(lhsResult, ValidResult.RESULT_FALSE) && isAmpAmp) {
+          } else if (lhsResult.isFalse && isAmpAmp) {
+            // report error on if block: false && !e!
             _errorReporter.reportError2(HintCode.DEAD_CODE, node.rightOperand, []);
+            // only visit the LHS:
             safelyVisit(lhsCondition);
             return null;
           }
@@ -1875,11 +2807,13 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
     if (!isDebugConstant(conditionExpression)) {
       ValidResult result = getConstantBooleanValue(conditionExpression);
       if (result != null) {
-        if (identical(result, ValidResult.RESULT_TRUE)) {
+        if (result.isTrue) {
+          // report error on else block: true ? 1 : !2!
           _errorReporter.reportError2(HintCode.DEAD_CODE, node.elseExpression, []);
           safelyVisit(node.thenExpression);
           return null;
         } else {
+          // report error on if block: false ? !1! : 2
           _errorReporter.reportError2(HintCode.DEAD_CODE, node.thenExpression, []);
           safelyVisit(node.elseExpression);
           return null;
@@ -1895,7 +2829,8 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
     if (!isDebugConstant(conditionExpression)) {
       ValidResult result = getConstantBooleanValue(conditionExpression);
       if (result != null) {
-        if (identical(result, ValidResult.RESULT_TRUE)) {
+        if (result.isTrue) {
+          // report error on else block: if(true) {} else {!}
           Statement elseStatement = node.elseStatement;
           if (elseStatement != null) {
             _errorReporter.reportError2(HintCode.DEAD_CODE, elseStatement, []);
@@ -1903,6 +2838,7 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
             return null;
           }
         } else {
+          // report error on if block: if (false) {!} else {}
           _errorReporter.reportError2(HintCode.DEAD_CODE, node.thenStatement, []);
           safelyVisit(node.elseStatement);
           return null;
@@ -1921,12 +2857,18 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
     for (int i = 0; i < numOfCatchClauses; i++) {
       CatchClause catchClause = catchClauses[i];
       if (catchClause.onKeyword != null) {
+        // on-catch clause found, verify that the exception type is not a subtype of a previous
+        // on-catch exception type
         TypeName typeName = catchClause.exceptionType;
         if (typeName != null && typeName.type != null) {
           Type2 currentType = typeName.type;
           if (currentType.isObject) {
+            // Found catch clause clause that has Object as an exception type, this is equivalent to
+            // having a catch clause that doesn't have an exception type, visit the block, but
+             // generate an error on any following catch clauses (and don't visit them).
             safelyVisit(catchClause);
             if (i + 1 != numOfCatchClauses) {
+               // this catch clause is not the last in the try statement
               CatchClause nextCatchClause = catchClauses[i + 1];
               CatchClause lastCatchClause = catchClauses[numOfCatchClauses - 1];
               int offset = nextCatchClause.offset;
@@ -1948,8 +2890,11 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
         }
         safelyVisit(catchClause);
       } else {
+         // Found catch clause clause that doesn't have an exception type, visit the block, but
+        // generate an error on any following catch clauses (and don't visit them).
         safelyVisit(catchClause);
         if (i + 1 != numOfCatchClauses) {
+          // this catch clause is not the last in the try statement
           CatchClause nextCatchClause = catchClauses[i + 1];
           CatchClause lastCatchClause = catchClauses[numOfCatchClauses - 1];
           int offset = nextCatchClause.offset;
@@ -1968,7 +2913,8 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
     if (!isDebugConstant(conditionExpression)) {
       ValidResult result = getConstantBooleanValue(conditionExpression);
       if (result != null) {
-        if (identical(result, ValidResult.RESULT_FALSE)) {
+        if (result.isFalse) {
+          // report error on if block: while (false) {!}
           _errorReporter.reportError2(HintCode.DEAD_CODE, node.body, []);
           return null;
         }
@@ -1990,12 +2936,32 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
    */
   ValidResult getConstantBooleanValue(Expression expression) {
     if (expression is BooleanLiteral) {
-      if ((expression as BooleanLiteral).value) {
-        return ValidResult.RESULT_TRUE;
+      if (expression.value) {
+        return new ValidResult(new DartObjectImpl(null, BoolState.from(true)));
       } else {
-        return ValidResult.RESULT_FALSE;
+        return new ValidResult(new DartObjectImpl(null, BoolState.from(false)));
       }
     }
+    // Don't consider situations where we could evaluate to a constant boolean expression with the
+    // ConstantVisitor
+//
+       // else {
+//
+         // EvaluationResultImpl result = expression.accept(new ConstantVisitor());
+//
+         // if (result == ValidResult.RESULT_TRUE) {
+//
+           // return ValidResult.RESULT_TRUE;
+//
+         // } else if (result == ValidResult.RESULT_FALSE) {
+//
+           // return ValidResult.RESULT_FALSE;
+//
+         // }
+//
+         // return null;
+//
+       // }
     return null;
   }
 
@@ -2008,10 +2974,10 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
   bool isDebugConstant(Expression expression) {
     Element element = null;
     if (expression is Identifier) {
-      Identifier identifier = expression as Identifier;
+      Identifier identifier = expression;
       element = identifier.staticElement;
     } else if (expression is PropertyAccess) {
-      PropertyAccess propertyAccess = expression as PropertyAccess;
+      PropertyAccess propertyAccess = expression;
       element = propertyAccess.propertyName.staticElement;
     }
     if (element is PropertyAccessorElement) {
@@ -2027,10 +2993,372 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
    *
    * @param node the node to be visited
    */
-  void safelyVisit(ASTNode node) {
+  void safelyVisit(AstNode node) {
     if (node != null) {
       node.accept(this);
     }
+  }
+}
+
+/**
+ * Instances of the class `ExitDetector` determine whether the visited AST node is guaranteed
+ * to terminate by executing a `return` statement, `throw` expression, `rethrow`
+ * expression, or simple infinite loop such as `while(true)`.
+ */
+class ExitDetector extends GeneralizingAstVisitor<bool> {
+  /**
+   * Set to `true` when a `break` is encountered, and reset to `false` when a
+   * `do`, `while`, `for` or `switch` block is entered.
+   */
+  bool _enclosingBlockContainsBreak = false;
+
+  bool visitArgumentList(ArgumentList node) => visitExpressions(node.arguments);
+
+  bool visitAsExpression(AsExpression node) => node.expression.accept(this);
+
+  bool visitAssertStatement(AssertStatement node) => node.condition.accept(this);
+
+  bool visitAssignmentExpression(AssignmentExpression node) => node.leftHandSide.accept(this) || node.rightHandSide.accept(this);
+
+  bool visitBinaryExpression(BinaryExpression node) {
+    Expression lhsExpression = node.leftOperand;
+    sc.TokenType operatorType = node.operator.type;
+    // If the operator is || and the left hand side is false literal, don't consider the RHS of the
+    // binary expression.
+    // TODO(jwren) Do we want to take constant expressions into account, evaluate if(false) {}
+    // differently than if(<condition>), when <condition> evaluates to a constant false value?
+    if (identical(operatorType, sc.TokenType.BAR_BAR)) {
+      if (lhsExpression is BooleanLiteral) {
+        BooleanLiteral booleanLiteral = lhsExpression;
+        if (!booleanLiteral.value) {
+          return false;
+        }
+      }
+    }
+    // If the operator is && and the left hand side is true literal, don't consider the RHS of the
+    // binary expression.
+    if (identical(operatorType, sc.TokenType.AMPERSAND_AMPERSAND)) {
+      if (lhsExpression is BooleanLiteral) {
+        BooleanLiteral booleanLiteral = lhsExpression;
+        if (booleanLiteral.value) {
+          return false;
+        }
+      }
+    }
+    return lhsExpression.accept(this) || node.rightOperand.accept(this);
+  }
+
+  bool visitBlock(Block node) => visitStatements(node.statements);
+
+  bool visitBlockFunctionBody(BlockFunctionBody node) => node.block.accept(this);
+
+  bool visitBreakStatement(BreakStatement node) {
+    _enclosingBlockContainsBreak = true;
+    return false;
+  }
+
+  bool visitCascadeExpression(CascadeExpression node) {
+    Expression target = node.target;
+    if (target.accept(this)) {
+      return true;
+    }
+    return visitExpressions(node.cascadeSections);
+  }
+
+  bool visitConditionalExpression(ConditionalExpression node) {
+    Expression conditionExpression = node.condition;
+    Expression thenStatement = node.thenExpression;
+    Expression elseStatement = node.elseExpression;
+    // TODO(jwren) Do we want to take constant expressions into account, evaluate if(false) {}
+    // differently than if(<condition>), when <condition> evaluates to a constant false value?
+    if (conditionExpression.accept(this)) {
+      return true;
+    }
+    if (thenStatement == null || elseStatement == null) {
+      return false;
+    }
+    return thenStatement.accept(this) && elseStatement.accept(this);
+  }
+
+  bool visitContinueStatement(ContinueStatement node) => false;
+
+  bool visitDoStatement(DoStatement node) {
+    bool outerBreakValue = _enclosingBlockContainsBreak;
+    _enclosingBlockContainsBreak = false;
+    try {
+      Expression conditionExpression = node.condition;
+      if (conditionExpression.accept(this)) {
+        return true;
+      }
+      // TODO(jwren) Do we want to take all constant expressions into account?
+      if (conditionExpression is BooleanLiteral) {
+        BooleanLiteral booleanLiteral = conditionExpression;
+        // If do {} while (true), and the body doesn't return or the body doesn't have a break, then
+        // return true.
+        bool blockReturns = node.body.accept(this);
+        if (booleanLiteral.value && (blockReturns || !_enclosingBlockContainsBreak)) {
+          return true;
+        }
+      }
+      return false;
+    } finally {
+      _enclosingBlockContainsBreak = outerBreakValue;
+    }
+  }
+
+  bool visitEmptyStatement(EmptyStatement node) => false;
+
+  bool visitExpressionStatement(ExpressionStatement node) => node.expression.accept(this);
+
+  bool visitForEachStatement(ForEachStatement node) {
+    bool outerBreakValue = _enclosingBlockContainsBreak;
+    _enclosingBlockContainsBreak = false;
+    try {
+      return node.iterator.accept(this);
+    } finally {
+      _enclosingBlockContainsBreak = outerBreakValue;
+    }
+  }
+
+  bool visitForStatement(ForStatement node) {
+    bool outerBreakValue = _enclosingBlockContainsBreak;
+    _enclosingBlockContainsBreak = false;
+    try {
+      if (node.variables != null && visitVariableDeclarations(node.variables.variables)) {
+        return true;
+      }
+      if (node.initialization != null && node.initialization.accept(this)) {
+        return true;
+      }
+      Expression conditionExpression = node.condition;
+      if (conditionExpression != null && conditionExpression.accept(this)) {
+        return true;
+      }
+      if (visitExpressions(node.updaters)) {
+        return true;
+      }
+      // TODO(jwren) Do we want to take all constant expressions into account?
+      // If for(; true; ) (or for(;;)), and the body doesn't return or the body doesn't have a
+      // break, then return true.
+      bool implicitOrExplictTrue = conditionExpression == null || (conditionExpression is BooleanLiteral && conditionExpression.value);
+      if (implicitOrExplictTrue) {
+        bool blockReturns = node.body.accept(this);
+        if (blockReturns || !_enclosingBlockContainsBreak) {
+          return true;
+        }
+      }
+      return false;
+    } finally {
+      _enclosingBlockContainsBreak = outerBreakValue;
+    }
+  }
+
+  bool visitFunctionDeclarationStatement(FunctionDeclarationStatement node) => false;
+
+  bool visitFunctionExpression(FunctionExpression node) => false;
+
+  bool visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
+    if (node.function.accept(this)) {
+      return true;
+    }
+    return node.argumentList.accept(this);
+  }
+
+  bool visitIdentifier(Identifier node) => false;
+
+  bool visitIfStatement(IfStatement node) {
+    Expression conditionExpression = node.condition;
+    Statement thenStatement = node.thenStatement;
+    Statement elseStatement = node.elseStatement;
+    if (conditionExpression.accept(this)) {
+      return true;
+    }
+    // TODO(jwren) Do we want to take all constant expressions into account?
+    if (conditionExpression is BooleanLiteral) {
+      BooleanLiteral booleanLiteral = conditionExpression;
+      if (booleanLiteral.value) {
+        // if(true) ...
+        return thenStatement.accept(this);
+      } else if (elseStatement != null) {
+        // if (false) ...
+        return elseStatement.accept(this);
+      }
+    }
+    if (thenStatement == null || elseStatement == null) {
+      return false;
+    }
+    return thenStatement.accept(this) && elseStatement.accept(this);
+  }
+
+  bool visitIndexExpression(IndexExpression node) {
+    Expression target = node.realTarget;
+    if (target != null && target.accept(this)) {
+      return true;
+    }
+    if (node.index.accept(this)) {
+      return true;
+    }
+    return false;
+  }
+
+  bool visitInstanceCreationExpression(InstanceCreationExpression node) => node.argumentList.accept(this);
+
+  bool visitIsExpression(IsExpression node) => node.expression.accept(this);
+
+  bool visitLabel(Label node) => false;
+
+  bool visitLabeledStatement(LabeledStatement node) => node.statement.accept(this);
+
+  bool visitLiteral(Literal node) => false;
+
+  bool visitMethodInvocation(MethodInvocation node) {
+    Expression target = node.realTarget;
+    if (target != null && target.accept(this)) {
+      return true;
+    }
+    return node.argumentList.accept(this);
+  }
+
+  bool visitNamedExpression(NamedExpression node) => node.expression.accept(this);
+
+  bool visitParenthesizedExpression(ParenthesizedExpression node) => node.expression.accept(this);
+
+  bool visitPostfixExpression(PostfixExpression node) => false;
+
+  bool visitPrefixExpression(PrefixExpression node) => false;
+
+  bool visitPropertyAccess(PropertyAccess node) {
+    Expression target = node.realTarget;
+    if (target != null && target.accept(this)) {
+      return true;
+    }
+    return false;
+  }
+
+  bool visitRethrowExpression(RethrowExpression node) => true;
+
+  bool visitReturnStatement(ReturnStatement node) => true;
+
+  bool visitSuperExpression(SuperExpression node) => false;
+
+  bool visitSwitchCase(SwitchCase node) => visitStatements(node.statements);
+
+  bool visitSwitchDefault(SwitchDefault node) => visitStatements(node.statements);
+
+  bool visitSwitchStatement(SwitchStatement node) {
+    bool outerBreakValue = _enclosingBlockContainsBreak;
+    _enclosingBlockContainsBreak = false;
+    try {
+      bool hasDefault = false;
+      NodeList<SwitchMember> memberList = node.members;
+      List<SwitchMember> members = new List.from(memberList);
+      for (int i = 0; i < members.length; i++) {
+        SwitchMember switchMember = members[i];
+        if (switchMember is SwitchDefault) {
+          hasDefault = true;
+          // If this is the last member and there are no statements, return false
+          if (switchMember.statements.isEmpty && i + 1 == members.length) {
+            return false;
+          }
+        }
+        // For switch members with no statements, don't visit the children, otherwise, return false if
+        // no return is found in the children statements
+        if (!switchMember.statements.isEmpty && !switchMember.accept(this)) {
+          return false;
+        }
+      }
+      return hasDefault;
+    } finally {
+      _enclosingBlockContainsBreak = outerBreakValue;
+    }
+  }
+
+  bool visitThisExpression(ThisExpression node) => false;
+
+  bool visitThrowExpression(ThrowExpression node) => true;
+
+  bool visitTryStatement(TryStatement node) {
+    if (node.body.accept(this)) {
+      return true;
+    }
+    Block finallyBlock = node.finallyBlock;
+    if (finallyBlock != null && finallyBlock.accept(this)) {
+      return true;
+    }
+    return false;
+  }
+
+  bool visitTypeName(TypeName node) => false;
+
+  bool visitVariableDeclaration(VariableDeclaration node) {
+    Expression initializer = node.initializer;
+    if (initializer != null) {
+      return initializer.accept(this);
+    }
+    return false;
+  }
+
+  bool visitVariableDeclarationList(VariableDeclarationList node) => visitVariableDeclarations(node.variables);
+
+  bool visitVariableDeclarationStatement(VariableDeclarationStatement node) {
+    NodeList<VariableDeclaration> variables = node.variables.variables;
+    for (int i = 0; i < variables.length; i++) {
+      if (variables[i].accept(this)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool visitWhileStatement(WhileStatement node) {
+    bool outerBreakValue = _enclosingBlockContainsBreak;
+    _enclosingBlockContainsBreak = false;
+    try {
+      Expression conditionExpression = node.condition;
+      if (conditionExpression.accept(this)) {
+        return true;
+      }
+      // TODO(jwren) Do we want to take all constant expressions into account?
+      if (conditionExpression is BooleanLiteral) {
+        BooleanLiteral booleanLiteral = conditionExpression;
+        // If while(true), and the body doesn't return or the body doesn't have a break, then return
+        // true.
+        bool blockReturns = node.body.accept(this);
+        if (booleanLiteral.value && (blockReturns || !_enclosingBlockContainsBreak)) {
+          return true;
+        }
+      }
+      return false;
+    } finally {
+      _enclosingBlockContainsBreak = outerBreakValue;
+    }
+  }
+
+  bool visitExpressions(NodeList<Expression> expressions) {
+    for (int i = expressions.length - 1; i >= 0; i--) {
+      if (expressions[i].accept(this)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool visitStatements(NodeList<Statement> statements) {
+    for (int i = statements.length - 1; i >= 0; i--) {
+      if (statements[i].accept(this)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool visitVariableDeclarations(NodeList<VariableDeclaration> variableDeclarations) {
+    for (int i = variableDeclarations.length - 1; i >= 0; i--) {
+      if (variableDeclarations[i].accept(this)) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -2039,7 +3367,6 @@ class DeadCodeVerifier extends RecursiveASTVisitor<Object> {
  * generate hints over the set of sources.
  *
  * @see HintCode
- * @coverage dart.engine.resolver
  */
 class HintGenerator {
   List<CompilationUnit> _compilationUnits;
@@ -2052,6 +3379,11 @@ class HintGenerator {
 
   bool _enableDart2JSHints = false;
 
+  /**
+   * The inheritance manager used to find overridden methods.
+   */
+  InheritanceManager _manager;
+
   HintGenerator(List<CompilationUnit> compilationUnits, AnalysisContext context, AnalysisErrorListener errorListener) {
     this._compilationUnits = compilationUnits;
     this._context = context;
@@ -2059,6 +3391,7 @@ class HintGenerator {
     LibraryElement library = compilationUnits[0].element.library;
     _importsVerifier = new ImportsVerifier(library);
     _enableDart2JSHints = context.analysisOptions.dart2jsHint;
+    _manager = new InheritanceManager(compilationUnits[0].element.library);
   }
 
   void generateForLibrary() {
@@ -2086,12 +3419,17 @@ class HintGenerator {
 
   void generateForCompilationUnit(CompilationUnit unit, Source source) {
     ErrorReporter errorReporter = new ErrorReporter(_errorListener, source);
-    _importsVerifier.visitCompilationUnit(unit);
-    new DeadCodeVerifier(errorReporter).visitCompilationUnit(unit);
+    unit.accept(_importsVerifier);
+    // dead code analysis
+    unit.accept(new DeadCodeVerifier(errorReporter));
+    // dart2js analysis
     if (_enableDart2JSHints) {
-      new Dart2JSVerifier(errorReporter).visitCompilationUnit(unit);
+      unit.accept(new Dart2JSVerifier(errorReporter));
     }
-    new BestPracticesVerifier(errorReporter).visitCompilationUnit(unit);
+    // Dart best practices
+    unit.accept(new BestPracticesVerifier(errorReporter));
+    unit.accept(new OverrideVerifier(_manager, errorReporter));
+    // Find to-do comments
     new ToDoFinder(errorReporter).findIn(unit);
   }
 }
@@ -2104,10 +3442,8 @@ class HintGenerator {
  *
  * While this class does not yet have support for an "Organize Imports" action, this logic built up
  * in this class could be used for such an action in the future.
- *
- * @coverage dart.engine.resolver
  */
-class ImportsVerifier extends RecursiveASTVisitor<Object> {
+class ImportsVerifier extends RecursiveAstVisitor<Object> {
   /**
    * This is set to `true` if the current compilation unit which is being visited is the
    * defining compilation unit for the library, its value can be set with
@@ -2203,6 +3539,7 @@ class ImportsVerifier extends RecursiveASTVisitor<Object> {
    */
   void generateUnusedImportHints(ErrorReporter errorReporter) {
     for (ImportDirective unusedImport in _unusedImports) {
+      // Check that the import isn't dart:core
       ImportElement importElement = unusedImport.element;
       if (importElement != null) {
         LibraryElement libraryElement = importElement.importedLibrary;
@@ -2219,36 +3556,51 @@ class ImportsVerifier extends RecursiveASTVisitor<Object> {
       NodeList<Directive> directives = node.directives;
       for (Directive directive in directives) {
         if (directive is ImportDirective) {
-          ImportDirective importDirective = directive as ImportDirective;
+          ImportDirective importDirective = directive;
           LibraryElement libraryElement = importDirective.uriElement;
           if (libraryElement != null) {
             _unusedImports.add(importDirective);
+            //
+            // Initialize prefixElementMap
+            //
             if (importDirective.asToken != null) {
               SimpleIdentifier prefixIdentifier = importDirective.prefix;
               if (prefixIdentifier != null) {
                 Element element = prefixIdentifier.staticElement;
                 if (element is PrefixElement) {
-                  PrefixElement prefixElementKey = element as PrefixElement;
+                  PrefixElement prefixElementKey = element;
                   _prefixElementMap[prefixElementKey] = importDirective;
                 }
               }
             }
+            //
+            // Initialize libraryMap: libraryElement -> importDirective
+            //
             putIntoLibraryMap(libraryElement, importDirective);
+            //
+            // For this new addition to the libraryMap, also recursively add any exports from the
+            // libraryElement
+            //
             addAdditionalLibrariesForExports(libraryElement, importDirective, new List<LibraryElement>());
           }
         }
       }
     }
+    // If there are no imports in this library, don't visit the identifiers in the library- there
+    // can be no unused imports.
     if (_unusedImports.isEmpty) {
       return null;
     }
     if (_unusedImports.length > 1) {
+      // order the list of unusedImports to find duplicates in faster than O(n^2) time
       List<ImportDirective> importDirectiveArray = new List.from(_unusedImports);
       importDirectiveArray.sort(ImportDirective.COMPARATOR);
       ImportDirective currentDirective = importDirectiveArray[0];
       for (int i = 1; i < importDirectiveArray.length; i++) {
         ImportDirective nextDirective = importDirectiveArray[i];
         if (ImportDirective.COMPARATOR(currentDirective, nextDirective) == 0) {
+          // Add either the currentDirective or nextDirective depending on which comes second, this
+          // guarantees that the first of the duplicates won't be highlighted.
           if (currentDirective.offset < nextDirective.offset) {
             _duplicateImports.add(nextDirective);
           } else {
@@ -2277,16 +3629,28 @@ class ImportsVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitPrefixedIdentifier(PrefixedIdentifier node) {
+    if (_unusedImports.isEmpty) {
+      return null;
+    }
+    // If the prefixed identifier references some A.B, where A is a library prefix, then we can
+    // lookup the associated ImportDirective in prefixElementMap and remove it from the
+    // unusedImports list.
     SimpleIdentifier prefixIdentifier = node.prefix;
     Element element = prefixIdentifier.staticElement;
     if (element is PrefixElement) {
       _unusedImports.remove(_prefixElementMap[element]);
       return null;
     }
+    // Otherwise, pass the prefixed identifier element and name onto visitIdentifier.
     return visitIdentifier(element, prefixIdentifier.name);
   }
 
-  Object visitSimpleIdentifier(SimpleIdentifier node) => visitIdentifier(node.staticElement, node.name);
+  Object visitSimpleIdentifier(SimpleIdentifier node) {
+    if (_unusedImports.isEmpty) {
+      return null;
+    }
+    return visitIdentifier(node.staticElement, node.name);
+  }
 
   void set inDefiningCompilationUnit(bool inDefiningCompilationUnit) {
     this._inDefiningCompilationUnit = inDefiningCompilationUnit;
@@ -2317,6 +3681,7 @@ class ImportsVerifier extends RecursiveASTVisitor<Object> {
   Namespace computeNamespace(ImportDirective importDirective) {
     Namespace namespace = _namespaceMap[importDirective];
     if (namespace == null) {
+      // If the namespace isn't in the namespaceMap, then compute and put it in the map
       ImportElement importElement = importDirective.element;
       if (importElement != null) {
         NamespaceBuilder builder = new NamespaceBuilder();
@@ -2346,8 +3711,9 @@ class ImportsVerifier extends RecursiveASTVisitor<Object> {
     if (element == null) {
       return null;
     }
+    // If the element is multiply defined then call this method recursively for each of the conflicting elements.
     if (element is MultiplyDefinedElement) {
-      MultiplyDefinedElement multiplyDefinedElement = element as MultiplyDefinedElement;
+      MultiplyDefinedElement multiplyDefinedElement = element;
       for (Element elt in multiplyDefinedElement.conflictingElements) {
         visitIdentifier(elt, name);
       }
@@ -2355,11 +3721,17 @@ class ImportsVerifier extends RecursiveASTVisitor<Object> {
     } else if (element is PrefixElement) {
       _unusedImports.remove(_prefixElementMap[element]);
       return null;
+    } else if (element.enclosingElement is! CompilationUnitElement) {
+      // Identifiers that aren't a prefix element and whose enclosing element isn't a
+      // CompilationUnit are ignored- this covers the case the identifier is a relative-reference,
+      // a reference to an identifier not imported by this library.
+      return null;
     }
     LibraryElement containingLibrary = element.library;
     if (containingLibrary == null) {
       return null;
     }
+    // If the element is declared in the current library, return.
     if (_currentLibrary == containingLibrary) {
       return null;
     }
@@ -2368,10 +3740,14 @@ class ImportsVerifier extends RecursiveASTVisitor<Object> {
       return null;
     }
     if (importsFromSameLibrary.length == 1) {
+      // If there is only one import directive for this library, then it must be the directive that
+      // this element is imported with, remove it from the unusedImports list.
       ImportDirective usedImportDirective = importsFromSameLibrary[0];
       _unusedImports.remove(usedImportDirective);
     } else {
+      // Otherwise, for each of the imported directives, use the namespaceMap to
       for (ImportDirective importDirective in importsFromSameLibrary) {
+        // Get the namespace for this import
         Namespace namespace = computeNamespace(importDirective);
         if (namespace != null && namespace.get(name) != null) {
           _unusedImports.remove(importDirective);
@@ -2397,10 +3773,81 @@ class ImportsVerifier extends RecursiveASTVisitor<Object> {
 }
 
 /**
+ * Instances of the class `OverrideVerifier` visit all of the declarations in a compilation
+ * unit to verify that if they have an override annotation it is being used correctly.
+ */
+class OverrideVerifier extends RecursiveAstVisitor<Object> {
+  /**
+   * The inheritance manager used to find overridden methods.
+   */
+  InheritanceManager _manager;
+
+  /**
+   * The error reporter used to report errors.
+   */
+  ErrorReporter _errorReporter;
+
+  /**
+   * Initialize a newly created verifier to look for inappropriate uses of the override annotation.
+   *
+   * @param manager the inheritance manager used to find overridden methods
+   * @param errorReporter the error reporter used to report errors
+   */
+  OverrideVerifier(InheritanceManager manager, ErrorReporter errorReporter) {
+    this._manager = manager;
+    this._errorReporter = errorReporter;
+  }
+
+  Object visitMethodDeclaration(MethodDeclaration node) {
+    ExecutableElement element = node.element;
+    if (isOverride(element)) {
+      if (getOverriddenMember(element) == null) {
+        if (element is MethodElement) {
+          _errorReporter.reportError2(HintCode.OVERRIDE_ON_NON_OVERRIDING_METHOD, node.name, []);
+        } else if (element is PropertyAccessorElement) {
+          if (element.isGetter) {
+            _errorReporter.reportError2(HintCode.OVERRIDE_ON_NON_OVERRIDING_GETTER, node.name, []);
+          } else {
+            _errorReporter.reportError2(HintCode.OVERRIDE_ON_NON_OVERRIDING_SETTER, node.name, []);
+          }
+        }
+      }
+    }
+    return super.visitMethodDeclaration(node);
+  }
+
+  /**
+   * Return the member that overrides the given member.
+   *
+   * @param member the member that overrides the returned member
+   * @return the member that overrides the given member
+   */
+  ExecutableElement getOverriddenMember(ExecutableElement member) {
+    LibraryElement library = member.library;
+    if (library == null) {
+      return null;
+    }
+    ClassElement classElement = member.getAncestor((element) => element is ClassElement);
+    if (classElement == null) {
+      return null;
+    }
+    return _manager.lookupInheritance(classElement, member.name);
+  }
+
+  /**
+   * Return `true` if the given element has an override annotation associated with it.
+   *
+   * @param element the element being tested
+   * @return `true` if the element has an override annotation associated with it
+   */
+  bool isOverride(Element element) => element != null && element.isOverride;
+}
+
+/**
  * Instances of the class `PubVerifier` traverse an AST structure looking for deviations from
  * pub best practices.
  */
-class PubVerifier extends RecursiveASTVisitor<Object> {
+class PubVerifier extends RecursiveAstVisitor<Object> {
   static String _PUBSPEC_YAML = "pubspec.yaml";
 
   /**
@@ -2438,15 +3885,17 @@ class PubVerifier extends RecursiveASTVisitor<Object> {
     if (fullName != null) {
       int pathIndex = 0;
       int fullNameIndex = fullName.length;
-      while (pathIndex < path.length && JavaString.startsWithBefore(path, "../", pathIndex)) {
+      while (pathIndex < path.length && StringUtilities.startsWith3(path, pathIndex, 0x2E, 0x2E, 0x2F)) {
         fullNameIndex = JavaString.lastIndexOf(fullName, '/', fullNameIndex);
         if (fullNameIndex < 4) {
           return false;
         }
-        if (JavaString.startsWithBefore(fullName, "/lib", fullNameIndex - 4)) {
+        // Check for "/lib" at a specified place in the fullName
+        if (StringUtilities.startsWith4(fullName, fullNameIndex - 4, 0x2F, 0x6C, 0x69, 0x62)) {
           String relativePubspecPath = path.substring(0, pathIndex + 3) + _PUBSPEC_YAML;
           Source pubspecSource = _context.sourceFactory.resolveUri(source, relativePubspecPath);
-          if (pubspecSource != null && pubspecSource.exists()) {
+          if (_context.exists(pubspecSource)) {
+            // Files inside the lib directory hierarchy should not reference files outside
             _errorReporter.reportError2(PubSuggestionCode.FILE_IMPORT_INSIDE_LIB_REFERENCES_FILE_OUTSIDE, uriLiteral, []);
           }
           return true;
@@ -2468,31 +3917,33 @@ class PubVerifier extends RecursiveASTVisitor<Object> {
    * @see PubSuggestionCode.FILE_IMPORT_OUTSIDE_LIB_REFERENCES_FILE_INSIDE
    */
   bool checkForFileImportOutsideLibReferencesFileInside(StringLiteral uriLiteral, String path) {
-    if (path.startsWith("lib/")) {
-      if (checkForFileImportOutsideLibReferencesFileInside2(uriLiteral, path, 0)) {
+    if (StringUtilities.startsWith4(path, 0, 0x6C, 0x69, 0x62, 0x2F)) {
+      if (checkForFileImportOutsideLibReferencesFileInsideAtIndex(uriLiteral, path, 0)) {
         return true;
       }
     }
-    int pathIndex = path.indexOf("/lib/");
+    int pathIndex = StringUtilities.indexOf5(path, 0, 0x2F, 0x6C, 0x69, 0x62, 0x2F);
     while (pathIndex != -1) {
-      if (checkForFileImportOutsideLibReferencesFileInside2(uriLiteral, path, pathIndex + 1)) {
+      if (checkForFileImportOutsideLibReferencesFileInsideAtIndex(uriLiteral, path, pathIndex + 1)) {
         return true;
       }
-      pathIndex = JavaString.indexOf(path, "/lib/", pathIndex + 4);
+      pathIndex = StringUtilities.indexOf5(path, pathIndex + 4, 0x2F, 0x6C, 0x69, 0x62, 0x2F);
     }
     return false;
   }
 
-  bool checkForFileImportOutsideLibReferencesFileInside2(StringLiteral uriLiteral, String path, int pathIndex) {
+  bool checkForFileImportOutsideLibReferencesFileInsideAtIndex(StringLiteral uriLiteral, String path, int pathIndex) {
     Source source = getSource(uriLiteral);
     String relativePubspecPath = path.substring(0, pathIndex) + _PUBSPEC_YAML;
     Source pubspecSource = _context.sourceFactory.resolveUri(source, relativePubspecPath);
-    if (pubspecSource == null || !pubspecSource.exists()) {
+    if (!_context.exists(pubspecSource)) {
       return false;
     }
     String fullName = getSourceFullName(source);
     if (fullName != null) {
-      if (!fullName.contains("/lib/")) {
+      if (StringUtilities.indexOf5(fullName, 0, 0x2F, 0x6C, 0x69, 0x62, 0x2F) < 0) {
+        // Files outside the lib directory hierarchy should not reference files inside
+        // ... use package: url instead
         _errorReporter.reportError2(PubSuggestionCode.FILE_IMPORT_OUTSIDE_LIB_REFERENCES_FILE_INSIDE, uriLiteral, []);
         return true;
       }
@@ -2509,7 +3960,8 @@ class PubVerifier extends RecursiveASTVisitor<Object> {
    * @see PubSuggestionCode.PACKAGE_IMPORT_CONTAINS_DOT_DOT
    */
   bool checkForPackageImportContainsDotDot(StringLiteral uriLiteral, String path) {
-    if (path.startsWith("../") || path.contains("/../")) {
+    if (StringUtilities.startsWith3(path, 0, 0x2E, 0x2E, 0x2F) || StringUtilities.indexOf4(path, 0, 0x2F, 0x2E, 0x2E, 0x2F) >= 0) {
+      // Package import should not to contain ".."
       _errorReporter.reportError2(PubSuggestionCode.PACKAGE_IMPORT_CONTAINS_DOT_DOT, uriLiteral, []);
       return true;
     }
@@ -2522,9 +3974,9 @@ class PubVerifier extends RecursiveASTVisitor<Object> {
    * @param node the node (not `null`)
    * @return the source or `null` if it could not be determined
    */
-  Source getSource(ASTNode node) {
+  Source getSource(AstNode node) {
     Source source = null;
-    CompilationUnit unit = node.getAncestor(CompilationUnit);
+    CompilationUnit unit = node.getAncestor((node) => node is CompilationUnit);
     if (unit != null) {
       CompilationUnitElement element = unit.element;
       if (element != null) {
@@ -2549,55 +4001,6 @@ class PubVerifier extends RecursiveASTVisitor<Object> {
       }
     }
     return null;
-  }
-}
-
-/**
- * Instances of the class `ReturnDetector` determine whether the visited AST node is
- * guaranteed (modulo exceptions) to terminate by executing a return statement.
- */
-class ReturnDetector extends UnifyingASTVisitor<bool> {
-  bool visitBlock(Block node) => visitStatements(node.statements);
-
-  bool visitBlockFunctionBody(BlockFunctionBody node) => node.block.accept(this);
-
-  bool visitIfStatement(IfStatement node) {
-    Statement thenStatement = node.thenStatement;
-    Statement elseStatement = node.elseStatement;
-    if (thenStatement == null || elseStatement == null) {
-      return false;
-    }
-    return thenStatement.accept(this) && elseStatement.accept(this);
-  }
-
-  bool visitNode(ASTNode node) => false;
-
-  bool visitReturnStatement(ReturnStatement node) => true;
-
-  bool visitSwitchCase(SwitchCase node) => visitStatements(node.statements);
-
-  bool visitSwitchDefault(SwitchDefault node) => visitStatements(node.statements);
-
-  bool visitSwitchStatement(SwitchStatement node) {
-    bool hasDefault = false;
-    for (SwitchMember member in node.members) {
-      if (!member.accept(this)) {
-        return false;
-      }
-      if (member is SwitchDefault) {
-        hasDefault = true;
-      }
-    }
-    return hasDefault;
-  }
-
-  bool visitStatements(NodeList<Statement> statements) {
-    for (int i = statements.length - 1; i >= 0; i--) {
-      if (statements[i].accept(this)) {
-        return true;
-      }
-    }
-    return false;
   }
 }
 
@@ -2667,7 +4070,7 @@ class ToDoFinder {
  * Instances of the class `DeclarationMatcher` determine whether the element model defined by
  * a given AST structure matches an existing element model.
  */
-class DeclarationMatcher extends RecursiveASTVisitor<Object> {
+class DeclarationMatcher extends RecursiveAstVisitor<Object> {
   /**
    * The compilation unit containing the AST nodes being visited.
    */
@@ -2719,7 +4122,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
    * @return `true` if the AST structure defines the same elements as those in the given
    *         element model
    */
-  bool matches(ASTNode node, Element element) {
+  bool matches(AstNode node, Element element) {
     captureEnclosingElements(element);
     gatherElements(element);
     try {
@@ -2734,11 +4137,11 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     SimpleIdentifier exceptionParameter = node.exceptionParameter;
     if (exceptionParameter != null) {
       List<LocalVariableElement> localVariables = _enclosingExecutable.localVariables;
-      LocalVariableElement exceptionElement = find3(localVariables, exceptionParameter);
+      LocalVariableElement exceptionElement = findIdentifier(localVariables, exceptionParameter);
       processElement(exceptionElement);
       SimpleIdentifier stackTraceParameter = node.stackTraceParameter;
       if (stackTraceParameter != null) {
-        LocalVariableElement stackTraceElement = find3(localVariables, stackTraceParameter);
+        LocalVariableElement stackTraceElement = findIdentifier(localVariables, stackTraceParameter);
         processElement(stackTraceElement);
       }
     }
@@ -2749,7 +4152,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     ClassElement outerClass = _enclosingClass;
     try {
       SimpleIdentifier className = node.name;
-      _enclosingClass = find3(_enclosingUnit.types, className);
+      _enclosingClass = findIdentifier(_enclosingUnit.types, className);
       processElement(_enclosingClass);
       if (!hasConstructor(node)) {
         ConstructorElement constructor = _enclosingClass.unnamedConstructor;
@@ -2767,7 +4170,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     ClassElement outerClass = _enclosingClass;
     try {
       SimpleIdentifier className = node.name;
-      _enclosingClass = find3(_enclosingUnit.types, className);
+      _enclosingClass = findIdentifier(_enclosingUnit.types, className);
       processElement(_enclosingClass);
       return super.visitClassTypeAlias(node);
     } finally {
@@ -2798,7 +4201,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
 
   Object visitDeclaredIdentifier(DeclaredIdentifier node) {
     SimpleIdentifier variableName = node.identifier;
-    LocalVariableElement element = find3(_enclosingExecutable.localVariables, variableName);
+    LocalVariableElement element = findIdentifier(_enclosingExecutable.localVariables, variableName);
     processElement(element);
     return super.visitDeclaredIdentifier(node);
   }
@@ -2834,7 +4237,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     String uri = getStringValue(node.uri);
     if (uri != null) {
       LibraryElement library = _enclosingUnit.library;
-      ExportElement exportElement = find5(library.exports, _enclosingUnit.context.sourceFactory.resolveUri(_enclosingUnit.source, uri));
+      ExportElement exportElement = findExport(library.exports, _enclosingUnit.context.sourceFactory.resolveUri(_enclosingUnit.source, uri));
       processElement(exportElement);
     }
     return super.visitExportDirective(node);
@@ -2864,12 +4267,12 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
       sc.Token property = node.propertyKeyword;
       if (property == null) {
         if (_enclosingExecutable != null) {
-          _enclosingExecutable = find3(_enclosingExecutable.functions, functionName);
+          _enclosingExecutable = findIdentifier(_enclosingExecutable.functions, functionName);
         } else {
-          _enclosingExecutable = find3(_enclosingUnit.functions, functionName);
+          _enclosingExecutable = findIdentifier(_enclosingUnit.functions, functionName);
         }
       } else {
-        PropertyAccessorElement accessor = find3(_enclosingUnit.accessors, functionName);
+        PropertyAccessorElement accessor = findIdentifier(_enclosingUnit.accessors, functionName);
         if (identical((property as sc.KeywordToken).keyword, sc.Keyword.SET)) {
           accessor = accessor.variable.setter;
         }
@@ -2884,7 +4287,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
 
   Object visitFunctionExpression(FunctionExpression node) {
     if (node.parent is! FunctionDeclaration) {
-      FunctionElement element = find2(_enclosingExecutable.functions, node.beginToken.offset);
+      FunctionElement element = findAtOffset(_enclosingExecutable.functions, node.beginToken.offset);
       processElement(element);
     }
     ExecutableElement outerExecutable = _enclosingExecutable;
@@ -2901,7 +4304,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     FunctionTypeAliasElement outerAlias = _enclosingAlias;
     try {
       SimpleIdentifier aliasName = node.name;
-      _enclosingAlias = find3(_enclosingUnit.functionTypeAliases, aliasName);
+      _enclosingAlias = findIdentifier(_enclosingUnit.functionTypeAliases, aliasName);
       processElement(_enclosingAlias);
       return super.visitFunctionTypeAlias(node);
     } finally {
@@ -2930,7 +4333,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     String uri = getStringValue(node.uri);
     if (uri != null) {
       LibraryElement library = _enclosingUnit.library;
-      ImportElement importElement = find6(library.imports, _enclosingUnit.context.sourceFactory.resolveUri(_enclosingUnit.source, uri), node.prefix);
+      ImportElement importElement = findImport(library.imports, _enclosingUnit.context.sourceFactory.resolveUri(_enclosingUnit.source, uri), node.prefix);
       processElement(importElement);
     }
     return super.visitImportDirective(node);
@@ -2939,7 +4342,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
   Object visitLabeledStatement(LabeledStatement node) {
     for (Label label in node.labels) {
       SimpleIdentifier labelName = label.label;
-      LabelElement element = find3(_enclosingExecutable.labels, labelName);
+      LabelElement element = findIdentifier(_enclosingExecutable.labels, labelName);
       processElement(element);
     }
     return super.visitLabeledStatement(node);
@@ -2955,10 +4358,10 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
         nameOfMethod = "unary-";
       }
       if (property == null) {
-        _enclosingExecutable = find4(_enclosingClass.methods, nameOfMethod, methodName.offset);
+        _enclosingExecutable = findWithNameAndOffset(_enclosingClass.methods, nameOfMethod, methodName.offset);
         methodName.staticElement = _enclosingExecutable;
       } else {
-        PropertyAccessorElement accessor = find3(_enclosingClass.accessors, methodName);
+        PropertyAccessorElement accessor = findIdentifier(_enclosingClass.accessors, methodName);
         if (identical((property as sc.KeywordToken).keyword, sc.Keyword.SET)) {
           accessor = accessor.variable.setter;
           methodName.staticElement = accessor;
@@ -2976,7 +4379,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     String uri = getStringValue(node.uri);
     if (uri != null) {
       Source partSource = _enclosingUnit.context.sourceFactory.resolveUri(_enclosingUnit.source, uri);
-      CompilationUnitElement element = find(_enclosingUnit.library.parts, partSource);
+      CompilationUnitElement element = findPart(_enclosingUnit.library.parts, partSource);
       processElement(element);
     }
     return super.visitPartDirective(node);
@@ -3002,7 +4405,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
   Object visitSwitchCase(SwitchCase node) {
     for (Label label in node.labels) {
       SimpleIdentifier labelName = label.label;
-      LabelElement element = find3(_enclosingExecutable.labels, labelName);
+      LabelElement element = findIdentifier(_enclosingExecutable.labels, labelName);
       processElement(element);
     }
     return super.visitSwitchCase(node);
@@ -3011,7 +4414,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
   Object visitSwitchDefault(SwitchDefault node) {
     for (Label label in node.labels) {
       SimpleIdentifier labelName = label.label;
-      LabelElement element = find3(_enclosingExecutable.labels, labelName);
+      LabelElement element = findIdentifier(_enclosingExecutable.labels, labelName);
       processElement(element);
     }
     return super.visitSwitchDefault(node);
@@ -3021,9 +4424,9 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     SimpleIdentifier parameterName = node.name;
     TypeParameterElement element = null;
     if (_enclosingClass != null) {
-      element = find3(_enclosingClass.typeParameters, parameterName);
+      element = findIdentifier(_enclosingClass.typeParameters, parameterName);
     } else if (_enclosingAlias != null) {
-      element = find3(_enclosingAlias.typeParameters, parameterName);
+      element = findIdentifier(_enclosingAlias.typeParameters, parameterName);
     }
     processElement(element);
     return super.visitTypeParameter(node);
@@ -3033,13 +4436,13 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     VariableElement element = null;
     SimpleIdentifier variableName = node.name;
     if (_enclosingExecutable != null) {
-      element = find3(_enclosingExecutable.localVariables, variableName);
+      element = findIdentifier(_enclosingExecutable.localVariables, variableName);
     }
     if (element == null && _enclosingClass != null) {
-      element = find3(_enclosingClass.fields, variableName);
+      element = findIdentifier(_enclosingClass.fields, variableName);
     }
     if (element == null && _enclosingUnit != null) {
-      element = find3(_enclosingUnit.topLevelVariables, variableName);
+      element = findIdentifier(_enclosingUnit.topLevelVariables, variableName);
     }
     Expression initializer = node.initializer;
     if (initializer != null) {
@@ -3102,23 +4505,6 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
   }
 
   /**
-   * Return the element for the part with the given source, or `null` if there is no element
-   * for the given source.
-   *
-   * @param parts the elements for the parts
-   * @param partSource the source for the part whose element is to be returned
-   * @return the element for the part with the given source
-   */
-  CompilationUnitElement find(List<CompilationUnitElement> parts, Source partSource) {
-    for (CompilationUnitElement part in parts) {
-      if (part.source == partSource) {
-        return part;
-      }
-    }
-    return null;
-  }
-
-  /**
    * Return the element in the given array of elements that was created for the declaration at the
    * given offset. This method should only be used when there is no name
    *
@@ -3126,35 +4512,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
    * @param offset the offset of the name of the element to be returned
    * @return the element at the given offset
    */
-  Element find2(List<Element> elements, int offset) => find4(elements, "", offset);
-
-  /**
-   * Return the element in the given array of elements that was created for the declaration with the
-   * given name.
-   *
-   * @param elements the elements of the appropriate kind that exist in the current context
-   * @param identifier the name node in the declaration of the element to be returned
-   * @return the element created for the declaration with the given name
-   */
-  Element find3(List<Element> elements, SimpleIdentifier identifier) => find4(elements, identifier.name, identifier.offset);
-
-  /**
-   * Return the element in the given array of elements that was created for the declaration with the
-   * given name at the given offset.
-   *
-   * @param elements the elements of the appropriate kind that exist in the current context
-   * @param name the name of the element to be returned
-   * @param offset the offset of the name of the element to be returned
-   * @return the element with the given name and offset
-   */
-  Element find4(List<Element> elements, String name, int offset) {
-    for (Element element in elements) {
-      if (element.displayName == name && element.nameOffset == offset) {
-        return element;
-      }
-    }
-    return null;
-  }
+  Element findAtOffset(List<Element> elements, int offset) => findWithNameAndOffset(elements, "", offset);
 
   /**
    * Return the export element from the given array whose library has the given source, or
@@ -3165,7 +4523,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
    *          for
    * @return the export element whose library has the given source
    */
-  ExportElement find5(List<ExportElement> exports, Source source) {
+  ExportElement findExport(List<ExportElement> exports, Source source) {
     for (ExportElement export in exports) {
       if (export.exportedLibrary.source == source) {
         return export;
@@ -3173,6 +4531,16 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     }
     return null;
   }
+
+  /**
+   * Return the element in the given array of elements that was created for the declaration with the
+   * given name.
+   *
+   * @param elements the elements of the appropriate kind that exist in the current context
+   * @param identifier the name node in the declaration of the element to be returned
+   * @return the element created for the declaration with the given name
+   */
+  Element findIdentifier(List<Element> elements, SimpleIdentifier identifier) => findWithNameAndOffset(elements, identifier.name, identifier.offset);
 
   /**
    * Return the import element from the given array whose library has the given source and that has
@@ -3184,7 +4552,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
    * @param prefix the prefix with which the library was imported
    * @return the import element whose library has the given source and prefix
    */
-  ImportElement find6(List<ImportElement> imports, Source source, SimpleIdentifier prefix) {
+  ImportElement findImport(List<ImportElement> imports, Source source, SimpleIdentifier prefix) {
     for (ImportElement element in imports) {
       if (element.importedLibrary.source == source) {
         PrefixElement prefixElement = element.prefix;
@@ -3202,8 +4570,43 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     return null;
   }
 
+  /**
+   * Return the element for the part with the given source, or `null` if there is no element
+   * for the given source.
+   *
+   * @param parts the elements for the parts
+   * @param partSource the source for the part whose element is to be returned
+   * @return the element for the part with the given source
+   */
+  CompilationUnitElement findPart(List<CompilationUnitElement> parts, Source partSource) {
+    for (CompilationUnitElement part in parts) {
+      if (part.source == partSource) {
+        return part;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Return the element in the given array of elements that was created for the declaration with the
+   * given name at the given offset.
+   *
+   * @param elements the elements of the appropriate kind that exist in the current context
+   * @param name the name of the element to be returned
+   * @param offset the offset of the name of the element to be returned
+   * @return the element with the given name and offset
+   */
+  Element findWithNameAndOffset(List<Element> elements, String name, int offset) {
+    for (Element element in elements) {
+      if (element.displayName == name && element.nameOffset == offset) {
+        return element;
+      }
+    }
+    return null;
+  }
+
   void gatherElements(Element element) {
-    element.accept(new GeneralizingElementVisitor_7(this));
+    element.accept(new GeneralizingElementVisitor_DeclarationMatcher_gatherElements(this));
   }
 
   /**
@@ -3224,7 +4627,7 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
     if (parameters == null && _enclosingAlias != null) {
       parameters = _enclosingAlias.parameters;
     }
-    return parameters == null ? null : find3(parameters, parameterName);
+    return parameters == null ? null : findIdentifier(parameters, parameterName);
   }
 
   /**
@@ -3265,10 +4668,10 @@ class DeclarationMatcher extends RecursiveASTVisitor<Object> {
 class DeclarationMatcher_DeclarationMismatchException extends RuntimeException {
 }
 
-class GeneralizingElementVisitor_7 extends GeneralizingElementVisitor<Object> {
+class GeneralizingElementVisitor_DeclarationMatcher_gatherElements extends GeneralizingElementVisitor<Object> {
   final DeclarationMatcher DeclarationMatcher_this;
 
-  GeneralizingElementVisitor_7(this.DeclarationMatcher_this) : super();
+  GeneralizingElementVisitor_DeclarationMatcher_gatherElements(this.DeclarationMatcher_this) : super();
 
   Object visitElement(Element element) {
     DeclarationMatcher_this._allElements.add(element);
@@ -3281,7 +4684,7 @@ class GeneralizingElementVisitor_7 extends GeneralizingElementVisitor<Object> {
  * Instances of the class `DeclarationResolver` are used to resolve declarations in an AST
  * structure to already built elements.
  */
-class DeclarationResolver extends RecursiveASTVisitor<Object> {
+class DeclarationResolver extends RecursiveAstVisitor<Object> {
   /**
    * The compilation unit containing the AST nodes being visited.
    */
@@ -3328,10 +4731,10 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
     SimpleIdentifier exceptionParameter = node.exceptionParameter;
     if (exceptionParameter != null) {
       List<LocalVariableElement> localVariables = _enclosingExecutable.localVariables;
-      find8(localVariables, exceptionParameter);
+      findIdentifier(localVariables, exceptionParameter);
       SimpleIdentifier stackTraceParameter = node.stackTraceParameter;
       if (stackTraceParameter != null) {
-        find8(localVariables, stackTraceParameter);
+        findIdentifier(localVariables, stackTraceParameter);
       }
     }
     return super.visitCatchClause(node);
@@ -3341,7 +4744,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
     ClassElement outerClass = _enclosingClass;
     try {
       SimpleIdentifier className = node.name;
-      _enclosingClass = find8(_enclosingUnit.types, className);
+      _enclosingClass = findIdentifier(_enclosingUnit.types, className);
       return super.visitClassDeclaration(node);
     } finally {
       _enclosingClass = outerClass;
@@ -3352,7 +4755,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
     ClassElement outerClass = _enclosingClass;
     try {
       SimpleIdentifier className = node.name;
-      _enclosingClass = find8(_enclosingUnit.types, className);
+      _enclosingClass = findIdentifier(_enclosingUnit.types, className);
       return super.visitClassTypeAlias(node);
     } finally {
       _enclosingClass = outerClass;
@@ -3378,7 +4781,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
 
   Object visitDeclaredIdentifier(DeclaredIdentifier node) {
     SimpleIdentifier variableName = node.identifier;
-    find8(_enclosingExecutable.localVariables, variableName);
+    findIdentifier(_enclosingExecutable.localVariables, variableName);
     return super.visitDeclaredIdentifier(node);
   }
 
@@ -3411,7 +4814,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
     String uri = getStringValue(node.uri);
     if (uri != null) {
       LibraryElement library = _enclosingUnit.library;
-      ExportElement exportElement = find10(library.exports, _enclosingUnit.context.sourceFactory.resolveUri(_enclosingUnit.source, uri));
+      ExportElement exportElement = findExport(library.exports, _enclosingUnit.context.sourceFactory.resolveUri(_enclosingUnit.source, uri));
       node.element = exportElement;
     }
     return super.visitExportDirective(node);
@@ -3440,12 +4843,12 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
       sc.Token property = node.propertyKeyword;
       if (property == null) {
         if (_enclosingExecutable != null) {
-          _enclosingExecutable = find8(_enclosingExecutable.functions, functionName);
+          _enclosingExecutable = findIdentifier(_enclosingExecutable.functions, functionName);
         } else {
-          _enclosingExecutable = find8(_enclosingUnit.functions, functionName);
+          _enclosingExecutable = findIdentifier(_enclosingUnit.functions, functionName);
         }
       } else {
-        PropertyAccessorElement accessor = find8(_enclosingUnit.accessors, functionName);
+        PropertyAccessorElement accessor = findIdentifier(_enclosingUnit.accessors, functionName);
         if (identical((property as sc.KeywordToken).keyword, sc.Keyword.SET)) {
           accessor = accessor.variable.setter;
           functionName.staticElement = accessor;
@@ -3461,7 +4864,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
 
   Object visitFunctionExpression(FunctionExpression node) {
     if (node.parent is! FunctionDeclaration) {
-      FunctionElement element = find7(_enclosingExecutable.functions, node.beginToken.offset);
+      FunctionElement element = findAtOffset(_enclosingExecutable.functions, node.beginToken.offset);
       node.element = element;
     }
     ExecutableElement outerExecutable = _enclosingExecutable;
@@ -3477,7 +4880,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
     FunctionTypeAliasElement outerAlias = _enclosingAlias;
     try {
       SimpleIdentifier aliasName = node.name;
-      _enclosingAlias = find8(_enclosingUnit.functionTypeAliases, aliasName);
+      _enclosingAlias = findIdentifier(_enclosingUnit.functionTypeAliases, aliasName);
       return super.visitFunctionTypeAlias(node);
     } finally {
       _enclosingAlias = outerAlias;
@@ -3504,7 +4907,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
     String uri = getStringValue(node.uri);
     if (uri != null) {
       LibraryElement library = _enclosingUnit.library;
-      ImportElement importElement = find11(library.imports, _enclosingUnit.context.sourceFactory.resolveUri(_enclosingUnit.source, uri), node.prefix);
+      ImportElement importElement = findImport(library.imports, _enclosingUnit.context.sourceFactory.resolveUri(_enclosingUnit.source, uri), node.prefix);
       node.element = importElement;
     }
     return super.visitImportDirective(node);
@@ -3513,7 +4916,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
   Object visitLabeledStatement(LabeledStatement node) {
     for (Label label in node.labels) {
       SimpleIdentifier labelName = label.label;
-      find8(_enclosingExecutable.labels, labelName);
+      findIdentifier(_enclosingExecutable.labels, labelName);
     }
     return super.visitLabeledStatement(node);
   }
@@ -3533,10 +4936,10 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
         nameOfMethod = "unary-";
       }
       if (property == null) {
-        _enclosingExecutable = find9(_enclosingClass.methods, nameOfMethod, methodName.offset);
+        _enclosingExecutable = findWithNameAndOffset(_enclosingClass.methods, nameOfMethod, methodName.offset);
         methodName.staticElement = _enclosingExecutable;
       } else {
-        PropertyAccessorElement accessor = find8(_enclosingClass.accessors, methodName);
+        PropertyAccessorElement accessor = findIdentifier(_enclosingClass.accessors, methodName);
         if (identical((property as sc.KeywordToken).keyword, sc.Keyword.SET)) {
           accessor = accessor.variable.setter;
           methodName.staticElement = accessor;
@@ -3553,7 +4956,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
     String uri = getStringValue(node.uri);
     if (uri != null) {
       Source partSource = _enclosingUnit.context.sourceFactory.resolveUri(_enclosingUnit.source, uri);
-      node.element = find(_enclosingUnit.library.parts, partSource);
+      node.element = findPart(_enclosingUnit.library.parts, partSource);
     }
     return super.visitPartDirective(node);
   }
@@ -3582,7 +4985,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
   Object visitSwitchCase(SwitchCase node) {
     for (Label label in node.labels) {
       SimpleIdentifier labelName = label.label;
-      find8(_enclosingExecutable.labels, labelName);
+      findIdentifier(_enclosingExecutable.labels, labelName);
     }
     return super.visitSwitchCase(node);
   }
@@ -3590,7 +4993,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
   Object visitSwitchDefault(SwitchDefault node) {
     for (Label label in node.labels) {
       SimpleIdentifier labelName = label.label;
-      find8(_enclosingExecutable.labels, labelName);
+      findIdentifier(_enclosingExecutable.labels, labelName);
     }
     return super.visitSwitchDefault(node);
   }
@@ -3598,9 +5001,9 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
   Object visitTypeParameter(TypeParameter node) {
     SimpleIdentifier parameterName = node.name;
     if (_enclosingClass != null) {
-      find8(_enclosingClass.typeParameters, parameterName);
+      findIdentifier(_enclosingClass.typeParameters, parameterName);
     } else if (_enclosingAlias != null) {
-      find8(_enclosingAlias.typeParameters, parameterName);
+      findIdentifier(_enclosingAlias.typeParameters, parameterName);
     }
     return super.visitTypeParameter(node);
   }
@@ -3609,13 +5012,13 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
     VariableElement element = null;
     SimpleIdentifier variableName = node.name;
     if (_enclosingExecutable != null) {
-      element = find8(_enclosingExecutable.localVariables, variableName);
+      element = findIdentifier(_enclosingExecutable.localVariables, variableName);
     }
     if (element == null && _enclosingClass != null) {
-      element = find8(_enclosingClass.fields, variableName);
+      element = findIdentifier(_enclosingClass.fields, variableName);
     }
     if (element == null && _enclosingUnit != null) {
-      element = find8(_enclosingUnit.topLevelVariables, variableName);
+      element = findIdentifier(_enclosingUnit.topLevelVariables, variableName);
     }
     Expression initializer = node.initializer;
     if (initializer != null) {
@@ -3634,23 +5037,6 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
   }
 
   /**
-   * Return the element for the part with the given source, or `null` if there is no element
-   * for the given source.
-   *
-   * @param parts the elements for the parts
-   * @param partSource the source for the part whose element is to be returned
-   * @return the element for the part with the given source
-   */
-  CompilationUnitElement find(List<CompilationUnitElement> parts, Source partSource) {
-    for (CompilationUnitElement part in parts) {
-      if (part.source == partSource) {
-        return part;
-      }
-    }
-    return null;
-  }
-
-  /**
    * Return the element in the given array of elements that was created for the declaration at the
    * given offset. This method should only be used when there is no name
    *
@@ -3658,39 +5044,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
    * @param offset the offset of the name of the element to be returned
    * @return the element at the given offset
    */
-  Element find7(List<Element> elements, int offset) => find9(elements, "", offset);
-
-  /**
-   * Return the element in the given array of elements that was created for the declaration with the
-   * given name.
-   *
-   * @param elements the elements of the appropriate kind that exist in the current context
-   * @param identifier the name node in the declaration of the element to be returned
-   * @return the element created for the declaration with the given name
-   */
-  Element find8(List<Element> elements, SimpleIdentifier identifier) {
-    Element element = find9(elements, identifier.name, identifier.offset);
-    identifier.staticElement = element;
-    return element;
-  }
-
-  /**
-   * Return the element in the given array of elements that was created for the declaration with the
-   * given name at the given offset.
-   *
-   * @param elements the elements of the appropriate kind that exist in the current context
-   * @param name the name of the element to be returned
-   * @param offset the offset of the name of the element to be returned
-   * @return the element with the given name and offset
-   */
-  Element find9(List<Element> elements, String name, int offset) {
-    for (Element element in elements) {
-      if (element.displayName == name && element.nameOffset == offset) {
-        return element;
-      }
-    }
-    return null;
-  }
+  Element findAtOffset(List<Element> elements, int offset) => findWithNameAndOffset(elements, "", offset);
 
   /**
    * Return the export element from the given array whose library has the given source, or
@@ -3701,13 +5055,27 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
    *          for
    * @return the export element whose library has the given source
    */
-  ExportElement find10(List<ExportElement> exports, Source source) {
+  ExportElement findExport(List<ExportElement> exports, Source source) {
     for (ExportElement export in exports) {
       if (export.exportedLibrary.source == source) {
         return export;
       }
     }
     return null;
+  }
+
+  /**
+   * Return the element in the given array of elements that was created for the declaration with the
+   * given name.
+   *
+   * @param elements the elements of the appropriate kind that exist in the current context
+   * @param identifier the name node in the declaration of the element to be returned
+   * @return the element created for the declaration with the given name
+   */
+  Element findIdentifier(List<Element> elements, SimpleIdentifier identifier) {
+    Element element = findWithNameAndOffset(elements, identifier.name, identifier.offset);
+    identifier.staticElement = element;
+    return element;
   }
 
   /**
@@ -3720,7 +5088,7 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
    * @param prefix the prefix with which the library was imported
    * @return the import element whose library has the given source and prefix
    */
-  ImportElement find11(List<ImportElement> imports, Source source, SimpleIdentifier prefix) {
+  ImportElement findImport(List<ImportElement> imports, Source source, SimpleIdentifier prefix) {
     for (ImportElement element in imports) {
       if (element.importedLibrary.source == source) {
         PrefixElement prefixElement = element.prefix;
@@ -3733,6 +5101,41 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
             return element;
           }
         }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Return the element for the part with the given source, or `null` if there is no element
+   * for the given source.
+   *
+   * @param parts the elements for the parts
+   * @param partSource the source for the part whose element is to be returned
+   * @return the element for the part with the given source
+   */
+  CompilationUnitElement findPart(List<CompilationUnitElement> parts, Source partSource) {
+    for (CompilationUnitElement part in parts) {
+      if (part.source == partSource) {
+        return part;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Return the element in the given array of elements that was created for the declaration with the
+   * given name at the given offset.
+   *
+   * @param elements the elements of the appropriate kind that exist in the current context
+   * @param name the name of the element to be returned
+   * @param offset the offset of the name of the element to be returned
+   * @return the element with the given name and offset
+   */
+  Element findWithNameAndOffset(List<Element> elements, String name, int offset) {
+    for (Element element in elements) {
+      if (element.displayName == name && element.nameOffset == offset) {
+        return element;
       }
     }
     return null;
@@ -3756,13 +5159,13 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
     if (parameters == null && _enclosingAlias != null) {
       parameters = _enclosingAlias.parameters;
     }
-    ParameterElement element = parameters == null ? null : find8(parameters, parameterName);
+    ParameterElement element = parameters == null ? null : findIdentifier(parameters, parameterName);
     if (element == null) {
       PrintStringWriter writer = new PrintStringWriter();
       writer.println("Invalid state found in the Analysis Engine:");
       writer.println("DeclarationResolver.getElementForParameter() is visiting a parameter that does not appear to be in a method or function.");
       writer.println("Ancestors:");
-      ASTNode parent = node.parent;
+      AstNode parent = node.parent;
       while (parent != null) {
         writer.println(parent.runtimeType.toString());
         writer.println("---------");
@@ -3795,7 +5198,6 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
  * <ol>
  * * Every [SimpleIdentifier] should be resolved to the element to which it refers.
  * Specifically:
- *
  * * An identifier within the declaration of that name should resolve to the element being
  * declared.
  * * An identifier denoting a prefix should resolve to the element representing the import that
@@ -3810,7 +5212,6 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
  * element representing the method or function (a [ExecutableElement]).
  * * An identifier denoting a label should resolve to the element representing the label (a
  * [LabelElement]).
- *
  * The identifiers within directives are exceptions to this rule and are covered below.
  * * Every node containing a token representing an operator that can be overridden (
  * [BinaryExpression], [PrefixExpression], [PostfixExpression]) should resolve to
@@ -3839,61 +5240,62 @@ class DeclarationResolver extends RecursiveASTVisitor<Object> {
  * anything. This includes such things as references to undeclared variables (which is an error) and
  * names in hide and show combinators that are not defined in the imported library (which is not an
  * error).
- *
- * @coverage dart.engine.resolver
  */
-class ElementResolver extends SimpleASTVisitor<Object> {
+class ElementResolver extends SimpleAstVisitor<Object> {
   /**
    * Checks if the given expression is the reference to the type, if it is then the
    * [ClassElement] is returned, otherwise `null` is returned.
    *
-   * @param expr the expression to evaluate
+   * @param expression the expression to evaluate
    * @return the [ClassElement] if the given expression is the reference to the type, and
    *         `null` otherwise
    */
-  static ClassElementImpl getTypeReference(Expression expr) {
-    if (expr is Identifier) {
-      Identifier identifier = expr as Identifier;
-      if (identifier.staticElement is ClassElementImpl) {
-        return identifier.staticElement as ClassElementImpl;
+  static ClassElementImpl getTypeReference(Expression expression) {
+    if (expression is Identifier) {
+      Element staticElement = expression.staticElement;
+      if (staticElement is ClassElementImpl) {
+        return staticElement;
       }
     }
     return null;
   }
 
   /**
+   * Return `true` if the given identifier is the return type of a constructor declaration.
+   *
    * @return `true` if the given identifier is the return type of a constructor declaration.
    */
-  static bool isConstructorReturnType(SimpleIdentifier node) {
-    ASTNode parent = node.parent;
+  static bool isConstructorReturnType(SimpleIdentifier identifier) {
+    AstNode parent = identifier.parent;
     if (parent is ConstructorDeclaration) {
-      ConstructorDeclaration constructor = parent as ConstructorDeclaration;
-      return identical(constructor.returnType, node);
+      return identical(parent.returnType, identifier);
     }
     return false;
   }
 
   /**
+   * Return `true` if the given identifier is the return type of a factory constructor.
+   *
    * @return `true` if the given identifier is the return type of a factory constructor
    *         declaration.
    */
   static bool isFactoryConstructorReturnType(SimpleIdentifier node) {
-    ASTNode parent = node.parent;
+    AstNode parent = node.parent;
     if (parent is ConstructorDeclaration) {
-      ConstructorDeclaration constructor = parent as ConstructorDeclaration;
+      ConstructorDeclaration constructor = parent;
       return identical(constructor.returnType, node) && constructor.factoryKeyword != null;
     }
     return false;
   }
 
   /**
-   * Checks if the given 'super' expression is used in the valid context.
+   * Return `true` if the given 'super' expression is used in a valid context.
    *
    * @param node the 'super' expression to analyze
-   * @return `true` if the given 'super' expression is in the valid context
+   * @return `true` if the 'super' expression is in a valid context
    */
   static bool isSuperInValidContext(SuperExpression node) {
-    for (ASTNode n = node; n != null; n = n.parent) {
+    for (AstNode n = node; n != null; n = n.parent) {
       if (n is CompilationUnit) {
         return false;
       }
@@ -3989,18 +5391,10 @@ class ElementResolver extends SimpleASTVisitor<Object> {
         Type2 propagatedType = getPropagatedType(leftHandSide);
         MethodElement propagatedMethod = lookUpMethod(leftHandSide, propagatedType, methodName);
         node.propagatedElement = propagatedMethod;
-        bool shouldReportMissingMember_static = shouldReportMissingMember(staticType, staticMethod);
-        bool shouldReportMissingMember_propagated = !shouldReportMissingMember_static && _enableHints ? shouldReportMissingMember(propagatedType, propagatedMethod) : false;
-        if (shouldReportMissingMember_propagated) {
-          if (memberFoundInSubclass(propagatedType.element, methodName, true, false)) {
-            shouldReportMissingMember_propagated = false;
-          }
-        }
-        if (shouldReportMissingMember_static || shouldReportMissingMember_propagated) {
-          ErrorCode errorCode = (shouldReportMissingMember_static ? StaticTypeWarningCode.UNDEFINED_METHOD : HintCode.UNDEFINED_METHOD) as ErrorCode;
-          _resolver.reportErrorProxyConditionalAnalysisError3(shouldReportMissingMember_static ? staticType.element : propagatedType.element, errorCode, operator, [
-              methodName,
-              shouldReportMissingMember_static ? staticType.displayName : propagatedType.displayName]);
+        if (shouldReportMissingMember(staticType, staticMethod)) {
+          _resolver.reportErrorProxyConditionalAnalysisError3(staticType.element, StaticTypeWarningCode.UNDEFINED_METHOD, operator, [methodName, staticType.displayName]);
+        } else if (_enableHints && shouldReportMissingMember(propagatedType, propagatedMethod) && !memberFoundInSubclass(propagatedType.element, methodName, true, false)) {
+          _resolver.reportErrorProxyConditionalAnalysisError3(propagatedType.element, HintCode.UNDEFINED_METHOD, operator, [methodName, propagatedType.displayName]);
         }
       }
     }
@@ -4019,18 +5413,10 @@ class ElementResolver extends SimpleASTVisitor<Object> {
         Type2 propagatedType = getPropagatedType(leftOperand);
         MethodElement propagatedMethod = lookUpMethod(leftOperand, propagatedType, methodName);
         node.propagatedElement = propagatedMethod;
-        bool shouldReportMissingMember_static = shouldReportMissingMember(staticType, staticMethod);
-        bool shouldReportMissingMember_propagated = !shouldReportMissingMember_static && _enableHints ? shouldReportMissingMember(propagatedType, propagatedMethod) : false;
-        if (shouldReportMissingMember_propagated) {
-          if (memberFoundInSubclass(propagatedType.element, methodName, true, false)) {
-            shouldReportMissingMember_propagated = false;
-          }
-        }
-        if (shouldReportMissingMember_static || shouldReportMissingMember_propagated) {
-          ErrorCode errorCode = (shouldReportMissingMember_static ? StaticTypeWarningCode.UNDEFINED_OPERATOR : HintCode.UNDEFINED_OPERATOR) as ErrorCode;
-          _resolver.reportErrorProxyConditionalAnalysisError3(shouldReportMissingMember_static ? staticType.element : propagatedType.element, errorCode, operator, [
-              methodName,
-              shouldReportMissingMember_static ? staticType.displayName : propagatedType.displayName]);
+        if (shouldReportMissingMember(staticType, staticMethod)) {
+          _resolver.reportErrorProxyConditionalAnalysisError3(staticType.element, StaticTypeWarningCode.UNDEFINED_OPERATOR, operator, [methodName, staticType.displayName]);
+        } else if (_enableHints && shouldReportMissingMember(propagatedType, propagatedMethod) && !memberFoundInSubclass(propagatedType.element, methodName, true, false)) {
+          _resolver.reportErrorProxyConditionalAnalysisError3(propagatedType.element, HintCode.UNDEFINED_OPERATOR, operator, [methodName, propagatedType.displayName]);
         }
       }
     }
@@ -4038,11 +5424,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   }
 
   Object visitBreakStatement(BreakStatement node) {
-    SimpleIdentifier labelNode = node.label;
-    LabelElementImpl labelElement = lookupLabel(node, labelNode);
-    if (labelElement != null && labelElement.isOnSwitchMember) {
-      _resolver.reportError6(ResolverErrorCode.BREAK_LABEL_ON_SWITCH_MEMBER, labelNode, []);
-    }
+    lookupLabel(node, node.label);
     return null;
   }
 
@@ -4059,11 +5441,15 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   Object visitCommentReference(CommentReference node) {
     Identifier identifier = node.identifier;
     if (identifier is SimpleIdentifier) {
-      SimpleIdentifier simpleIdentifier = identifier as SimpleIdentifier;
+      SimpleIdentifier simpleIdentifier = identifier;
       Element element = resolveSimpleIdentifier(simpleIdentifier);
       if (element == null) {
+        //
+        // This might be a reference to an imported name that is missing the prefix.
+        //
         element = findImportWithoutPrefix(simpleIdentifier);
         if (element is MultiplyDefinedElement) {
+          // TODO(brianwilkerson) Report this error?
           element = null;
         }
       }
@@ -4084,7 +5470,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
         }
       }
     } else if (identifier is PrefixedIdentifier) {
-      PrefixedIdentifier prefixedIdentifier = identifier as PrefixedIdentifier;
+      PrefixedIdentifier prefixedIdentifier = identifier;
       SimpleIdentifier prefix = prefixedIdentifier.prefix;
       SimpleIdentifier name = prefixedIdentifier.identifier;
       Element element = resolveSimpleIdentifier(prefix);
@@ -4092,12 +5478,14 @@ class ElementResolver extends SimpleASTVisitor<Object> {
       } else {
         if (element is PrefixElement) {
           prefix.staticElement = element;
+          // TODO(brianwilkerson) Report this error?
           element = _resolver.nameScope.lookup(identifier, _definingLibrary);
           name.staticElement = element;
           return null;
         }
         LibraryElement library = element.library;
         if (library == null) {
+          // TODO(brianwilkerson) We need to understand how the library could ever be null.
           AnalysisEngine.instance.logger.logError("Found element with null library: ${element.name}");
         } else if (library != _definingLibrary) {
         }
@@ -4136,16 +5524,19 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     super.visitConstructorDeclaration(node);
     ConstructorElement element = node.element;
     if (element is ConstructorElementImpl) {
-      ConstructorElementImpl constructorElement = element as ConstructorElementImpl;
+      ConstructorElementImpl constructorElement = element;
       ConstructorName redirectedNode = node.redirectedConstructor;
       if (redirectedNode != null) {
+        // set redirected factory constructor
         ConstructorElement redirectedElement = redirectedNode.staticElement;
         constructorElement.redirectedConstructor = redirectedElement;
-      }
-      for (ConstructorInitializer initializer in node.initializers) {
-        if (initializer is RedirectingConstructorInvocation) {
-          ConstructorElement redirectedElement = (initializer as RedirectingConstructorInvocation).staticElement;
-          constructorElement.redirectedConstructor = redirectedElement;
+      } else {
+        // set redirected generative constructor
+        for (ConstructorInitializer initializer in node.initializers) {
+          if (initializer is RedirectingConstructorInvocation) {
+            ConstructorElement redirectedElement = initializer.staticElement;
+            constructorElement.redirectedConstructor = redirectedElement;
+          }
         }
       }
       setMetadata(constructorElement, node);
@@ -4156,13 +5547,8 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   Object visitConstructorFieldInitializer(ConstructorFieldInitializer node) {
     SimpleIdentifier fieldName = node.fieldName;
     ClassElement enclosingClass = _resolver.enclosingClass;
-    FieldElement fieldElement = (enclosingClass as ClassElementImpl).getField(fieldName.name);
+    FieldElement fieldElement = enclosingClass.getField(fieldName.name);
     fieldName.staticElement = fieldElement;
-    if (fieldElement == null || fieldElement.isSynthetic) {
-      _resolver.reportError6(CompileTimeErrorCode.INITIALIZER_FOR_NON_EXISTANT_FIELD, node, [fieldName]);
-    } else if (fieldElement.isStatic) {
-      _resolver.reportError6(CompileTimeErrorCode.INITIALIZER_FOR_STATIC_FIELD, node, [fieldName]);
-    }
     return null;
   }
 
@@ -4171,15 +5557,20 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     if (type != null && type.isDynamic) {
       return null;
     } else if (type is! InterfaceType) {
-      ASTNode parent = node.parent;
-      if (parent is InstanceCreationExpression) {
-        if ((parent as InstanceCreationExpression).isConst) {
-        } else {
-        }
-      } else {
-      }
+      // TODO(brianwilkerson) Report these errors.
+      //      ASTNode parent = node.getParent();
+      //      if (parent instanceof InstanceCreationExpression) {
+      //        if (((InstanceCreationExpression) parent).isConst()) {
+      //          // CompileTimeErrorCode.CONST_WITH_NON_TYPE
+      //        } else {
+      //          // StaticWarningCode.NEW_WITH_NON_TYPE
+      //        }
+      //      } else {
+      //        // This is part of a redirecting factory constructor; not sure which error code to use
+      //      }
       return null;
     }
+    // look up ConstructorElement
     ConstructorElement constructor;
     SimpleIdentifier name = node.name;
     InterfaceType interfaceType = type as InterfaceType;
@@ -4194,11 +5585,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   }
 
   Object visitContinueStatement(ContinueStatement node) {
-    SimpleIdentifier labelNode = node.label;
-    LabelElementImpl labelElement = lookupLabel(node, labelNode);
-    if (labelElement != null && labelElement.isOnSwitchStatement) {
-      _resolver.reportError6(ResolverErrorCode.CONTINUE_LABEL_ON_SWITCH, labelNode, []);
-    }
+    lookupLabel(node, node.label);
     return null;
   }
 
@@ -4210,45 +5597,17 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   Object visitExportDirective(ExportDirective node) {
     Element element = node.element;
     if (element is ExportElement) {
-      resolveCombinators((element as ExportElement).exportedLibrary, node.combinators);
+      // The element is null when the URI is invalid
+      // TODO(brianwilkerson) Figure out whether the element can ever be something other than an
+      // ExportElement
+      resolveCombinators(element.exportedLibrary, node.combinators);
       setMetadata(element, node);
     }
     return null;
   }
 
   Object visitFieldFormalParameter(FieldFormalParameter node) {
-    String fieldName = node.identifier.name;
-    ClassElement classElement = _resolver.enclosingClass;
-    if (classElement != null) {
-      FieldElement fieldElement = (classElement as ClassElementImpl).getField(fieldName);
-      if (fieldElement == null) {
-        _resolver.reportError6(CompileTimeErrorCode.INITIALIZING_FORMAL_FOR_NON_EXISTANT_FIELD, node, [fieldName]);
-      } else {
-        ParameterElement parameterElement = node.element;
-        if (parameterElement is FieldFormalParameterElementImpl) {
-          FieldFormalParameterElementImpl fieldFormal = parameterElement as FieldFormalParameterElementImpl;
-          fieldFormal.field = fieldElement;
-          Type2 declaredType = fieldFormal.type;
-          Type2 fieldType = fieldElement.type;
-          if (node.type == null) {
-            fieldFormal.type = fieldType;
-          }
-          if (fieldElement.isSynthetic) {
-            _resolver.reportError6(CompileTimeErrorCode.INITIALIZING_FORMAL_FOR_NON_EXISTANT_FIELD, node, [fieldName]);
-          } else if (fieldElement.isStatic) {
-            _resolver.reportError6(CompileTimeErrorCode.INITIALIZING_FORMAL_FOR_STATIC_FIELD, node, [fieldName]);
-          } else if (declaredType != null && fieldType != null && !declaredType.isAssignableTo(fieldType)) {
-            _resolver.reportError6(StaticWarningCode.FIELD_INITIALIZING_FORMAL_NOT_ASSIGNABLE, node, [declaredType.displayName, fieldType.displayName]);
-          }
-        } else {
-          if (fieldElement.isSynthetic) {
-            _resolver.reportError6(CompileTimeErrorCode.INITIALIZING_FORMAL_FOR_NON_EXISTANT_FIELD, node, [fieldName]);
-          } else if (fieldElement.isStatic) {
-            _resolver.reportError6(CompileTimeErrorCode.INITIALIZING_FORMAL_FOR_STATIC_FIELD, node, [fieldName]);
-          }
-        }
-      }
-    }
+    setMetadataForParameter(node.element, node);
     return super.visitFieldFormalParameter(node);
   }
 
@@ -4258,12 +5617,13 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   }
 
   Object visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
+    // TODO(brianwilkerson) Can we ever resolve the function being invoked?
     Expression expression = node.function;
     if (expression is FunctionExpression) {
-      FunctionExpression functionExpression = expression as FunctionExpression;
+      FunctionExpression functionExpression = expression;
       ExecutableElement functionElement = functionExpression.element;
       ArgumentList argumentList = node.argumentList;
-      List<ParameterElement> parameters = resolveArgumentsToParameters(false, argumentList, functionElement);
+      List<ParameterElement> parameters = resolveArgumentsToFunction(false, argumentList, functionElement);
       if (parameters != null) {
         argumentList.correspondingStaticParameters = parameters;
       }
@@ -4273,6 +5633,11 @@ class ElementResolver extends SimpleASTVisitor<Object> {
 
   Object visitFunctionTypeAlias(FunctionTypeAlias node) {
     setMetadata(node.element, node);
+    return null;
+  }
+
+  Object visitFunctionTypedFormalParameter(FunctionTypedFormalParameter node) {
+    setMetadataForParameter(node.element, node);
     return null;
   }
 
@@ -4289,6 +5654,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     }
     ImportElement importElement = node.element;
     if (importElement != null) {
+      // The element is null when the URI is invalid
       LibraryElement library = importElement.importedLibrary;
       if (library != null) {
         resolveCombinators(library, node.combinators);
@@ -4307,27 +5673,39 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     bool isInGetterContext = node.inGetterContext();
     bool isInSetterContext = node.inSetterContext();
     if (isInGetterContext && isInSetterContext) {
+      // lookup setter
       MethodElement setterStaticMethod = lookUpMethod(target, staticType, setterMethodName);
       MethodElement setterPropagatedMethod = lookUpMethod(target, propagatedType, setterMethodName);
+      // set setter element
       node.staticElement = setterStaticMethod;
       node.propagatedElement = setterPropagatedMethod;
+      // generate undefined method warning
       checkForUndefinedIndexOperator(node, target, getterMethodName, setterStaticMethod, setterPropagatedMethod, staticType, propagatedType);
+      // lookup getter method
       MethodElement getterStaticMethod = lookUpMethod(target, staticType, getterMethodName);
       MethodElement getterPropagatedMethod = lookUpMethod(target, propagatedType, getterMethodName);
+      // set getter element
       AuxiliaryElements auxiliaryElements = new AuxiliaryElements(getterStaticMethod, getterPropagatedMethod);
       node.auxiliaryElements = auxiliaryElements;
+      // generate undefined method warning
       checkForUndefinedIndexOperator(node, target, getterMethodName, getterStaticMethod, getterPropagatedMethod, staticType, propagatedType);
     } else if (isInGetterContext) {
+      // lookup getter method
       MethodElement staticMethod = lookUpMethod(target, staticType, getterMethodName);
       MethodElement propagatedMethod = lookUpMethod(target, propagatedType, getterMethodName);
+      // set getter element
       node.staticElement = staticMethod;
       node.propagatedElement = propagatedMethod;
+      // generate undefined method warning
       checkForUndefinedIndexOperator(node, target, getterMethodName, staticMethod, propagatedMethod, staticType, propagatedType);
     } else if (isInSetterContext) {
+      // lookup setter method
       MethodElement staticMethod = lookUpMethod(target, staticType, setterMethodName);
       MethodElement propagatedMethod = lookUpMethod(target, propagatedType, setterMethodName);
+      // set setter element
       node.staticElement = staticMethod;
       node.propagatedElement = propagatedMethod;
+      // generate undefined method warning
       checkForUndefinedIndexOperator(node, target, setterMethodName, staticMethod, propagatedMethod, staticType, propagatedType);
     }
     return null;
@@ -4337,7 +5715,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     ConstructorElement invokedConstructor = node.constructorName.staticElement;
     node.staticElement = invokedConstructor;
     ArgumentList argumentList = node.argumentList;
-    List<ParameterElement> parameters = resolveArgumentsToParameters(node.isConst, argumentList, invokedConstructor);
+    List<ParameterElement> parameters = resolveArgumentsToFunction(node.isConst, argumentList, invokedConstructor);
     if (parameters != null) {
       argumentList.correspondingStaticParameters = parameters;
     }
@@ -4356,30 +5734,46 @@ class ElementResolver extends SimpleASTVisitor<Object> {
 
   Object visitMethodInvocation(MethodInvocation node) {
     SimpleIdentifier methodName = node.methodName;
+    //
+    // Synthetic identifiers have been already reported during parsing.
+    //
     if (methodName.isSynthetic) {
       return null;
     }
+    //
+    // We have a method invocation of one of two forms: 'e.m(a1, ..., an)' or 'm(a1, ..., an)'. The
+    // first step is to figure out which executable is being invoked, using both the static and the
+    // propagated type information.
+    //
     Expression target = node.realTarget;
-    if (target is SuperExpression && !isSuperInValidContext(target as SuperExpression)) {
+    if (target is SuperExpression && !isSuperInValidContext(target)) {
       return null;
     }
     Element staticElement;
     Element propagatedElement;
     if (target == null) {
-      staticElement = resolveInvokedElement2(methodName);
+      staticElement = resolveInvokedElement(methodName);
       propagatedElement = null;
     } else {
       Type2 staticType = getStaticType(target);
+      //
+      // If this method invocation is of the form 'C.m' where 'C' is a class, then we don't call
+      // resolveInvokedElement(..) which walks up the class hierarchy, instead we just look for the
+      // member in the type only.
+      //
       ClassElementImpl typeReference = getTypeReference(target);
       if (typeReference != null) {
-        staticElement = propagatedElement = resolveElement(typeReference, methodName.name);
+        staticElement = propagatedElement = resolveElement(typeReference, methodName);
       } else {
-        staticElement = resolveInvokedElement(target, staticType, methodName);
-        propagatedElement = resolveInvokedElement(target, getPropagatedType(target), methodName);
+        staticElement = resolveInvokedElementWithTarget(target, staticType, methodName);
+        propagatedElement = resolveInvokedElementWithTarget(target, getPropagatedType(target), methodName);
       }
     }
     staticElement = convertSetterToGetter(staticElement);
     propagatedElement = convertSetterToGetter(propagatedElement);
+    //
+    // Record the results.
+    //
     methodName.staticElement = staticElement;
     methodName.propagatedElement = propagatedElement;
     ArgumentList argumentList = node.argumentList;
@@ -4395,6 +5789,9 @@ class ElementResolver extends SimpleASTVisitor<Object> {
         argumentList.correspondingPropagatedParameters = parameters;
       }
     }
+    //
+    // Then check for error conditions.
+    //
     ErrorCode errorCode = checkForInvocationError(target, true, staticElement);
     bool generatedWithTypePropagation = false;
     if (_enableHints && errorCode == null && staticElement == null) {
@@ -4427,9 +5824,9 @@ class ElementResolver extends SimpleASTVisitor<Object> {
       return null;
     }
     if (identical(errorCode, StaticTypeWarningCode.INVOCATION_OF_NON_FUNCTION)) {
-      _resolver.reportError6(StaticTypeWarningCode.INVOCATION_OF_NON_FUNCTION, methodName, [methodName.name]);
+      _resolver.reportErrorForNode(StaticTypeWarningCode.INVOCATION_OF_NON_FUNCTION, methodName, [methodName.name]);
     } else if (identical(errorCode, CompileTimeErrorCode.UNDEFINED_FUNCTION)) {
-      _resolver.reportError6(CompileTimeErrorCode.UNDEFINED_FUNCTION, methodName, [methodName.name]);
+      _resolver.reportErrorForNode(CompileTimeErrorCode.UNDEFINED_FUNCTION, methodName, [methodName.name]);
     } else if (identical(errorCode, StaticTypeWarningCode.UNDEFINED_METHOD)) {
       String targetTypeName;
       if (target == null) {
@@ -4438,16 +5835,22 @@ class ElementResolver extends SimpleASTVisitor<Object> {
         ErrorCode proxyErrorCode = (generatedWithTypePropagation ? HintCode.UNDEFINED_METHOD : StaticTypeWarningCode.UNDEFINED_METHOD) as ErrorCode;
         _resolver.reportErrorProxyConditionalAnalysisError(_resolver.enclosingClass, proxyErrorCode, methodName, [methodName.name, targetTypeName]);
       } else {
+        // ignore Function "call"
+        // (if we are about to create a hint using type propagation, then we can use type
+        // propagation here as well)
         Type2 targetType = null;
         if (!generatedWithTypePropagation) {
           targetType = getStaticType(target);
         } else {
+          // choose the best type
           targetType = getPropagatedType(target);
           if (targetType == null) {
             targetType = getStaticType(target);
           }
         }
         if (targetType != null && targetType.isDartCoreFunction && methodName.name == CALL_METHOD_NAME) {
+          // TODO(brianwilkerson) Can we ever resolve the function being invoked?
+          //resolveArgumentsToParameters(node.getArgumentList(), invokedFunction);
           return null;
         }
         targetTypeName = targetType == null ? null : targetType.displayName;
@@ -4455,9 +5858,11 @@ class ElementResolver extends SimpleASTVisitor<Object> {
         _resolver.reportErrorProxyConditionalAnalysisError(targetType.element, proxyErrorCode, methodName, [methodName.name, targetTypeName]);
       }
     } else if (identical(errorCode, StaticTypeWarningCode.UNDEFINED_SUPER_METHOD)) {
+      // Generate the type name.
+      // The error code will never be generated via type propagation
       Type2 targetType = getStaticType(target);
       String targetTypeName = targetType == null ? null : targetType.name;
-      _resolver.reportError6(StaticTypeWarningCode.UNDEFINED_SUPER_METHOD, methodName, [methodName.name, targetTypeName]);
+      _resolver.reportErrorForNode(StaticTypeWarningCode.UNDEFINED_SUPER_METHOD, methodName, [methodName.name, targetTypeName]);
     }
     return null;
   }
@@ -4481,18 +5886,10 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     Type2 propagatedType = getPropagatedType(operand);
     MethodElement propagatedMethod = lookUpMethod(operand, propagatedType, methodName);
     node.propagatedElement = propagatedMethod;
-    bool shouldReportMissingMember_static = shouldReportMissingMember(staticType, staticMethod);
-    bool shouldReportMissingMember_propagated = !shouldReportMissingMember_static && _enableHints ? shouldReportMissingMember(propagatedType, propagatedMethod) : false;
-    if (shouldReportMissingMember_propagated) {
-      if (memberFoundInSubclass(propagatedType.element, methodName, true, false)) {
-        shouldReportMissingMember_propagated = false;
-      }
-    }
-    if (shouldReportMissingMember_static || shouldReportMissingMember_propagated) {
-      ErrorCode errorCode = (shouldReportMissingMember_static ? StaticTypeWarningCode.UNDEFINED_OPERATOR : HintCode.UNDEFINED_OPERATOR) as ErrorCode;
-      _resolver.reportErrorProxyConditionalAnalysisError3(shouldReportMissingMember_static ? staticType.element : propagatedType.element, errorCode, node.operator, [
-          methodName,
-          shouldReportMissingMember_static ? staticType.displayName : propagatedType.displayName]);
+    if (shouldReportMissingMember(staticType, staticMethod)) {
+      _resolver.reportErrorProxyConditionalAnalysisError3(staticType.element, StaticTypeWarningCode.UNDEFINED_OPERATOR, node.operator, [methodName, staticType.displayName]);
+    } else if (_enableHints && shouldReportMissingMember(propagatedType, propagatedMethod) && !memberFoundInSubclass(propagatedType.element, methodName, true, false)) {
+      _resolver.reportErrorProxyConditionalAnalysisError3(propagatedType.element, HintCode.UNDEFINED_OPERATOR, node.operator, [methodName, propagatedType.displayName]);
     }
     return null;
   }
@@ -4500,6 +5897,9 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   Object visitPrefixedIdentifier(PrefixedIdentifier node) {
     SimpleIdentifier prefix = node.prefix;
     SimpleIdentifier identifier = node.identifier;
+    //
+    // First, check to see whether the prefix is really a prefix.
+    //
     Element prefixElement = prefix.staticElement;
     if (prefixElement is PrefixElement) {
       Element element = _resolver.nameScope.lookup(node, _definingLibrary);
@@ -4508,13 +5908,13 @@ class ElementResolver extends SimpleASTVisitor<Object> {
       }
       if (element == null) {
         if (identifier.inSetterContext()) {
-          _resolver.reportError6(StaticWarningCode.UNDEFINED_SETTER, identifier, [identifier.name, prefixElement.name]);
+          _resolver.reportErrorForNode(StaticWarningCode.UNDEFINED_SETTER, identifier, [identifier.name, prefixElement.name]);
         } else if (node.parent is Annotation) {
           Annotation annotation = node.parent as Annotation;
-          _resolver.reportError6(CompileTimeErrorCode.INVALID_ANNOTATION, annotation, []);
+          _resolver.reportErrorForNode(CompileTimeErrorCode.INVALID_ANNOTATION, annotation, []);
           return null;
         } else {
-          _resolver.reportError6(StaticWarningCode.UNDEFINED_GETTER, identifier, [identifier.name, prefixElement.name]);
+          _resolver.reportErrorForNode(StaticWarningCode.UNDEFINED_GETTER, identifier, [identifier.name, prefixElement.name]);
         }
         return null;
       }
@@ -4527,7 +5927,10 @@ class ElementResolver extends SimpleASTVisitor<Object> {
           }
         }
       }
+      // TODO(brianwilkerson) The prefix needs to be resolved to the element for the import that
+      // defines the prefix, not the prefix's element.
       identifier.staticElement = element;
+      // Validate annotation element.
       if (node.parent is Annotation) {
         Annotation annotation = node.parent as Annotation;
         resolveAnnotationElement(annotation);
@@ -4535,10 +5938,15 @@ class ElementResolver extends SimpleASTVisitor<Object> {
       }
       return null;
     }
+    // May be annotation, resolve invocation of "const" constructor.
     if (node.parent is Annotation) {
       Annotation annotation = node.parent as Annotation;
       resolveAnnotationElement(annotation);
     }
+    //
+    // Otherwise, the prefix is really an expression that happens to be a simple identifier and this
+    // is really equivalent to a property access node.
+    //
     resolvePropertyAccess(prefix, identifier);
     return null;
   }
@@ -4555,18 +5963,10 @@ class ElementResolver extends SimpleASTVisitor<Object> {
       Type2 propagatedType = getPropagatedType(operand);
       MethodElement propagatedMethod = lookUpMethod(operand, propagatedType, methodName);
       node.propagatedElement = propagatedMethod;
-      bool shouldReportMissingMember_static = shouldReportMissingMember(staticType, staticMethod);
-      bool shouldReportMissingMember_propagated = !shouldReportMissingMember_static && _enableHints ? shouldReportMissingMember(propagatedType, propagatedMethod) : false;
-      if (shouldReportMissingMember_propagated) {
-        if (memberFoundInSubclass(propagatedType.element, methodName, true, false)) {
-          shouldReportMissingMember_propagated = false;
-        }
-      }
-      if (shouldReportMissingMember_static || shouldReportMissingMember_propagated) {
-        ErrorCode errorCode = (shouldReportMissingMember_static ? StaticTypeWarningCode.UNDEFINED_OPERATOR : HintCode.UNDEFINED_OPERATOR) as ErrorCode;
-        _resolver.reportErrorProxyConditionalAnalysisError3(shouldReportMissingMember_static ? staticType.element : propagatedType.element, errorCode, operator, [
-            methodName,
-            shouldReportMissingMember_static ? staticType.displayName : propagatedType.displayName]);
+      if (shouldReportMissingMember(staticType, staticMethod)) {
+        _resolver.reportErrorProxyConditionalAnalysisError3(staticType.element, StaticTypeWarningCode.UNDEFINED_OPERATOR, operator, [methodName, staticType.displayName]);
+      } else if (_enableHints && shouldReportMissingMember(propagatedType, propagatedMethod) && !memberFoundInSubclass(propagatedType.element, methodName, true, false)) {
+        _resolver.reportErrorProxyConditionalAnalysisError3(propagatedType.element, HintCode.UNDEFINED_OPERATOR, operator, [methodName, propagatedType.displayName]);
       }
     }
     return null;
@@ -4574,7 +5974,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
 
   Object visitPropertyAccess(PropertyAccess node) {
     Expression target = node.realTarget;
-    if (target is SuperExpression && !isSuperInValidContext(target as SuperExpression)) {
+    if (target is SuperExpression && !isSuperInValidContext(target)) {
       return null;
     }
     SimpleIdentifier propertyName = node.propertyName;
@@ -4585,6 +5985,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   Object visitRedirectingConstructorInvocation(RedirectingConstructorInvocation node) {
     ClassElement enclosingClass = _resolver.enclosingClass;
     if (enclosingClass == null) {
+      // TODO(brianwilkerson) Report this error.
       return null;
     }
     SimpleIdentifier name = node.constructorName;
@@ -4595,6 +5996,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
       element = enclosingClass.getNamedConstructor(name.name);
     }
     if (element == null) {
+      // TODO(brianwilkerson) Report this error and decide what element to associate with the node.
       return null;
     }
     if (name != null) {
@@ -4602,38 +6004,57 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     }
     node.staticElement = element;
     ArgumentList argumentList = node.argumentList;
-    List<ParameterElement> parameters = resolveArgumentsToParameters(false, argumentList, element);
+    List<ParameterElement> parameters = resolveArgumentsToFunction(false, argumentList, element);
     if (parameters != null) {
       argumentList.correspondingStaticParameters = parameters;
     }
     return null;
   }
 
+  Object visitSimpleFormalParameter(SimpleFormalParameter node) {
+    setMetadataForParameter(node.element, node);
+    return null;
+  }
+
   Object visitSimpleIdentifier(SimpleIdentifier node) {
+    //
+    // Synthetic identifiers have been already reported during parsing.
+    //
     if (node.isSynthetic) {
       return null;
     }
+    //
+    // We ignore identifiers that have already been resolved, such as identifiers representing the
+    // name in a declaration.
+    //
     if (node.staticElement != null) {
       return null;
     }
+    //
+    // The name dynamic denotes a Type object even though dynamic is not a class.
+    //
     if (node.name == _dynamicType.name) {
       node.staticElement = _dynamicType.element;
       node.staticType = _typeType;
       return null;
     }
+    //
+    // Otherwise, the node should be resolved.
+    //
     Element element = resolveSimpleIdentifier(node);
     ClassElement enclosingClass = _resolver.enclosingClass;
     if (isFactoryConstructorReturnType(node) && element != enclosingClass) {
-      _resolver.reportError6(CompileTimeErrorCode.INVALID_FACTORY_NAME_NOT_A_CLASS, node, []);
+      _resolver.reportErrorForNode(CompileTimeErrorCode.INVALID_FACTORY_NAME_NOT_A_CLASS, node, []);
     } else if (isConstructorReturnType(node) && element != enclosingClass) {
-      _resolver.reportError6(CompileTimeErrorCode.INVALID_CONSTRUCTOR_NAME, node, []);
+      _resolver.reportErrorForNode(CompileTimeErrorCode.INVALID_CONSTRUCTOR_NAME, node, []);
       element = null;
     } else if (element == null || (element is PrefixElement && !isValidAsPrefix(node))) {
+      // TODO(brianwilkerson) Recover from this error.
       if (isConstructorReturnType(node)) {
-        _resolver.reportError6(CompileTimeErrorCode.INVALID_CONSTRUCTOR_NAME, node, []);
+        _resolver.reportErrorForNode(CompileTimeErrorCode.INVALID_CONSTRUCTOR_NAME, node, []);
       } else if (node.parent is Annotation) {
         Annotation annotation = node.parent as Annotation;
-        _resolver.reportError6(CompileTimeErrorCode.INVALID_ANNOTATION, annotation, []);
+        _resolver.reportErrorForNode(CompileTimeErrorCode.INVALID_ANNOTATION, annotation, []);
       } else {
         _resolver.reportErrorProxyConditionalAnalysisError(_resolver.enclosingClass, StaticWarningCode.UNDEFINED_IDENTIFIER, node, [node.name]);
       }
@@ -4644,6 +6065,9 @@ class ElementResolver extends SimpleASTVisitor<Object> {
       AuxiliaryElements auxiliaryElements = new AuxiliaryElements(lookUpGetter(null, enclosingType, node.name), null);
       node.auxiliaryElements = auxiliaryElements;
     }
+    //
+    // Validate annotation element.
+    //
     if (node.parent is Annotation) {
       Annotation annotation = node.parent as Annotation;
       resolveAnnotationElement(annotation);
@@ -4654,10 +6078,12 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   Object visitSuperConstructorInvocation(SuperConstructorInvocation node) {
     ClassElement enclosingClass = _resolver.enclosingClass;
     if (enclosingClass == null) {
+      // TODO(brianwilkerson) Report this error.
       return null;
     }
     InterfaceType superType = enclosingClass.supertype;
     if (superType == null) {
+      // TODO(brianwilkerson) Report this error.
       return null;
     }
     SimpleIdentifier name = node.constructorName;
@@ -4665,14 +6091,14 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     ConstructorElement element = superType.lookUpConstructor(superName, _definingLibrary);
     if (element == null) {
       if (name != null) {
-        _resolver.reportError6(CompileTimeErrorCode.UNDEFINED_CONSTRUCTOR_IN_INITIALIZER, node, [superType.displayName, name]);
+        _resolver.reportErrorForNode(CompileTimeErrorCode.UNDEFINED_CONSTRUCTOR_IN_INITIALIZER, node, [superType.displayName, name]);
       } else {
-        _resolver.reportError6(CompileTimeErrorCode.UNDEFINED_CONSTRUCTOR_IN_INITIALIZER_DEFAULT, node, [superType.displayName]);
+        _resolver.reportErrorForNode(CompileTimeErrorCode.UNDEFINED_CONSTRUCTOR_IN_INITIALIZER_DEFAULT, node, [superType.displayName]);
       }
       return null;
     } else {
       if (element.isFactory) {
-        _resolver.reportError6(CompileTimeErrorCode.NON_GENERATIVE_CONSTRUCTOR, node, [element]);
+        _resolver.reportErrorForNode(CompileTimeErrorCode.NON_GENERATIVE_CONSTRUCTOR, node, [element]);
       }
     }
     if (name != null) {
@@ -4680,7 +6106,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     }
     node.staticElement = element;
     ArgumentList argumentList = node.argumentList;
-    List<ParameterElement> parameters = resolveArgumentsToParameters(isInConstConstructor, argumentList, element);
+    List<ParameterElement> parameters = resolveArgumentsToFunction(isInConstConstructor, argumentList, element);
     if (parameters != null) {
       argumentList.correspondingStaticParameters = parameters;
     }
@@ -4689,19 +6115,12 @@ class ElementResolver extends SimpleASTVisitor<Object> {
 
   Object visitSuperExpression(SuperExpression node) {
     if (!isSuperInValidContext(node)) {
-      _resolver.reportError6(CompileTimeErrorCode.SUPER_IN_INVALID_CONTEXT, node, []);
+      _resolver.reportErrorForNode(CompileTimeErrorCode.SUPER_IN_INVALID_CONTEXT, node, []);
     }
     return super.visitSuperExpression(node);
   }
 
   Object visitTypeParameter(TypeParameter node) {
-    TypeName bound = node.bound;
-    if (bound != null) {
-      TypeParameterElementImpl typeParameter = node.name.staticElement as TypeParameterElementImpl;
-      if (typeParameter != null) {
-        typeParameter.bound = bound.type;
-      }
-    }
     setMetadata(node.element, node);
     return null;
   }
@@ -4738,11 +6157,16 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * @return the error code that should be reported
    */
   ErrorCode checkForInvocationError(Expression target, bool useStaticContext, Element element) {
+    // Prefix is not declared, instead "prefix.id" are declared.
     if (element is PrefixElement) {
       element = null;
     }
     if (element is PropertyAccessorElement) {
-      FunctionType getterType = (element as PropertyAccessorElement).type;
+      //
+      // This is really a function expression invocation.
+      //
+      // TODO(brianwilkerson) Consider the possibility of re-writing the AST.
+      FunctionType getterType = element.type;
       if (getterType != null) {
         Type2 returnType = getterType.returnType;
         if (!isExecutableType(returnType)) {
@@ -4752,10 +6176,17 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     } else if (element is ExecutableElement) {
       return null;
     } else if (element == null && target is SuperExpression) {
+      // TODO(jwren) We should split the UNDEFINED_METHOD into two error codes, this one, and
+      // a code that describes the situation where the method was found, but it was not
+      // accessible from the current library.
       return StaticTypeWarningCode.UNDEFINED_SUPER_METHOD;
     } else {
+      //
+      // This is really a function expression invocation.
+      //
+      // TODO(brianwilkerson) Consider the possibility of re-writing the AST.
       if (element is PropertyInducingElement) {
-        PropertyAccessorElement getter = (element as PropertyInducingElement).getter;
+        PropertyAccessorElement getter = element.getter;
         FunctionType getterType = getter.type;
         if (getterType != null) {
           Type2 returnType = getterType.returnType;
@@ -4764,7 +6195,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
           }
         }
       } else if (element is VariableElement) {
-        Type2 variableType = (element as VariableElement).type;
+        Type2 variableType = element.type;
         if (!isExecutableType(variableType)) {
           return StaticTypeWarningCode.INVOCATION_OF_NON_FUNCTION;
         }
@@ -4774,6 +6205,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
           if (enclosingClass == null) {
             return CompileTimeErrorCode.UNDEFINED_FUNCTION;
           } else if (element == null) {
+            // Proxy-conditional warning, based on state of resolver.getEnclosingClass()
             return StaticTypeWarningCode.UNDEFINED_METHOD;
           } else {
             return StaticTypeWarningCode.INVOCATION_OF_NON_FUNCTION;
@@ -4783,11 +6215,14 @@ class ElementResolver extends SimpleASTVisitor<Object> {
           if (useStaticContext) {
             targetType = getStaticType(target);
           } else {
+            // Compute and use the propagated type, if it is null, then it may be the case that
+            // static type is some type, in which the static type should be used.
             targetType = target.bestType;
           }
           if (targetType == null) {
             return CompileTimeErrorCode.UNDEFINED_FUNCTION;
           } else if (!targetType.isDynamic && !targetType.isBottom) {
+            // Proxy-conditional warning, based on state of targetType.getElement()
             return StaticTypeWarningCode.UNDEFINED_METHOD;
           }
         }
@@ -4808,12 +6243,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    */
   bool checkForUndefinedIndexOperator(IndexExpression node, Expression target, String methodName, MethodElement staticMethod, MethodElement propagatedMethod, Type2 staticType, Type2 propagatedType) {
     bool shouldReportMissingMember_static = shouldReportMissingMember(staticType, staticMethod);
-    bool shouldReportMissingMember_propagated = !shouldReportMissingMember_static && _enableHints ? shouldReportMissingMember(propagatedType, propagatedMethod) : false;
-    if (shouldReportMissingMember_propagated) {
-      if (memberFoundInSubclass(propagatedType.element, methodName, true, false)) {
-        shouldReportMissingMember_propagated = false;
-      }
-    }
+    bool shouldReportMissingMember_propagated = !shouldReportMissingMember_static && _enableHints && shouldReportMissingMember(propagatedType, propagatedMethod) && !memberFoundInSubclass(propagatedType.element, methodName, true, false);
     if (shouldReportMissingMember_static || shouldReportMissingMember_propagated) {
       sc.Token leftBracket = node.leftBracket;
       sc.Token rightBracket = node.rightBracket;
@@ -4845,35 +6275,39 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    */
   List<ParameterElement> computeCorrespondingParameters(ArgumentList argumentList, Element element) {
     if (element is PropertyAccessorElement) {
-      FunctionType getterType = (element as PropertyAccessorElement).type;
+      //
+      // This is an invocation of the call method defined on the value returned by the getter.
+      //
+      FunctionType getterType = element.type;
       if (getterType != null) {
         Type2 getterReturnType = getterType.returnType;
         if (getterReturnType is InterfaceType) {
-          MethodElement callMethod = (getterReturnType as InterfaceType).lookUpMethod(CALL_METHOD_NAME, _definingLibrary);
+          MethodElement callMethod = getterReturnType.lookUpMethod(CALL_METHOD_NAME, _definingLibrary);
           if (callMethod != null) {
-            return resolveArgumentsToParameters(false, argumentList, callMethod);
+            return resolveArgumentsToFunction(false, argumentList, callMethod);
           }
         } else if (getterReturnType is FunctionType) {
-          Element functionElement = (getterReturnType as FunctionType).element;
+          Element functionElement = getterReturnType.element;
           if (functionElement is ExecutableElement) {
-            return resolveArgumentsToParameters(false, argumentList, functionElement as ExecutableElement);
+            return resolveArgumentsToFunction(false, argumentList, functionElement);
           }
         }
       }
     } else if (element is ExecutableElement) {
-      return resolveArgumentsToParameters(false, argumentList, element as ExecutableElement);
+      return resolveArgumentsToFunction(false, argumentList, element);
     } else if (element is VariableElement) {
-      VariableElement variable = element as VariableElement;
+      VariableElement variable = element;
       Type2 type = _promoteManager.getStaticType(variable);
       if (type is FunctionType) {
-        FunctionType functionType = type as FunctionType;
+        FunctionType functionType = type;
         List<ParameterElement> parameters = functionType.parameters;
-        return resolveArgumentsToParameters2(false, argumentList, parameters);
+        return resolveArgumentsToParameters(false, argumentList, parameters);
       } else if (type is InterfaceType) {
-        MethodElement callMethod = (type as InterfaceType).lookUpMethod(CALL_METHOD_NAME, _definingLibrary);
+        // "call" invocation
+        MethodElement callMethod = type.lookUpMethod(CALL_METHOD_NAME, _definingLibrary);
         if (callMethod != null) {
           List<ParameterElement> parameters = callMethod.parameters;
-          return resolveArgumentsToParameters2(false, argumentList, parameters);
+          return resolveArgumentsToParameters(false, argumentList, parameters);
         }
       }
     }
@@ -4888,8 +6322,9 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * @return a non-setter element derived from the given element
    */
   Element convertSetterToGetter(Element element) {
+    // TODO(brianwilkerson) Determine whether and why the element could ever be a setter.
     if (element is PropertyAccessorElement) {
-      return (element as PropertyAccessorElement).variable.getter;
+      return element.variable.getter;
     }
     return element;
   }
@@ -4958,6 +6393,9 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   Type2 getPropagatedType(Expression expression) {
     Type2 propagatedType = resolveTypeParameter(expression.propagatedType);
     if (propagatedType is FunctionType) {
+      //
+      // All function types are subtypes of 'Function', which is itself a subclass of 'Object'.
+      //
       propagatedType = _resolver.typeProvider.functionType;
     }
     return propagatedType;
@@ -4975,6 +6413,9 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     }
     Type2 staticType = resolveTypeParameter(expression.staticType);
     if (staticType is FunctionType) {
+      //
+      // All function types are subtypes of 'Function', which is itself a subclass of 'Object'.
+      //
       staticType = _resolver.typeProvider.functionType;
     }
     return staticType;
@@ -4991,7 +6432,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     if (type.isDynamic || (type is FunctionType) || type.isDartCoreFunction || type.isObject) {
       return true;
     } else if (type is InterfaceType) {
-      ClassElement classElement = (type as InterfaceType).element;
+      ClassElement classElement = type.element;
       MethodElement methodElement = classElement.lookUpMethod(CALL_METHOD_NAME, _definingLibrary);
       return methodElement != null;
     }
@@ -5004,7 +6445,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   bool get isInConstConstructor {
     ExecutableElement function = _resolver.enclosingFunction;
     if (function is ConstructorElement) {
-      return (function as ConstructorElement).isConst;
+      return function.isConst;
     }
     return false;
   }
@@ -5017,31 +6458,29 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    */
   bool isStatic(Element element) {
     if (element is ExecutableElement) {
-      return (element as ExecutableElement).isStatic;
+      return element.isStatic;
     } else if (element is PropertyInducingElement) {
-      return (element as PropertyInducingElement).isStatic;
+      return element.isStatic;
     }
     return false;
   }
 
   /**
    * Return `true` if the given node can validly be resolved to a prefix:
-   *
    * * it is the prefix in an import directive, or
    * * it is the prefix in a prefixed identifier.
-   *
    *
    * @param node the node being tested
    * @return `true` if the given node is the prefix in an import directive
    */
   bool isValidAsPrefix(SimpleIdentifier node) {
-    ASTNode parent = node.parent;
+    AstNode parent = node.parent;
     if (parent is ImportDirective) {
-      return identical((parent as ImportDirective).prefix, node);
+      return identical(parent.prefix, node);
     } else if (parent is PrefixedIdentifier) {
       return true;
     } else if (parent is MethodInvocation) {
-      return identical((parent as MethodInvocation).target, node);
+      return identical(parent.target, node);
     }
     return false;
   }
@@ -5058,7 +6497,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   PropertyAccessorElement lookUpGetter(Expression target, Type2 type, String getterName) {
     type = resolveTypeParameter(type);
     if (type is InterfaceType) {
-      InterfaceType interfaceType = type as InterfaceType;
+      InterfaceType interfaceType = type;
       PropertyAccessorElement accessor;
       if (target is SuperExpression) {
         accessor = interfaceType.lookUpGetterInSuperclass(getterName, _definingLibrary);
@@ -5086,6 +6525,10 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * @return the element representing the getter that was found
    */
   PropertyAccessorElement lookUpGetterInInterfaces(InterfaceType targetType, bool includeTargetType, String getterName, Set<ClassElement> visitedInterfaces) {
+    // TODO(brianwilkerson) This isn't correct. Section 8.1.1 of the specification (titled
+    // "Inheritance and Overriding" under "Interfaces") describes a much more complex scheme for
+    // finding the inherited member. We need to follow that scheme. The code below should cover the
+    // 80% case.
     ClassElement targetClass = targetType.element;
     if (visitedInterfaces.contains(targetClass)) {
       return null;
@@ -5128,7 +6571,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   ExecutableElement lookupGetterOrMethod(Type2 type, String memberName) {
     type = resolveTypeParameter(type);
     if (type is InterfaceType) {
-      InterfaceType interfaceType = type as InterfaceType;
+      InterfaceType interfaceType = type;
       ExecutableElement member = interfaceType.lookUpMethod(memberName, _definingLibrary);
       if (member != null) {
         return member;
@@ -5155,6 +6598,10 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * @return the element representing the method or getter that was found
    */
   ExecutableElement lookUpGetterOrMethodInInterfaces(InterfaceType targetType, bool includeTargetType, String memberName, Set<ClassElement> visitedInterfaces) {
+    // TODO(brianwilkerson) This isn't correct. Section 8.1.1 of the specification (titled
+    // "Inheritance and Overriding" under "Interfaces") describes a much more complex scheme for
+    // finding the inherited member. We need to follow that scheme. The code below should cover the
+    // 80% case.
     ClassElement targetClass = targetType.element;
     if (visitedInterfaces.contains(targetClass)) {
       return null;
@@ -5196,7 +6643,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * @param labelNode the node representing the label being looked up
    * @return the element corresponding to the given label node in the current scope
    */
-  LabelElementImpl lookupLabel(ASTNode parentNode, SimpleIdentifier labelNode) {
+  LabelElementImpl lookupLabel(AstNode parentNode, SimpleIdentifier labelNode) {
     LabelScope labelScope = _resolver.labelScope;
     LabelElementImpl labelElement = null;
     if (labelNode == null) {
@@ -5205,24 +6652,28 @@ class ElementResolver extends SimpleASTVisitor<Object> {
         labelElement = labelScope.lookup2(LabelScope.EMPTY_LABEL) as LabelElementImpl;
         if (labelElement == null) {
         }
+        //
+        // The label element that was returned was a marker for look-up and isn't stored in the
+        // element model.
+        //
         labelElement = null;
       }
     } else {
       if (labelScope == null) {
-        _resolver.reportError6(CompileTimeErrorCode.LABEL_UNDEFINED, labelNode, [labelNode.name]);
+        _resolver.reportErrorForNode(CompileTimeErrorCode.LABEL_UNDEFINED, labelNode, [labelNode.name]);
       } else {
         labelElement = labelScope.lookup(labelNode) as LabelElementImpl;
         if (labelElement == null) {
-          _resolver.reportError6(CompileTimeErrorCode.LABEL_UNDEFINED, labelNode, [labelNode.name]);
+          _resolver.reportErrorForNode(CompileTimeErrorCode.LABEL_UNDEFINED, labelNode, [labelNode.name]);
         } else {
           labelNode.staticElement = labelElement;
         }
       }
     }
     if (labelElement != null) {
-      ExecutableElement labelContainer = labelElement.getAncestor(ExecutableElement);
+      ExecutableElement labelContainer = labelElement.getAncestor((element) => element is ExecutableElement);
       if (labelContainer != _resolver.enclosingFunction) {
-        _resolver.reportError6(CompileTimeErrorCode.LABEL_IN_OUTER_SCOPE, labelNode, [labelNode.name]);
+        _resolver.reportErrorForNode(CompileTimeErrorCode.LABEL_IN_OUTER_SCOPE, labelNode, [labelNode.name]);
         labelElement = null;
       }
     }
@@ -5241,7 +6692,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   MethodElement lookUpMethod(Expression target, Type2 type, String methodName) {
     type = resolveTypeParameter(type);
     if (type is InterfaceType) {
-      InterfaceType interfaceType = type as InterfaceType;
+      InterfaceType interfaceType = type;
       MethodElement method;
       if (target is SuperExpression) {
         method = interfaceType.lookUpMethodInSuperclass(methodName, _definingLibrary);
@@ -5269,6 +6720,10 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * @return the element representing the method that was found
    */
   MethodElement lookUpMethodInInterfaces(InterfaceType targetType, bool includeTargetType, String methodName, Set<ClassElement> visitedInterfaces) {
+    // TODO(brianwilkerson) This isn't correct. Section 8.1.1 of the specification (titled
+    // "Inheritance and Overriding" under "Interfaces") describes a much more complex scheme for
+    // finding the inherited member. We need to follow that scheme. The code below should cover the
+    // 80% case.
     ClassElement targetClass = targetType.element;
     if (visitedInterfaces.contains(targetClass)) {
       return null;
@@ -5311,7 +6766,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   PropertyAccessorElement lookUpSetter(Expression target, Type2 type, String setterName) {
     type = resolveTypeParameter(type);
     if (type is InterfaceType) {
-      InterfaceType interfaceType = type as InterfaceType;
+      InterfaceType interfaceType = type;
       PropertyAccessorElement accessor;
       if (target is SuperExpression) {
         accessor = interfaceType.lookUpSetterInSuperclass(setterName, _definingLibrary);
@@ -5339,6 +6794,10 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * @return the element representing the setter that was found
    */
   PropertyAccessorElement lookUpSetterInInterfaces(InterfaceType targetType, bool includeTargetType, String setterName, Set<ClassElement> visitedInterfaces) {
+    // TODO(brianwilkerson) This isn't correct. Section 8.1.1 of the specification (titled
+    // "Inheritance and Overriding" under "Interfaces") describes a much more complex scheme for
+    // finding the inherited member. We need to follow that scheme. The code below should cover the
+    // 80% case.
     ClassElement targetClass = targetType.element;
     if (visitedInterfaces.contains(targetClass)) {
       return null;
@@ -5385,7 +6844,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
   bool memberFoundInSubclass(Element element, String memberName, bool asMethod, bool asAccessor) {
     if (element is ClassElement) {
       _subtypeManager.ensureLibraryVisited(_definingLibrary);
-      Set<ClassElement> subtypeElements = _subtypeManager.computeAllSubtypes(element as ClassElement);
+      Set<ClassElement> subtypeElements = _subtypeManager.computeAllSubtypes(element);
       for (ClassElement subtypeElement in subtypeElements) {
         if (asMethod && subtypeElement.getMethod(memberName) != null) {
           return true;
@@ -5427,19 +6886,23 @@ class ElementResolver extends SimpleASTVisitor<Object> {
         return sc.TokenType.STAR;
       } else if (operator == sc.TokenType.TILDE_SLASH_EQ) {
         return sc.TokenType.TILDE_SLASH;
+      } else {
+        // Internal error: Unmapped assignment operator.
+        AnalysisEngine.instance.logger.logError("Failed to map ${operator.lexeme} to it's corresponding operator");
+        return operator;
       }
       break;
     }
-    AnalysisEngine.instance.logger.logError("Failed to map ${operator.lexeme} to it's corresponding operator");
-    return operator;
   }
 
   void resolveAnnotationConstructorInvocationArguments(Annotation annotation, ConstructorElement constructor) {
     ArgumentList argumentList = annotation.arguments;
+    // error will be reported in ConstantVerifier
     if (argumentList == null) {
       return;
     }
-    List<ParameterElement> parameters = resolveArgumentsToParameters(true, argumentList, constructor);
+    // resolve arguments to parameters
+    List<ParameterElement> parameters = resolveArgumentsToFunction(true, argumentList, constructor);
     if (parameters != null) {
       argumentList.correspondingStaticParameters = parameters;
     }
@@ -5456,7 +6919,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     {
       Identifier annName = annotation.name;
       if (annName is PrefixedIdentifier) {
-        PrefixedIdentifier prefixed = annName as PrefixedIdentifier;
+        PrefixedIdentifier prefixed = annName;
         nameNode1 = prefixed.prefix;
         nameNode2 = prefixed.identifier;
       } else {
@@ -5466,45 +6929,62 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     }
     SimpleIdentifier nameNode3 = annotation.constructorName;
     ConstructorElement constructor = null;
+    //
+    // CONST or Class(args)
+    //
     if (nameNode1 != null && nameNode2 == null && nameNode3 == null) {
       Element element1 = nameNode1.staticElement;
+      // CONST
       if (element1 is PropertyAccessorElement) {
-        resolveAnnotationElementGetter(annotation, element1 as PropertyAccessorElement);
+        resolveAnnotationElementGetter(annotation, element1);
         return;
       }
+      // Class(args)
       if (element1 is ClassElement) {
-        ClassElement classElement = element1 as ClassElement;
+        ClassElement classElement = element1;
         constructor = new InterfaceTypeImpl.con1(classElement).lookUpConstructor(null, _definingLibrary);
       }
     }
+    //
+    // prefix.CONST or prefix.Class() or Class.CONST or Class.constructor(args)
+    //
     if (nameNode1 != null && nameNode2 != null && nameNode3 == null) {
       Element element1 = nameNode1.staticElement;
       Element element2 = nameNode2.staticElement;
+      // Class.CONST - not resolved yet
       if (element1 is ClassElement) {
-        ClassElement classElement = element1 as ClassElement;
+        ClassElement classElement = element1;
         element2 = classElement.lookUpGetter(nameNode2.name, _definingLibrary);
       }
+      // prefix.CONST or Class.CONST
       if (element2 is PropertyAccessorElement) {
         nameNode2.staticElement = element2;
         annotation.element = element2;
         resolveAnnotationElementGetter(annotation, element2 as PropertyAccessorElement);
         return;
       }
+      // prefix.Class()
       if (element2 is ClassElement) {
         ClassElement classElement = element2 as ClassElement;
         constructor = classElement.unnamedConstructor;
       }
+      // Class.constructor(args)
       if (element1 is ClassElement) {
-        ClassElement classElement = element1 as ClassElement;
+        ClassElement classElement = element1;
         constructor = new InterfaceTypeImpl.con1(classElement).lookUpConstructor(nameNode2.name, _definingLibrary);
         nameNode2.staticElement = constructor;
       }
     }
+    //
+    // prefix.Class.CONST or prefix.Class.constructor(args)
+    //
     if (nameNode1 != null && nameNode2 != null && nameNode3 != null) {
       Element element2 = nameNode2.staticElement;
+      // element2 should be ClassElement
       if (element2 is ClassElement) {
-        ClassElement classElement = element2 as ClassElement;
+        ClassElement classElement = element2;
         String name3 = nameNode3.name;
+        // prefix.Class.CONST
         PropertyAccessorElement getter = classElement.lookUpGetter(name3, _definingLibrary);
         if (getter != null) {
           nameNode3.staticElement = getter;
@@ -5512,27 +6992,34 @@ class ElementResolver extends SimpleASTVisitor<Object> {
           resolveAnnotationElementGetter(annotation, getter);
           return;
         }
+        // prefix.Class.constructor(args)
         constructor = new InterfaceTypeImpl.con1(classElement).lookUpConstructor(name3, _definingLibrary);
         nameNode3.staticElement = constructor;
       }
     }
+    // we need constructor
     if (constructor == null) {
-      _resolver.reportError6(CompileTimeErrorCode.INVALID_ANNOTATION, annotation, []);
+      _resolver.reportErrorForNode(CompileTimeErrorCode.INVALID_ANNOTATION, annotation, []);
       return;
     }
+    // record element
     annotation.element = constructor;
+    // resolve arguments
     resolveAnnotationConstructorInvocationArguments(annotation, constructor);
   }
 
   void resolveAnnotationElementGetter(Annotation annotation, PropertyAccessorElement accessorElement) {
+    // accessor should be synthetic
     if (!accessorElement.isSynthetic) {
-      _resolver.reportError6(CompileTimeErrorCode.INVALID_ANNOTATION, annotation, []);
+      _resolver.reportErrorForNode(CompileTimeErrorCode.INVALID_ANNOTATION, annotation, []);
       return;
     }
+    // variable should be constant
     VariableElement variableElement = accessorElement.variable;
     if (!variableElement.isConst) {
-      _resolver.reportError6(CompileTimeErrorCode.INVALID_ANNOTATION, annotation, []);
+      _resolver.reportErrorForNode(CompileTimeErrorCode.INVALID_ANNOTATION, annotation, []);
     }
+    // OK
     return;
   }
 
@@ -5547,12 +7034,12 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * @param executableElement the element that will be invoked with the arguments
    * @return the parameters that correspond to the arguments
    */
-  List<ParameterElement> resolveArgumentsToParameters(bool reportError, ArgumentList argumentList, ExecutableElement executableElement) {
+  List<ParameterElement> resolveArgumentsToFunction(bool reportError, ArgumentList argumentList, ExecutableElement executableElement) {
     if (executableElement == null) {
       return null;
     }
     List<ParameterElement> parameters = executableElement.parameters;
-    return resolveArgumentsToParameters2(reportError, argumentList, parameters);
+    return resolveArgumentsToParameters(reportError, argumentList, parameters);
   }
 
   /**
@@ -5566,7 +7053,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * @param parameters the of the function that will be invoked with the arguments
    * @return the parameters that correspond to the arguments
    */
-  List<ParameterElement> resolveArgumentsToParameters2(bool reportError, ArgumentList argumentList, List<ParameterElement> parameters) {
+  List<ParameterElement> resolveArgumentsToParameters(bool reportError, ArgumentList argumentList, List<ParameterElement> parameters) {
     List<ParameterElement> requiredParameters = new List<ParameterElement>();
     List<ParameterElement> positionalParameters = new List<ParameterElement>();
     Map<String, ParameterElement> namedParameters = new Map<String, ParameterElement>();
@@ -5592,18 +7079,18 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     for (int i = 0; i < argumentCount; i++) {
       Expression argument = arguments[i];
       if (argument is NamedExpression) {
-        SimpleIdentifier nameNode = (argument as NamedExpression).name.label;
+        SimpleIdentifier nameNode = argument.name.label;
         String name = nameNode.name;
         ParameterElement element = namedParameters[name];
         if (element == null) {
           ErrorCode errorCode = (reportError ? CompileTimeErrorCode.UNDEFINED_NAMED_PARAMETER : StaticWarningCode.UNDEFINED_NAMED_PARAMETER) as ErrorCode;
-          _resolver.reportError6(errorCode, nameNode, [name]);
+          _resolver.reportErrorForNode(errorCode, nameNode, [name]);
         } else {
           resolvedParameters[i] = element;
           nameNode.staticElement = element;
         }
         if (!usedNames.add(name)) {
-          _resolver.reportError6(CompileTimeErrorCode.DUPLICATE_NAMED_ARGUMENT, nameNode, [name]);
+          _resolver.reportErrorForNode(CompileTimeErrorCode.DUPLICATE_NAMED_ARGUMENT, nameNode, [name]);
         }
       } else {
         positionalArgumentCount++;
@@ -5614,10 +7101,10 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     }
     if (positionalArgumentCount < requiredParameters.length) {
       ErrorCode errorCode = (reportError ? CompileTimeErrorCode.NOT_ENOUGH_REQUIRED_ARGUMENTS : StaticWarningCode.NOT_ENOUGH_REQUIRED_ARGUMENTS) as ErrorCode;
-      _resolver.reportError6(errorCode, argumentList, [requiredParameters.length, positionalArgumentCount]);
+      _resolver.reportErrorForNode(errorCode, argumentList, [requiredParameters.length, positionalArgumentCount]);
     } else if (positionalArgumentCount > unnamedParameterCount) {
       ErrorCode errorCode = (reportError ? CompileTimeErrorCode.EXTRA_POSITIONAL_ARGUMENTS : StaticWarningCode.EXTRA_POSITIONAL_ARGUMENTS) as ErrorCode;
-      _resolver.reportError6(errorCode, argumentList, [unnamedParameterCount, positionalArgumentCount]);
+      _resolver.reportErrorForNode(errorCode, argumentList, [unnamedParameterCount, positionalArgumentCount]);
     }
     return resolvedParameters;
   }
@@ -5630,13 +7117,17 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    */
   void resolveCombinators(LibraryElement library, NodeList<Combinator> combinators) {
     if (library == null) {
+      //
+      // The library will be null if the directive containing the combinators has a URI that is not
+      // valid.
+      //
       return;
     }
     Namespace namespace = new NamespaceBuilder().createExportNamespace2(library);
     for (Combinator combinator in combinators) {
       NodeList<SimpleIdentifier> names;
       if (combinator is HideCombinator) {
-        names = (combinator as HideCombinator).hiddenNames;
+        names = combinator.hiddenNames;
       } else {
         names = (combinator as ShowCombinator).shownNames;
       }
@@ -5654,53 +7145,20 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * in 'C'.
    *
    * @param classElement the class element
-   * @param memberName the member name
+   * @param nameNode the member name node
    */
-  Element resolveElement(ClassElementImpl classElement, String memberName) {
+  Element resolveElement(ClassElementImpl classElement, SimpleIdentifier nameNode) {
+    String name = nameNode.name;
     Element element = null;
-    String methodNameStr = memberName;
-    element = classElement.getMethod(methodNameStr);
-    if (element == null) {
-      element = classElement.getSetter(memberName);
-      if (element == null) {
-        element = classElement.getGetter(memberName);
-      }
+    element = classElement.getMethod(name);
+    if (element == null && nameNode.inSetterContext()) {
+      element = classElement.getSetter(name);
+    }
+    if (element == null && nameNode.inGetterContext()) {
+      element = classElement.getGetter(name);
     }
     if (element != null && element.isAccessibleIn(_definingLibrary)) {
       return element;
-    }
-    return null;
-  }
-
-  /**
-   * Given an invocation of the form 'e.m(a1, ..., an)', resolve 'e.m' to the element being invoked.
-   * If the returned element is a method, then the method will be invoked. If the returned element
-   * is a getter, the getter will be invoked without arguments and the result of that invocation
-   * will then be invoked with the arguments.
-   *
-   * @param target the target of the invocation ('e')
-   * @param targetType the type of the target
-   * @param methodName the name of the method being invoked ('m')
-   * @return the element being invoked
-   */
-  Element resolveInvokedElement(Expression target, Type2 targetType, SimpleIdentifier methodName) {
-    if (targetType is InterfaceType) {
-      InterfaceType classType = targetType as InterfaceType;
-      Element element = lookUpMethod(target, classType, methodName.name);
-      if (element == null) {
-        element = lookUpGetter(target, classType, methodName.name);
-      }
-      return element;
-    } else if (target is SimpleIdentifier) {
-      Element targetElement = (target as SimpleIdentifier).staticElement;
-      if (targetElement is PrefixElement) {
-        String name = "${(target as SimpleIdentifier).name}.${methodName}";
-        Identifier functionName = new ElementResolver_SyntheticIdentifier(name);
-        Element element = _resolver.nameScope.lookup(functionName, _definingLibrary);
-        if (element != null) {
-          return element;
-        }
-      }
     }
     return null;
   }
@@ -5714,19 +7172,73 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    * @param methodName the name of the method being invoked ('m')
    * @return the element being invoked
    */
-  Element resolveInvokedElement2(SimpleIdentifier methodName) {
+  Element resolveInvokedElement(SimpleIdentifier methodName) {
+    //
+    // Look first in the lexical scope.
+    //
     Element element = _resolver.nameScope.lookup(methodName, _definingLibrary);
     if (element == null) {
+      //
+      // If it isn't defined in the lexical scope, and the invocation is within a class, then look
+      // in the inheritance scope.
+      //
       ClassElement enclosingClass = _resolver.enclosingClass;
       if (enclosingClass != null) {
         InterfaceType enclosingType = enclosingClass.type;
         element = lookUpMethod(null, enclosingType, methodName.name);
         if (element == null) {
+          //
+          // If there's no method, then it's possible that 'm' is a getter that returns a function.
+          //
           element = lookUpGetter(null, enclosingType, methodName.name);
         }
       }
     }
+    // TODO(brianwilkerson) Report this error.
     return element;
+  }
+
+  /**
+   * Given an invocation of the form 'e.m(a1, ..., an)', resolve 'e.m' to the element being invoked.
+   * If the returned element is a method, then the method will be invoked. If the returned element
+   * is a getter, the getter will be invoked without arguments and the result of that invocation
+   * will then be invoked with the arguments.
+   *
+   * @param target the target of the invocation ('e')
+   * @param targetType the type of the target
+   * @param methodName the name of the method being invoked ('m')
+   * @return the element being invoked
+   */
+  Element resolveInvokedElementWithTarget(Expression target, Type2 targetType, SimpleIdentifier methodName) {
+    if (targetType is InterfaceType) {
+      InterfaceType classType = targetType;
+      Element element = lookUpMethod(target, classType, methodName.name);
+      if (element == null) {
+        //
+        // If there's no method, then it's possible that 'm' is a getter that returns a function.
+        //
+        element = lookUpGetter(target, classType, methodName.name);
+      }
+      return element;
+    } else if (target is SimpleIdentifier) {
+      Element targetElement = target.staticElement;
+      if (targetElement is PrefixElement) {
+        //
+        // Look to see whether the name of the method is really part of a prefixed identifier for an
+        // imported top-level function or top-level getter that returns a function.
+        //
+        String name = "${target.name}.${methodName}";
+        Identifier functionName = new ElementResolver_SyntheticIdentifier(name);
+        Element element = _resolver.nameScope.lookup(functionName, _definingLibrary);
+        if (element != null) {
+          // TODO(brianwilkerson) This isn't a method invocation, it's a function invocation where
+          // the function name is a prefixed identifier. Consider re-writing the AST.
+          return element;
+        }
+      }
+    }
+    // TODO(brianwilkerson) Report this error.
+    return null;
   }
 
   /**
@@ -5757,13 +7269,20 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     Type2 propagatedType = getPropagatedType(target);
     Element staticElement = null;
     Element propagatedElement = null;
+    //
+    // If this property access is of the form 'C.m' where 'C' is a class, then we don't call
+    // resolveProperty(..) which walks up the class hierarchy, instead we just look for the
+    // member in the type only.
+    //
     ClassElementImpl typeReference = getTypeReference(target);
     if (typeReference != null) {
-      staticElement = propagatedElement = resolveElement(typeReference, propertyName.name);
+      staticElement = propagatedElement = resolveElement(typeReference, propertyName);
     } else {
       staticElement = resolveProperty(target, staticType, propertyName);
       propagatedElement = resolveProperty(target, propagatedType, propertyName);
     }
+    // May be part of annotation, record property element only if exists.
+    // Error was already reported in validateAnnotationElement().
     if (target.parent.parent is Annotation) {
       if (staticElement != null) {
         propertyName.staticElement = staticElement;
@@ -5774,40 +7293,55 @@ class ElementResolver extends SimpleASTVisitor<Object> {
     propertyName.propagatedElement = propagatedElement;
     bool shouldReportMissingMember_static = shouldReportMissingMember(staticType, staticElement);
     bool shouldReportMissingMember_propagated = !shouldReportMissingMember_static && _enableHints ? shouldReportMissingMember(propagatedType, propagatedElement) : false;
+    // If we are about to generate the hint (propagated version of this warning), then check
+    // that the member is not in a subtype of the propagated type.
     if (shouldReportMissingMember_propagated) {
       if (memberFoundInSubclass(propagatedType.element, propertyName.name, false, true)) {
         shouldReportMissingMember_propagated = false;
       }
     }
     if (shouldReportMissingMember_static || shouldReportMissingMember_propagated) {
-      Element staticOrPropagatedEnclosingElt = shouldReportMissingMember_static ? staticType.element : propagatedType.element;
-      bool isStaticProperty = isStatic(staticOrPropagatedEnclosingElt);
-      if (propertyName.inSetterContext()) {
-        if (isStaticProperty) {
-          ErrorCode errorCode = (shouldReportMissingMember_static ? StaticWarningCode.UNDEFINED_SETTER : HintCode.UNDEFINED_SETTER) as ErrorCode;
-          _resolver.reportErrorProxyConditionalAnalysisError(staticOrPropagatedEnclosingElt, errorCode, propertyName, [
-              propertyName.name,
-              staticOrPropagatedEnclosingElt.displayName]);
-        } else {
+      if (staticType.isVoid) {
+        if (propertyName.inSetterContext()) {
           ErrorCode errorCode = (shouldReportMissingMember_static ? StaticTypeWarningCode.UNDEFINED_SETTER : HintCode.UNDEFINED_SETTER) as ErrorCode;
-          _resolver.reportErrorProxyConditionalAnalysisError(staticOrPropagatedEnclosingElt, errorCode, propertyName, [
-              propertyName.name,
-              staticOrPropagatedEnclosingElt.displayName]);
-        }
-      } else if (propertyName.inGetterContext()) {
-        if (isStaticProperty) {
-          ErrorCode errorCode = (shouldReportMissingMember_static ? StaticWarningCode.UNDEFINED_GETTER : HintCode.UNDEFINED_GETTER) as ErrorCode;
-          _resolver.reportErrorProxyConditionalAnalysisError(staticOrPropagatedEnclosingElt, errorCode, propertyName, [
-              propertyName.name,
-              staticOrPropagatedEnclosingElt.displayName]);
-        } else {
+          _resolver.reportErrorForNode(errorCode, propertyName, [propertyName.name, staticType.displayName]);
+        } else if (propertyName.inGetterContext()) {
           ErrorCode errorCode = (shouldReportMissingMember_static ? StaticTypeWarningCode.UNDEFINED_GETTER : HintCode.UNDEFINED_GETTER) as ErrorCode;
-          _resolver.reportErrorProxyConditionalAnalysisError(staticOrPropagatedEnclosingElt, errorCode, propertyName, [
-              propertyName.name,
-              staticOrPropagatedEnclosingElt.displayName]);
+          _resolver.reportErrorForNode(errorCode, propertyName, [propertyName.name, staticType.displayName]);
+        } else {
+          _resolver.reportErrorForNode(StaticWarningCode.UNDEFINED_IDENTIFIER, propertyName, [propertyName.name]);
         }
-      } else {
-        _resolver.reportErrorProxyConditionalAnalysisError(staticOrPropagatedEnclosingElt, StaticWarningCode.UNDEFINED_IDENTIFIER, propertyName, [propertyName.name]);
+      }
+      Element staticOrPropagatedEnclosingElt = shouldReportMissingMember_static ? staticType.element : propagatedType.element;
+      if (staticOrPropagatedEnclosingElt != null) {
+        bool isStaticProperty = isStatic(staticOrPropagatedEnclosingElt);
+        if (propertyName.inSetterContext()) {
+          if (isStaticProperty) {
+            ErrorCode errorCode = (shouldReportMissingMember_static ? StaticWarningCode.UNDEFINED_SETTER : HintCode.UNDEFINED_SETTER) as ErrorCode;
+            _resolver.reportErrorProxyConditionalAnalysisError(staticOrPropagatedEnclosingElt, errorCode, propertyName, [
+                propertyName.name,
+                staticOrPropagatedEnclosingElt.displayName]);
+          } else {
+            ErrorCode errorCode = (shouldReportMissingMember_static ? StaticTypeWarningCode.UNDEFINED_SETTER : HintCode.UNDEFINED_SETTER) as ErrorCode;
+            _resolver.reportErrorProxyConditionalAnalysisError(staticOrPropagatedEnclosingElt, errorCode, propertyName, [
+                propertyName.name,
+                staticOrPropagatedEnclosingElt.displayName]);
+          }
+        } else if (propertyName.inGetterContext()) {
+          if (isStaticProperty) {
+            ErrorCode errorCode = (shouldReportMissingMember_static ? StaticWarningCode.UNDEFINED_GETTER : HintCode.UNDEFINED_GETTER) as ErrorCode;
+            _resolver.reportErrorProxyConditionalAnalysisError(staticOrPropagatedEnclosingElt, errorCode, propertyName, [
+                propertyName.name,
+                staticOrPropagatedEnclosingElt.displayName]);
+          } else {
+            ErrorCode errorCode = (shouldReportMissingMember_static ? StaticTypeWarningCode.UNDEFINED_GETTER : HintCode.UNDEFINED_GETTER) as ErrorCode;
+            _resolver.reportErrorProxyConditionalAnalysisError(staticOrPropagatedEnclosingElt, errorCode, propertyName, [
+                propertyName.name,
+                staticOrPropagatedEnclosingElt.displayName]);
+          }
+        } else {
+          _resolver.reportErrorProxyConditionalAnalysisError(staticOrPropagatedEnclosingElt, StaticWarningCode.UNDEFINED_IDENTIFIER, propertyName, [propertyName.name]);
+        }
       }
     }
   }
@@ -5827,6 +7361,9 @@ class ElementResolver extends SimpleASTVisitor<Object> {
       if (variable != null) {
         PropertyAccessorElement setter = variable.setter;
         if (setter == null) {
+          //
+          // Check to see whether there might be a locally defined getter and an inherited setter.
+          //
           ClassElement enclosingClass = _resolver.enclosingClass;
           if (enclosingClass != null) {
             setter = lookUpSetter(null, enclosingClass.type, node.name);
@@ -5865,7 +7402,7 @@ class ElementResolver extends SimpleASTVisitor<Object> {
    */
   Type2 resolveTypeParameter(Type2 type) {
     if (type is TypeParameterType) {
-      Type2 bound = (type as TypeParameterType).element.bound;
+      Type2 bound = type.element.bound;
       if (bound == null) {
         return _resolver.typeProvider.objectType;
       }
@@ -5899,6 +7436,25 @@ class ElementResolver extends SimpleASTVisitor<Object> {
         addAnnotations(annotationList, variableDeclaration.metadata);
       }
     }
+    if (!annotationList.isEmpty) {
+      (element as ElementImpl).metadata = new List.from(annotationList);
+    }
+  }
+
+  /**
+   * Given a node that can have annotations associated with it and the element to which that node
+   * has been resolved, create the annotations in the element model representing the annotations on
+   * the node.
+   *
+   * @param element the element to which the node has been resolved
+   * @param node the node that can have annotations associated with it
+   */
+  void setMetadataForParameter(Element element, NormalFormalParameter node) {
+    if (element is! ElementImpl) {
+      return;
+    }
+    List<ElementAnnotationImpl> annotationList = new List<ElementAnnotationImpl>();
+    addAnnotations(annotationList, node.metadata);
     if (!annotationList.isEmpty) {
       (element as ElementImpl).metadata = new List.from(annotationList);
     }
@@ -5939,7 +7495,7 @@ class ElementResolver_SyntheticIdentifier extends Identifier {
    */
   ElementResolver_SyntheticIdentifier(this.name);
 
-  accept(ASTVisitor visitor) => null;
+  accept(AstVisitor visitor) => null;
 
   sc.Token get beginToken => null;
 
@@ -5953,7 +7509,7 @@ class ElementResolver_SyntheticIdentifier extends Identifier {
 
   Element get staticElement => null;
 
-  void visitChildren(ASTVisitor visitor) {
+  void visitChildren(AstVisitor visitor) {
   }
 }
 
@@ -6006,8 +7562,8 @@ class IncrementalResolver {
    * @param node the root of the AST structure to be resolved
    * @throws AnalysisException if the node could not be resolved
    */
-  void resolve(ASTNode node) {
-    ASTNode rootNode = findResolutionRoot(node);
+  void resolve(AstNode node) {
+    AstNode rootNode = findResolutionRoot(node);
     Scope scope = ScopeBuilder.scopeFor(rootNode, _errorListener);
     if (elementModelChanged(rootNode.parent)) {
       throw new AnalysisException.con1("Cannot resolve node: element model changed");
@@ -6025,7 +7581,7 @@ class IncrementalResolver {
    * @param node the node being tested
    * @return `true` if the given node can be resolved independently of any other nodes
    */
-  bool canBeResolved(ASTNode node) => node is ClassDeclaration || node is ClassTypeAlias || node is CompilationUnit || node is ConstructorDeclaration || node is FunctionDeclaration || node is FunctionTypeAlias || node is MethodDeclaration;
+  bool canBeResolved(AstNode node) => node is ClassDeclaration || node is ClassTypeAlias || node is CompilationUnit || node is ConstructorDeclaration || node is FunctionDeclaration || node is FunctionTypeAlias || node is MethodDeclaration;
 
   /**
    * Return `true` if the portion of the element model defined by the given node has changed.
@@ -6034,7 +7590,7 @@ class IncrementalResolver {
    * @return `true` if the element model defined by the given node has changed
    * @throws AnalysisException if the correctness of the element model cannot be determined
    */
-  bool elementModelChanged(ASTNode node) {
+  bool elementModelChanged(AstNode node) {
     Element element = getElement(node);
     if (element == null) {
       throw new AnalysisException.con1("Cannot resolve node: a ${node.runtimeType.toString()} does not define an element");
@@ -6051,9 +7607,9 @@ class IncrementalResolver {
    * @return the smallest AST node that can be resolved independently of any other nodes
    * @throws AnalysisException if there is no such node
    */
-  ASTNode findResolutionRoot(ASTNode node) {
-    ASTNode result = node;
-    ASTNode parent = result.parent;
+  AstNode findResolutionRoot(AstNode node) {
+    AstNode result = node;
+    AstNode parent = result.parent;
     while (parent != null && !canBeResolved(parent)) {
       result = parent;
       parent = result.parent;
@@ -6071,16 +7627,16 @@ class IncrementalResolver {
    * @param node the node defining the element to be returned
    * @return the element defined by the given node
    */
-  Element getElement(ASTNode node) {
+  Element getElement(AstNode node) {
     if (node is Declaration) {
-      return (node as Declaration).element;
+      return node.element;
     } else if (node is CompilationUnit) {
-      return (node as CompilationUnit).element;
+      return node.element;
     }
     return null;
   }
 
-  void resolveReferences(ASTNode node, Scope scope) {
+  void resolveReferences(AstNode node, Scope scope) {
     ResolverVisitor visitor = new ResolverVisitor.con3(_definingLibrary, _source, _typeProvider, scope, _errorListener);
     node.accept(visitor);
     for (ProxyConditionalAnalysisError conditionalCode in visitor.proxyConditionalAnalysisErrors) {
@@ -6090,12 +7646,12 @@ class IncrementalResolver {
     }
   }
 
-  void resolveTypes(ASTNode node, Scope scope) {
+  void resolveTypes(AstNode node, Scope scope) {
     TypeResolverVisitor visitor = new TypeResolverVisitor.con3(_definingLibrary, _source, _typeProvider, scope, _errorListener);
     node.accept(visitor);
   }
 
-  void resolveVariables(ASTNode node, Scope scope) {
+  void resolveVariables(AstNode node, Scope scope) {
     VariableResolverVisitor visitor = new VariableResolverVisitor.con2(_definingLibrary, _source, _typeProvider, scope, _errorListener);
     node.accept(visitor);
   }
@@ -6104,10 +7660,151 @@ class IncrementalResolver {
 /**
  * Instances of the class `InheritanceManager` manage the knowledge of where class members
  * (methods, getters & setters) are inherited from.
- *
- * @coverage dart.engine.resolver
  */
 class InheritanceManager {
+  /**
+   * Given some array of [ExecutableElement]s, this method creates a synthetic element as
+   * described in the Superinterfaces section of Inheritance and Overriding.
+   *
+   * TODO (jwren) Copy contents from the Spec into this javadoc.
+   *
+   * TODO (jwren) Associate a propagated type to the synthetic method element using least upper
+   * bound calls
+   */
+  static ExecutableElement computeMergedExecutableElement(List<ExecutableElement> elementArrayToMerge) {
+    int h = getNumOfPositionalParameters(elementArrayToMerge[0]);
+    int r = getNumOfRequiredParameters(elementArrayToMerge[0]);
+    Set<String> namedParametersList = new Set<String>();
+    for (int i = 1; i < elementArrayToMerge.length; i++) {
+      ExecutableElement element = elementArrayToMerge[i];
+      int numOfPositionalParams = getNumOfPositionalParameters(element);
+      if (h < numOfPositionalParams) {
+        h = numOfPositionalParams;
+      }
+      int numOfRequiredParams = getNumOfRequiredParameters(element);
+      if (r > numOfRequiredParams) {
+        r = numOfRequiredParams;
+      }
+      namedParametersList.addAll(getNamedParameterNames(element));
+    }
+    if (r > h) {
+      return null;
+    }
+    return createSyntheticExecutableElement(elementArrayToMerge, elementArrayToMerge[0].displayName, r, h - r, new List.from(namedParametersList));
+  }
+
+  /**
+   * Used by [computeMergedExecutableElement] to actually create the
+   * synthetic element.
+   *
+   * @param elementArrayToMerge the array used to create the synthetic element
+   * @param name the name of the method, getter or setter
+   * @param numOfRequiredParameters the number of required parameters
+   * @param numOfPositionalParameters the number of positional parameters
+   * @param namedParameters the list of [String]s that are the named parameters
+   * @return the created synthetic element
+   */
+  static ExecutableElement createSyntheticExecutableElement(List<ExecutableElement> elementArrayToMerge, String name, int numOfRequiredParameters, int numOfPositionalParameters, List<String> namedParameters) {
+    DynamicTypeImpl dynamicType = DynamicTypeImpl.instance;
+    SimpleIdentifier nameIdentifier = new SimpleIdentifier(new sc.StringToken(sc.TokenType.IDENTIFIER, name, 0));
+    ExecutableElementImpl executable;
+    if (elementArrayToMerge[0] is MethodElement) {
+      MultiplyInheritedMethodElementImpl unionedMethod = new MultiplyInheritedMethodElementImpl(nameIdentifier);
+      unionedMethod.inheritedElements = elementArrayToMerge;
+      executable = unionedMethod;
+    } else {
+      MultiplyInheritedPropertyAccessorElementImpl unionedPropertyAccessor = new MultiplyInheritedPropertyAccessorElementImpl(nameIdentifier);
+      unionedPropertyAccessor.getter = (elementArrayToMerge[0] as PropertyAccessorElement).isGetter;
+      unionedPropertyAccessor.setter = (elementArrayToMerge[0] as PropertyAccessorElement).isSetter;
+      unionedPropertyAccessor.inheritedElements = elementArrayToMerge;
+      executable = unionedPropertyAccessor;
+    }
+    int numOfParameters = numOfRequiredParameters + numOfPositionalParameters + namedParameters.length;
+    List<ParameterElement> parameters = new List<ParameterElement>(numOfParameters);
+    int i = 0;
+    for (int j = 0; j < numOfRequiredParameters; j++, i++) {
+      ParameterElementImpl parameter = new ParameterElementImpl.con2("", 0);
+      parameter.type = dynamicType;
+      parameter.parameterKind = ParameterKind.REQUIRED;
+      parameters[i] = parameter;
+    }
+    for (int k = 0; k < numOfPositionalParameters; k++, i++) {
+      ParameterElementImpl parameter = new ParameterElementImpl.con2("", 0);
+      parameter.type = dynamicType;
+      parameter.parameterKind = ParameterKind.POSITIONAL;
+      parameters[i] = parameter;
+    }
+    for (int m = 0; m < namedParameters.length; m++, i++) {
+      ParameterElementImpl parameter = new ParameterElementImpl.con2(namedParameters[m], 0);
+      parameter.type = dynamicType;
+      parameter.parameterKind = ParameterKind.NAMED;
+      parameters[i] = parameter;
+    }
+    executable.returnType = dynamicType;
+    executable.parameters = parameters;
+    FunctionTypeImpl methodType = new FunctionTypeImpl.con1(executable);
+    executable.type = methodType;
+    return executable;
+  }
+
+  /**
+   * Given some [ExecutableElement], return the list of named parameters.
+   */
+  static List<String> getNamedParameterNames(ExecutableElement executableElement) {
+    List<String> namedParameterNames = new List<String>();
+    List<ParameterElement> parameters = executableElement.parameters;
+    for (int i = 0; i < parameters.length; i++) {
+      ParameterElement parameterElement = parameters[i];
+      if (identical(parameterElement.parameterKind, ParameterKind.NAMED)) {
+        namedParameterNames.add(parameterElement.name);
+      }
+    }
+    return namedParameterNames;
+  }
+
+  /**
+   * Given some [ExecutableElement] return the number of parameters of the specified kind.
+   */
+  static int getNumOfParameters(ExecutableElement executableElement, ParameterKind parameterKind) {
+    int parameterCount = 0;
+    List<ParameterElement> parameters = executableElement.parameters;
+    for (int i = 0; i < parameters.length; i++) {
+      ParameterElement parameterElement = parameters[i];
+      if (identical(parameterElement.parameterKind, parameterKind)) {
+        parameterCount++;
+      }
+    }
+    return parameterCount;
+  }
+
+  /**
+   * Given some [ExecutableElement] return the number of positional parameters.
+   *
+   * Note: by positional we mean [ParameterKind#REQUIRED] or [ParameterKind#POSITIONAL].
+   */
+  static int getNumOfPositionalParameters(ExecutableElement executableElement) => getNumOfParameters(executableElement, ParameterKind.REQUIRED) + getNumOfParameters(executableElement, ParameterKind.POSITIONAL);
+
+  /**
+   * Given some [ExecutableElement] return the number of required parameters.
+   */
+  static int getNumOfRequiredParameters(ExecutableElement executableElement) => getNumOfParameters(executableElement, ParameterKind.REQUIRED);
+
+  /**
+   * Given some [ExecutableElement] returns `true` if it is an abstract member of a
+   * class.
+   *
+   * @param executableElement some [ExecutableElement] to evaluate
+   * @return `true` if the given element is an abstract member of a class
+   */
+  static bool isAbstract(ExecutableElement executableElement) {
+    if (executableElement is MethodElement) {
+      return executableElement.isAbstract;
+    } else if (executableElement is PropertyAccessorElement) {
+      return executableElement.isAbstract;
+    }
+    return false;
+  }
+
   /**
    * The [LibraryElement] that is managed by this manager.
    */
@@ -6254,12 +7951,15 @@ class InheritanceManager {
     if (baseFunctionType == null) {
       return baseFunctionType;
     }
+    // First, generate the path from the defining type to the overridden member
     Queue<InterfaceType> inheritancePath = new Queue<InterfaceType>();
     computeInheritancePath(inheritancePath, definingType, memberName);
     if (inheritancePath == null || inheritancePath.isEmpty) {
+      // TODO(jwren) log analysis engine error
       return baseFunctionType;
     }
     FunctionType functionTypeToReturn = baseFunctionType;
+    // loop backward through the list substituting as we go:
     while (!inheritancePath.isEmpty) {
       InterfaceType lastType = inheritancePath.removeLast();
       List<Type2> parameterTypes = lastType.element.type.typeArguments;
@@ -6292,23 +7992,74 @@ class InheritanceManager {
     if (supertype != null) {
       superclassElt = supertype.element;
     } else {
+      // classElt is Object
       _classLookup[classElt] = resultMap;
       return resultMap;
     }
     if (superclassElt != null) {
       if (!visitedClasses.contains(superclassElt)) {
-        visitedClasses.add(classElt);
-        resultMap = new MemberMap.con2(computeClassChainLookupMap(superclassElt, visitedClasses));
+        visitedClasses.add(superclassElt);
+        try {
+          resultMap = new MemberMap.con2(computeClassChainLookupMap(superclassElt, visitedClasses));
+          //
+          // Substitute the super types down the hierarchy.
+          //
+          substituteTypeParametersDownHierarchy(supertype, resultMap);
+          //
+          // Include the members from the superclass in the resultMap.
+          //
+          recordMapWithClassMembers(resultMap, supertype, false);
+        } finally {
+          visitedClasses.remove(superclassElt);
+        }
       } else {
+        // This case happens only when the superclass was previously visited and not in the lookup,
+        // meaning this is meant to shorten the compute for recursive cases.
         _classLookup[superclassElt] = resultMap;
         return resultMap;
       }
-      substituteTypeParametersDownHierarchy(supertype, resultMap);
-      recordMapWithClassMembers(resultMap, supertype);
     }
+    //
+    // Include the members from the mixins in the resultMap
+    //
     List<InterfaceType> mixins = classElt.mixins;
     for (int i = mixins.length - 1; i >= 0; i--) {
-      recordMapWithClassMembers(resultMap, mixins[i]);
+      ClassElement mixinElement = mixins[i].element;
+      if (mixinElement != null) {
+        if (!visitedClasses.contains(mixinElement)) {
+          visitedClasses.add(mixinElement);
+          try {
+            MemberMap map = new MemberMap.con2(computeClassChainLookupMap(mixinElement, visitedClasses));
+            //
+            // Substitute the super types down the hierarchy.
+            //
+            substituteTypeParametersDownHierarchy(mixins[i], map);
+            //
+            // Include the members from the superclass in the resultMap.
+            //
+            recordMapWithClassMembers(map, mixins[i], false);
+            //
+            // Add the members from map into result map.
+            //
+            for (int j = 0; j < map.size; j++) {
+              String key = map.getKey(j);
+              ExecutableElement value = map.getValue(j);
+              if (key != null) {
+                if (resultMap.get(key) == null || (resultMap.get(key) != null && !isAbstract(value))) {
+                  resultMap.put(key, value);
+                }
+              }
+            }
+          } finally {
+            visitedClasses.remove(mixinElement);
+          }
+        } else {
+          // This case happens only when the superclass was previously visited and not in the lookup,
+          // meaning this is meant to shorten the compute for recursive cases.
+          _classLookup[mixinElement] = resultMap;
+          return resultMap;
+        }
+      }
     }
     _classLookup[classElt] = resultMap;
     return resultMap;
@@ -6324,33 +8075,46 @@ class InheritanceManager {
    * @param memberName the name of the member that is being looked up the inheritance path
    */
   void computeInheritancePath(Queue<InterfaceType> chain, InterfaceType currentType, String memberName) {
+    // TODO (jwren) create a public version of this method which doesn't require the initial chain
+    // to be provided, then provided tests for this functionality in InheritanceManagerTest
     chain.add(currentType);
     ClassElement classElt = currentType.element;
     InterfaceType supertype = classElt.supertype;
+    // Base case- reached Object
     if (supertype == null) {
+      // Looked up the chain all the way to Object, return null.
+      // This should never happen.
       return;
     }
+    // If we are done, return the chain
+    // We are not done if this is the first recursive call on this method.
     if (chain.length != 1) {
+      // We are done however if the member is in this classElt
       if (lookupMemberInClass(classElt, memberName) != null) {
         return;
       }
     }
+    // Mixins- note that mixins call lookupMemberInClass, not lookupMember
     List<InterfaceType> mixins = classElt.mixins;
     for (int i = mixins.length - 1; i >= 0; i--) {
       ClassElement mixinElement = mixins[i].element;
       if (mixinElement != null) {
         ExecutableElement elt = lookupMemberInClass(mixinElement, memberName);
         if (elt != null) {
+          // this is equivalent (but faster than) calling this method recursively
+          // (return computeInheritancePath(chain, mixins[i], memberName);)
           chain.add(mixins[i]);
           return;
         }
       }
     }
+    // Superclass
     ClassElement superclassElt = supertype.element;
     if (lookupMember(superclassElt, memberName) != null) {
       computeInheritancePath(chain, supertype, memberName);
       return;
     }
+    // Interfaces
     List<InterfaceType> interfaces = classElt.interfaces;
     for (InterfaceType interfaceType in interfaces) {
       ClassElement interfaceElement = interfaceType.element;
@@ -6383,15 +8147,28 @@ class InheritanceManager {
     ClassElement superclassElement = supertype != null ? supertype.element : null;
     List<InterfaceType> mixins = classElt.mixins;
     List<InterfaceType> interfaces = classElt.interfaces;
+    // Recursively collect the list of mappings from all of the interface types
     List<MemberMap> lookupMaps = new List<MemberMap>();
+    //
+    // Superclass element
+    //
     if (superclassElement != null) {
       if (!visitedInterfaces.contains(superclassElement)) {
         try {
           visitedInterfaces.add(superclassElement);
+          //
+          // Recursively compute the map for the super type.
+          //
           MemberMap map = computeInterfaceLookupMap(superclassElement, visitedInterfaces);
           map = new MemberMap.con2(map);
+          //
+          // Substitute the super type down the hierarchy.
+          //
           substituteTypeParametersDownHierarchy(supertype, map);
-          recordMapWithClassMembers(map, supertype);
+          //
+          // Add any members from the super type into the map as well.
+          //
+          recordMapWithClassMembers(map, supertype, true);
           lookupMaps.add(map);
         } finally {
           visitedInterfaces.remove(superclassElement);
@@ -6406,21 +8183,66 @@ class InheritanceManager {
         }
       }
     }
-    for (InterfaceType mixinType in mixins) {
-      MemberMap mapWithMixinMembers = new MemberMap();
-      recordMapWithClassMembers(mapWithMixinMembers, mixinType);
-      lookupMaps.add(mapWithMixinMembers);
+    //
+    // Mixin elements
+    //
+    for (int i = mixins.length - 1; i >= 0; i--) {
+      InterfaceType mixinType = mixins[i];
+      ClassElement mixinElement = mixinType.element;
+      if (mixinElement != null) {
+        if (!visitedInterfaces.contains(mixinElement)) {
+          try {
+            visitedInterfaces.add(mixinElement);
+            //
+            // Recursively compute the map for the mixin.
+            //
+            MemberMap map = computeInterfaceLookupMap(mixinElement, visitedInterfaces);
+            map = new MemberMap.con2(map);
+            //
+            // Substitute the mixin type down the hierarchy.
+            //
+            substituteTypeParametersDownHierarchy(mixinType, map);
+            //
+            // Add any members from the mixin type into the map as well.
+            //
+            recordMapWithClassMembers(map, mixinType, true);
+            lookupMaps.add(map);
+          } finally {
+            visitedInterfaces.remove(mixinElement);
+          }
+        } else {
+          MemberMap map = _interfaceLookup[classElt];
+          if (map != null) {
+            lookupMaps.add(map);
+          } else {
+            _interfaceLookup[mixinElement] = resultMap;
+            return resultMap;
+          }
+        }
+      }
     }
+    //
+    // Interface elements
+    //
     for (InterfaceType interfaceType in interfaces) {
       ClassElement interfaceElement = interfaceType.element;
       if (interfaceElement != null) {
         if (!visitedInterfaces.contains(interfaceElement)) {
           try {
             visitedInterfaces.add(interfaceElement);
+            //
+            // Recursively compute the map for the interfaces.
+            //
             MemberMap map = computeInterfaceLookupMap(interfaceElement, visitedInterfaces);
             map = new MemberMap.con2(map);
+            //
+            // Substitute the supertypes down the hierarchy
+            //
             substituteTypeParametersDownHierarchy(interfaceType, map);
-            recordMapWithClassMembers(map, interfaceType);
+            //
+            // And add any members from the interface into the map as well.
+            //
+            recordMapWithClassMembers(map, interfaceType, true);
             lookupMaps.add(map);
           } finally {
             visitedInterfaces.remove(interfaceElement);
@@ -6440,35 +8262,79 @@ class InheritanceManager {
       _interfaceLookup[classElt] = resultMap;
       return resultMap;
     }
-    Map<String, Set<ExecutableElement>> unionMap = new Map<String, Set<ExecutableElement>>();
+    //
+    // Union all of the lookupMaps together into unionMap, grouping the ExecutableElements into a
+    // list where none of the elements are equal where equality is determined by having equal
+    // function types. (We also take note too of the kind of the element: ()->int and () -> int may
+    // not be equal if one is a getter and the other is a method.)
+    //
+    Map<String, List<ExecutableElement>> unionMap = new Map<String, List<ExecutableElement>>();
     for (MemberMap lookupMap in lookupMaps) {
-      for (int i = 0; i < lookupMap.size; i++) {
+      int lookupMapSize = lookupMap.size;
+      for (int i = 0; i < lookupMapSize; i++) {
+        // Get the string key, if null, break.
         String key = lookupMap.getKey(i);
         if (key == null) {
           break;
         }
-        Set<ExecutableElement> set = unionMap[key];
-        if (set == null) {
-          set = new Set<ExecutableElement>();
-          unionMap[key] = set;
+        // Get the list value out of the unionMap
+        List<ExecutableElement> list = unionMap[key];
+        // If we haven't created such a map for this key yet, do create it and put the list entry
+        // into the unionMap.
+        if (list == null) {
+          list = new List<ExecutableElement>();
+          unionMap[key] = list;
         }
-        set.add(lookupMap.getValue(i));
+        // Fetch the entry out of this lookupMap
+        ExecutableElement newExecutableElementEntry = lookupMap.getValue(i);
+        if (list.isEmpty) {
+          // If the list is empty, just the new value
+          list.add(newExecutableElementEntry);
+        } else {
+          // Otherwise, only add the newExecutableElementEntry if it isn't already in the list, this
+          // covers situation where a class inherits two methods (or two getters) that are
+          // identical.
+          bool alreadyInList = false;
+          bool isMethod1 = newExecutableElementEntry is MethodElement;
+          for (ExecutableElement executableElementInList in list) {
+            bool isMethod2 = executableElementInList is MethodElement;
+            if (identical(isMethod1, isMethod2) && executableElementInList.type == newExecutableElementEntry.type) {
+              alreadyInList = true;
+              break;
+            }
+          }
+          if (!alreadyInList) {
+            list.add(newExecutableElementEntry);
+          }
+        }
       }
     }
-    for (MapEntry<String, Set<ExecutableElement>> entry in getMapEntrySet(unionMap)) {
+    //
+    // Loop through the entries in the unionMap, adding them to the resultMap appropriately.
+    //
+    for (MapEntry<String, List<ExecutableElement>> entry in getMapEntrySet(unionMap)) {
       String key = entry.getKey();
-      Set<ExecutableElement> set = entry.getValue();
-      int numOfEltsWithMatchingNames = set.length;
+      List<ExecutableElement> list = entry.getValue();
+      int numOfEltsWithMatchingNames = list.length;
       if (numOfEltsWithMatchingNames == 1) {
-        resultMap.put(key, new JavaIterator(set).next());
+        //
+        // Example: class A inherits only 1 method named 'm'.  Since it is the only such method, it
+        // is inherited.
+        // Another example: class A inherits 2 methods named 'm' from 2 different interfaces, but
+        // they both have the same signature, so it is the method inherited.
+        //
+        resultMap.put(key, list[0]);
       } else {
+        //
+        // Then numOfEltsWithMatchingNames > 1, check for the warning cases.
+        //
         bool allMethods = true;
         bool allSetters = true;
         bool allGetters = true;
-        for (ExecutableElement executableElement in set) {
+        for (ExecutableElement executableElement in list) {
           if (executableElement is PropertyAccessorElement) {
             allMethods = false;
-            if ((executableElement as PropertyAccessorElement).isSetter) {
+            if (executableElement.isSetter) {
               allGetters = false;
             } else {
               allSetters = false;
@@ -6478,13 +8344,20 @@ class InheritanceManager {
             allSetters = false;
           }
         }
+        //
+        // If there isn't a mixture of methods with getters, then continue, otherwise create a
+        // warning.
+        //
         if (allMethods || allGetters || allSetters) {
-          List<ExecutableElement> elements = new List.from(set);
+          //
+          // Compute the element whose type is the subtype of all of the other types.
+          //
+          List<ExecutableElement> elements = new List.from(list);
           List<FunctionType> executableElementTypes = new List<FunctionType>(numOfEltsWithMatchingNames);
           for (int i = 0; i < numOfEltsWithMatchingNames; i++) {
             executableElementTypes[i] = elements[i].type;
           }
-          bool foundSubtypeOfAllTypes = false;
+          List<int> subtypesOfAllOtherTypesIndexes = new List<int>();
           for (int i = 0; i < numOfEltsWithMatchingNames; i++) {
             FunctionType subtype = executableElementTypes[i];
             if (subtype == null) {
@@ -6500,19 +8373,49 @@ class InheritanceManager {
               }
             }
             if (subtypeOfAllTypes) {
-              foundSubtypeOfAllTypes = true;
-              resultMap.put(key, elements[i]);
-              break;
+              subtypesOfAllOtherTypesIndexes.add(i);
             }
           }
-          if (!foundSubtypeOfAllTypes) {
-            reportError(classElt, classElt.nameOffset, classElt.displayName.length, StaticTypeWarningCode.INCONSISTENT_METHOD_INHERITANCE, [key]);
+          //
+          // The following is split into three cases determined by the number of elements in subtypesOfAllOtherTypes
+          //
+          if (subtypesOfAllOtherTypesIndexes.length == 1) {
+            //
+            // Example: class A inherited only 2 method named 'm'. One has the function type
+            // '() -> dynamic' and one has the function type '([int]) -> dynamic'. Since the second
+            // method is a subtype of all the others, it is the inherited method.
+            // Tests: InheritanceManagerTest.test_getMapOfMembersInheritedFromInterfaces_union_oneSubtype_*
+            //
+            resultMap.put(key, elements[subtypesOfAllOtherTypesIndexes[0]]);
+          } else {
+            if (subtypesOfAllOtherTypesIndexes.isEmpty) {
+              //
+              // Example: class A inherited only 2 method named 'm'. One has the function type
+              // '() -> int' and one has the function type '() -> String'. Since neither is a subtype
+              // of the other, we create a warning, and have this class inherit nothing.
+              //
+              String firstTwoFuntionTypesStr = "${executableElementTypes[0].toString()}, ${executableElementTypes[1].toString()}";
+              reportError(classElt, classElt.nameOffset, classElt.displayName.length, StaticTypeWarningCode.INCONSISTENT_METHOD_INHERITANCE, [key, firstTwoFuntionTypesStr]);
+            } else {
+              //
+              // Example: class A inherits 2 methods named 'm'. One has the function type
+              // '(int) -> dynamic' and one has the function type '(num) -> dynamic'. Since they are
+              // both a subtype of the other, a synthetic function '(dynamic) -> dynamic' is
+              // inherited.
+              // Tests: test_getMapOfMembersInheritedFromInterfaces_union_multipleSubtypes_*
+              //
+              List<ExecutableElement> elementArrayToMerge = new List<ExecutableElement>(subtypesOfAllOtherTypesIndexes.length);
+              for (int i = 0; i < elementArrayToMerge.length; i++) {
+                elementArrayToMerge[i] = elements[subtypesOfAllOtherTypesIndexes[i]];
+              }
+              ExecutableElement mergedExecutableElement = computeMergedExecutableElement(elementArrayToMerge);
+              if (mergedExecutableElement != null) {
+                resultMap.put(key, mergedExecutableElement);
+              }
+            }
           }
         } else {
-          if (!allMethods && !allGetters) {
-            reportError(classElt, classElt.nameOffset, classElt.displayName.length, StaticWarningCode.INCONSISTENT_METHOD_INHERITANCE_GETTER_AND_METHOD, [key]);
-          }
-          resultMap.remove(entry.getKey());
+          reportError(classElt, classElt.nameOffset, classElt.displayName.length, StaticWarningCode.INCONSISTENT_METHOD_INHERITANCE_GETTER_AND_METHOD, [key]);
         }
       }
     }
@@ -6552,17 +8455,18 @@ class InheritanceManager {
    * @param map some non-`null` map to put the methods and accessors from the passed
    *          [ClassElement] into
    * @param type the type that will be recorded into the passed map
+   * @param doIncludeAbstract `true` if abstract members will be put into the map
    */
-  void recordMapWithClassMembers(MemberMap map, InterfaceType type) {
+  void recordMapWithClassMembers(MemberMap map, InterfaceType type, bool doIncludeAbstract) {
     List<MethodElement> methods = type.methods;
     for (MethodElement method in methods) {
-      if (method.isAccessibleIn(_library) && !method.isStatic) {
+      if (method.isAccessibleIn(_library) && !method.isStatic && (doIncludeAbstract || !method.isAbstract)) {
         map.put(method.name, method);
       }
     }
     List<PropertyAccessorElement> accessors = type.accessors;
     for (PropertyAccessorElement accessor in accessors) {
-      if (accessor.isAccessibleIn(_library) && !accessor.isStatic) {
+      if (accessor.isAccessibleIn(_library) && !accessor.isStatic && (doIncludeAbstract || !accessor.isAbstract)) {
         map.put(accessor.name, accessor);
       }
     }
@@ -6613,8 +8517,6 @@ class InheritanceManager {
  * Instances of the class `Library` represent the data about a single library during the
  * resolution of some (possibly different) library. They are not intended to be used except during
  * the resolution process.
- *
- * @coverage dart.engine.resolver
  */
 class Library {
   /**
@@ -6852,23 +8754,13 @@ class Library {
     _directiveUris[directive] = uriContent;
     uriContent = Uri.encodeFull(uriContent);
     if (directive is ImportDirective && uriContent.startsWith(_DART_EXT_SCHEME)) {
-      String uriBase = uriContent.substring(_DART_EXT_SCHEME.length);
-      Source source = _analysisContext.sourceFactory.resolveUri(librarySource, "${uriBase}.dll");
-      if (source == null || !source.exists()) {
-        source = _analysisContext.sourceFactory.resolveUri(librarySource, "${uriBase}.so");
-        if (source == null || !source.exists()) {
-          source = _analysisContext.sourceFactory.resolveUri(librarySource, "${uriBase}.dylib");
-          if (source == null || !source.exists()) {
-            _errorListener.onError(new AnalysisError.con2(librarySource, uriLiteral.offset, uriLiteral.length, CompileTimeErrorCode.URI_DOES_NOT_EXIST, [uriContent]));
-          }
-        }
-      }
+      _libraryElement.hasExtUri2 = true;
       return null;
     }
     try {
       parseUriWithException(uriContent);
       Source source = _analysisContext.sourceFactory.resolveUri(librarySource, uriContent);
-      if (source == null || !source.exists()) {
+      if (!_analysisContext.exists(source)) {
         _errorListener.onError(new AnalysisError.con2(librarySource, uriLiteral.offset, uriLiteral.length, CompileTimeErrorCode.URI_DOES_NOT_EXIST, [uriContent]));
       }
       return source;
@@ -6930,8 +8822,6 @@ class Library {
 
 /**
  * Instances of the class `LibraryElementBuilder` build an element model for a single library.
- *
- * @coverage dart.engine.resolver
  */
 class LibraryElementBuilder {
   /**
@@ -6947,7 +8837,7 @@ class LibraryElementBuilder {
   /**
    * The name of the function used as an entry point.
    */
-  static String _ENTRY_POINT_NAME = "main";
+  static String ENTRY_POINT_NAME = "main";
 
   /**
    * Initialize a newly created library element builder.
@@ -6978,19 +8868,28 @@ class LibraryElementBuilder {
     List<Directive> directivesToResolve = new List<Directive>();
     List<CompilationUnitElementImpl> sourcedCompilationUnits = new List<CompilationUnitElementImpl>();
     for (Directive directive in directives) {
+      //
+      // We do not build the elements representing the import and export directives at this point.
+      // That is not done until we get to LibraryResolver.buildDirectiveModels() because we need the
+      // LibraryElements for the referenced libraries, which might not exist at this point (due to
+      // the possibility of circular references).
+      //
       if (directive is LibraryDirective) {
         if (libraryNameNode == null) {
-          libraryNameNode = (directive as LibraryDirective).name;
+          libraryNameNode = directive.name;
           directivesToResolve.add(directive);
         }
       } else if (directive is PartDirective) {
-        PartDirective partDirective = directive as PartDirective;
+        PartDirective partDirective = directive;
         StringLiteral partUri = partDirective.uri;
         Source partSource = library.getSource(partDirective);
-        if (partSource != null && partSource.exists()) {
+        if (_analysisContext.exists(partSource)) {
           hasPartDirective = true;
           CompilationUnitElementImpl part = builder.buildCompilationUnit(partSource, library.getAST(partSource));
           part.uri = library.getUri(partDirective);
+          //
+          // Validate that the part contains a part-of directive with the same name as the library.
+          //
           String partLibraryName = getPartLibraryName(library, partSource, directivesToResolve);
           if (partLibraryName == null) {
             _errorListener.onError(new AnalysisError.con2(librarySource, partUri.offset, partUri.length, CompileTimeErrorCode.PART_OF_NON_PART, [partUri.toSource()]));
@@ -7009,6 +8908,9 @@ class LibraryElementBuilder {
     if (hasPartDirective && libraryNameNode == null) {
       _errorListener.onError(new AnalysisError.con1(librarySource, ResolverErrorCode.MISSING_LIBRARY_DIRECTIVE_WITH_PART, []));
     }
+    //
+    // Create and populate the library element.
+    //
     LibraryElementImpl libraryElement = new LibraryElementImpl(_analysisContext, libraryNameNode);
     libraryElement.definingCompilationUnit = definingCompilationUnitElement;
     if (entryPoint != null) {
@@ -7057,7 +8959,7 @@ class LibraryElementBuilder {
    */
   FunctionElement findEntryPoint(CompilationUnitElementImpl element) {
     for (FunctionElement function in element.functions) {
-      if (function.name == _ENTRY_POINT_NAME) {
+      if (function.name == ENTRY_POINT_NAME) {
         return function;
       }
     }
@@ -7080,7 +8982,7 @@ class LibraryElementBuilder {
       for (Directive directive in partUnit.directives) {
         if (directive is PartOfDirective) {
           directivesToResolve.add(directive);
-          LibraryIdentifier libraryName = (directive as PartOfDirective).libraryName;
+          LibraryIdentifier libraryName = directive.libraryName;
           if (libraryName != null) {
             return libraryName.name;
           }
@@ -7119,8 +9021,6 @@ class LibraryElementBuilder {
 /**
  * Instances of the class `LibraryResolver` are used to resolve one or more mutually dependent
  * libraries within a single context.
- *
- * @coverage dart.engine.resolver
  */
 class LibraryResolver {
   /**
@@ -7202,14 +9102,35 @@ class LibraryResolver {
     try {
       instrumentation.metric("fullAnalysis", fullAnalysis);
       instrumentation.data3("fullName", librarySource.fullName);
-      Library targetLibrary = createLibrary2(librarySource, modificationStamp, unit);
+      //
+      // Create the objects representing the library being resolved and the core library.
+      //
+      Library targetLibrary = createLibraryWithUnit(librarySource, modificationStamp, unit);
       _coreLibrary = _libraryMap[_coreLibrarySource];
       if (_coreLibrary == null) {
+        // This will be true unless the library being analyzed is the core library.
         _coreLibrary = createLibrary(_coreLibrarySource);
       }
       instrumentation.metric3("createLibrary", "complete");
-      computeLibraryDependencies2(targetLibrary, unit);
+      //
+      // Compute the set of libraries that need to be resolved together.
+      //
+      computeEmbeddedLibraryDependencies(targetLibrary, unit);
       _librariesInCycles = computeLibrariesInCycles(targetLibrary);
+      //
+      // Build the element models representing the libraries being resolved. This is done in three
+      // steps:
+      //
+      // 1. Build the basic element models without making any connections between elements other than
+      //    the basic parent/child relationships. This includes building the elements representing the
+      //    libraries.
+      // 2. Build the elements for the import and export directives. This requires that we have the
+      //    elements built for the referenced libraries, but because of the possibility of circular
+      //    references needs to happen after all of the library elements have been created.
+      // 3. Build the rest of the type model by connecting superclasses, mixins, and interfaces. This
+      //    requires that we be able to compute the names visible in the libraries being resolved,
+      //    which in turn requires that we have resolved the import directives.
+      //
       buildElementModels();
       instrumentation.metric3("buildElementModels", "complete");
       LibraryElement coreElement = _coreLibrary.libraryElement;
@@ -7221,8 +9142,21 @@ class LibraryResolver {
       _typeProvider = new TypeProviderImpl(coreElement);
       buildTypeHierarchies();
       instrumentation.metric3("buildTypeHierarchies", "complete");
+      //
+      // Perform resolution and type analysis.
+      //
+      // TODO(brianwilkerson) Decide whether we want to resolve all of the libraries or whether we
+      // want to only resolve the target library. The advantage to resolving everything is that we
+      // have already done part of the work so we'll avoid duplicated effort. The disadvantage of
+      // resolving everything is that we might do extra work that we don't really care about. Another
+      // possibility is to add a parameter to this method and punt the decision to the clients.
+      //
+      //if (analyzeAll) {
       resolveReferencesAndTypes();
       instrumentation.metric3("resolveReferencesAndTypes", "complete");
+      //} else {
+      //  resolveReferencesAndTypes(targetLibrary);
+      //}
       performConstantEvaluation();
       instrumentation.metric3("performConstantEvaluation", "complete");
       return targetLibrary.libraryElement;
@@ -7249,17 +9183,38 @@ class LibraryResolver {
     try {
       instrumentation.metric("fullAnalysis", fullAnalysis);
       instrumentation.data3("fullName", librarySource.fullName);
+      //
+      // Create the objects representing the library being resolved and the core library.
+      //
       Library targetLibrary = createLibrary(librarySource);
       _coreLibrary = _libraryMap[_coreLibrarySource];
       if (_coreLibrary == null) {
+        // This will be true unless the library being analyzed is the core library.
         _coreLibrary = createLibraryOrNull(_coreLibrarySource);
         if (_coreLibrary == null) {
           throw new AnalysisException.con1("Core library does not exist");
         }
       }
       instrumentation.metric3("createLibrary", "complete");
+      //
+      // Compute the set of libraries that need to be resolved together.
+      //
       computeLibraryDependencies(targetLibrary);
       _librariesInCycles = computeLibrariesInCycles(targetLibrary);
+      //
+      // Build the element models representing the libraries being resolved. This is done in three
+      // steps:
+      //
+      // 1. Build the basic element models without making any connections between elements other than
+      //    the basic parent/child relationships. This includes building the elements representing the
+      //    libraries.
+      // 2. Build the elements for the import and export directives. This requires that we have the
+      //    elements built for the referenced libraries, but because of the possibility of circular
+      //    references needs to happen after all of the library elements have been created.
+      // 3. Build the rest of the type model by connecting superclasses, mixins, and interfaces. This
+      //    requires that we be able to compute the names visible in the libraries being resolved,
+      //    which in turn requires that we have resolved the import directives.
+      //
       buildElementModels();
       instrumentation.metric3("buildElementModels", "complete");
       LibraryElement coreElement = _coreLibrary.libraryElement;
@@ -7271,8 +9226,21 @@ class LibraryResolver {
       _typeProvider = new TypeProviderImpl(coreElement);
       buildTypeHierarchies();
       instrumentation.metric3("buildTypeHierarchies", "complete");
+      //
+      // Perform resolution and type analysis.
+      //
+      // TODO(brianwilkerson) Decide whether we want to resolve all of the libraries or whether we
+      // want to only resolve the target library. The advantage to resolving everything is that we
+      // have already done part of the work so we'll avoid duplicated effort. The disadvantage of
+      // resolving everything is that we might do extra work that we don't really care about. Another
+      // possibility is to add a parameter to this method and punt the decision to the clients.
+      //
+      //if (analyzeAll) {
       resolveReferencesAndTypes();
       instrumentation.metric3("resolveReferencesAndTypes", "complete");
+      //} else {
+      //  resolveReferencesAndTypes(targetLibrary);
+      //}
       performConstantEvaluation();
       instrumentation.metric3("performConstantEvaluation", "complete");
       instrumentation.metric2("librariesInCycles", _librariesInCycles.length);
@@ -7354,7 +9322,7 @@ class LibraryResolver {
     for (Combinator combinator in directive.combinators) {
       if (combinator is HideCombinator) {
         HideElementCombinatorImpl hide = new HideElementCombinatorImpl();
-        hide.hiddenNames = getIdentifiers((combinator as HideCombinator).hiddenNames);
+        hide.hiddenNames = getIdentifiers(combinator.hiddenNames);
         combinators.add(hide);
       } else {
         ShowElementCombinatorImpl show = new ShowElementCombinatorImpl();
@@ -7381,13 +9349,13 @@ class LibraryResolver {
       List<ExportElement> exports = new List<ExportElement>();
       for (Directive directive in library.definingCompilationUnit.directives) {
         if (directive is ImportDirective) {
-          ImportDirective importDirective = directive as ImportDirective;
+          ImportDirective importDirective = directive;
           Source importedSource = library.getSource(importDirective);
           if (importedSource != null) {
+            // The imported source will be null if the URI in the import directive was invalid.
             Library importedLibrary = _libraryMap[importedSource];
             if (importedLibrary != null) {
-              ImportElementImpl importElement = new ImportElementImpl();
-              importElement.offset = directive.offset;
+              ImportElementImpl importElement = new ImportElementImpl(directive.offset);
               StringLiteral uriLiteral = importDirective.uri;
               if (uriLiteral != null) {
                 importElement.uriEnd = uriLiteral.end;
@@ -7398,7 +9366,7 @@ class LibraryResolver {
               if (importedLibraryElement != null) {
                 importElement.importedLibrary = importedLibraryElement;
               }
-              SimpleIdentifier prefixNode = (directive as ImportDirective).prefix;
+              SimpleIdentifier prefixNode = directive.prefix;
               if (prefixNode != null) {
                 importElement.prefixOffset = prefixNode.offset;
                 String prefixName = prefixNode.name;
@@ -7418,9 +9386,10 @@ class LibraryResolver {
             }
           }
         } else if (directive is ExportDirective) {
-          ExportDirective exportDirective = directive as ExportDirective;
+          ExportDirective exportDirective = directive;
           Source exportedSource = library.getSource(exportDirective);
           if (exportedSource != null) {
+            // The exported source will be null if the URI in the export directive was invalid.
             Library exportedLibrary = _libraryMap[exportedSource];
             if (exportedLibrary != null) {
               ExportElementImpl exportElement = new ExportElementImpl();
@@ -7442,7 +9411,7 @@ class LibraryResolver {
       }
       Source librarySource = library.librarySource;
       if (!library.explicitlyImportsCore && _coreLibrarySource != librarySource) {
-        ImportElementImpl importElement = new ImportElementImpl();
+        ImportElementImpl importElement = new ImportElementImpl(-1);
         importElement.importedLibrary = _coreLibrary.libraryElement;
         importElement.synthetic = true;
         imports.add(importElement);
@@ -7450,6 +9419,13 @@ class LibraryResolver {
       LibraryElementImpl libraryElement = library.libraryElement;
       libraryElement.imports = new List.from(imports);
       libraryElement.exports = new List.from(exports);
+      if (libraryElement.entryPoint == null) {
+        Namespace namespace = new NamespaceBuilder().createExportNamespace2(libraryElement);
+        Element element = namespace.get(LibraryElementBuilder.ENTRY_POINT_NAME);
+        if (element is FunctionElement) {
+          libraryElement.entryPoint = element;
+        }
+      }
     }
   }
 
@@ -7504,6 +9480,33 @@ class LibraryResolver {
   }
 
   /**
+   * Recursively traverse the libraries reachable from the given library, creating instances of the
+   * class [Library] to represent them, and record the references in the library objects.
+   *
+   * @param library the library to be processed to find libraries that have not yet been traversed
+   * @throws AnalysisException if some portion of the library graph could not be traversed
+   */
+  void computeEmbeddedLibraryDependencies(Library library, CompilationUnit unit) {
+    Source librarySource = library.librarySource;
+    Set<Source> exportedSources = new Set<Source>();
+    Set<Source> importedSources = new Set<Source>();
+    for (Directive directive in unit.directives) {
+      if (directive is ExportDirective) {
+        Source exportSource = resolveSource(librarySource, directive);
+        if (exportSource != null) {
+          exportedSources.add(exportSource);
+        }
+      } else if (directive is ImportDirective) {
+        Source importSource = resolveSource(librarySource, directive);
+        if (importSource != null) {
+          importedSources.add(importSource);
+        }
+      }
+    }
+    computeLibraryDependenciesFromDirectives(library, new List.from(importedSources), new List.from(exportedSources));
+  }
+
+  /**
    * Return a collection containing all of the libraries reachable from the given library that are
    * contained in a cycle that includes the given library.
    *
@@ -7527,34 +9530,7 @@ class LibraryResolver {
    */
   void computeLibraryDependencies(Library library) {
     Source librarySource = library.librarySource;
-    computeLibraryDependencies3(library, analysisContext.computeImportedLibraries(librarySource), analysisContext.computeExportedLibraries(librarySource));
-  }
-
-  /**
-   * Recursively traverse the libraries reachable from the given library, creating instances of the
-   * class [Library] to represent them, and record the references in the library objects.
-   *
-   * @param library the library to be processed to find libraries that have not yet been traversed
-   * @throws AnalysisException if some portion of the library graph could not be traversed
-   */
-  void computeLibraryDependencies2(Library library, CompilationUnit unit) {
-    Source librarySource = library.librarySource;
-    Set<Source> exportedSources = new Set<Source>();
-    Set<Source> importedSources = new Set<Source>();
-    for (Directive directive in unit.directives) {
-      if (directive is ExportDirective) {
-        Source exportSource = resolveSource(librarySource, directive as ExportDirective);
-        if (exportSource != null) {
-          exportedSources.add(exportSource);
-        }
-      } else if (directive is ImportDirective) {
-        Source importSource = resolveSource(librarySource, directive as ImportDirective);
-        if (importSource != null) {
-          importedSources.add(importSource);
-        }
-      }
-    }
-    computeLibraryDependencies3(library, new List.from(importedSources), new List.from(exportedSources));
+    computeLibraryDependenciesFromDirectives(library, analysisContext.computeImportedLibraries(librarySource), analysisContext.computeExportedLibraries(librarySource));
   }
 
   /**
@@ -7566,7 +9542,7 @@ class LibraryResolver {
    * @param exportedSources an array containing the sources that are exported from the given library
    * @throws AnalysisException if some portion of the library graph could not be traversed
    */
-  void computeLibraryDependencies3(Library library, List<Source> importedSources, List<Source> exportedSources) {
+  void computeLibraryDependenciesFromDirectives(Library library, List<Source> importedSources, List<Source> exportedSources) {
     List<Library> importedLibraries = new List<Library>();
     bool explicitlyImportsCore = false;
     for (Source importedSource in importedSources) {
@@ -7621,7 +9597,23 @@ class LibraryResolver {
    */
   Library createLibrary(Source librarySource) {
     Library library = new Library(analysisContext, _errorListener, librarySource);
-    library.definingCompilationUnit;
+    _libraryMap[librarySource] = library;
+    return library;
+  }
+
+  /**
+   * Create an object to represent the information about the library defined by the compilation unit
+   * with the given source. Return the library object that was created, or `null` if the
+   * source is not valid.
+   *
+   * @param librarySource the source of the library's defining compilation unit
+   * @return the library object that was created
+   */
+  Library createLibraryOrNull(Source librarySource) {
+    if (!analysisContext.exists(librarySource)) {
+      return null;
+    }
+    Library library = new Library(analysisContext, _errorListener, librarySource);
     _libraryMap[librarySource] = library;
     return library;
   }
@@ -7637,26 +9629,9 @@ class LibraryResolver {
    * @return the library object that was created
    * @throws AnalysisException if the library source is not valid
    */
-  Library createLibrary2(Source librarySource, int modificationStamp, CompilationUnit unit) {
+  Library createLibraryWithUnit(Source librarySource, int modificationStamp, CompilationUnit unit) {
     Library library = new Library(analysisContext, _errorListener, librarySource);
     library.setDefiningCompilationUnit(modificationStamp, unit);
-    _libraryMap[librarySource] = library;
-    return library;
-  }
-
-  /**
-   * Create an object to represent the information about the library defined by the compilation unit
-   * with the given source. Return the library object that was created, or `null` if the
-   * source is not valid.
-   *
-   * @param librarySource the source of the library's defining compilation unit
-   * @return the library object that was created
-   */
-  Library createLibraryOrNull(Source librarySource) {
-    if (!librarySource.exists()) {
-      return null;
-    }
-    Library library = new Library(analysisContext, _errorListener, librarySource);
     _libraryMap[librarySource] = library;
     return library;
   }
@@ -7682,7 +9657,7 @@ class LibraryResolver {
   void performConstantEvaluation() {
     TimeCounter_TimeCounterHandle timeCounter = PerformanceStatistics.resolve.start();
     try {
-      ConstantValueComputer computer = new ConstantValueComputer();
+      ConstantValueComputer computer = new ConstantValueComputer(_typeProvider);
       for (Library library in _librariesInCycles) {
         for (Source source in library.compilationUnitSources) {
           try {
@@ -7709,7 +9684,7 @@ class LibraryResolver {
    */
   void resolveReferencesAndTypes() {
     for (Library library in _librariesInCycles) {
-      resolveReferencesAndTypes2(library);
+      resolveReferencesAndTypesInLibrary(library);
     }
   }
 
@@ -7720,7 +9695,7 @@ class LibraryResolver {
    * @throws AnalysisException if any of the identifiers could not be resolved or if the types in
    *           the library cannot be analyzed
    */
-  void resolveReferencesAndTypes2(Library library) {
+  void resolveReferencesAndTypesInLibrary(Library library) {
     TimeCounter_TimeCounterHandle timeCounter = PerformanceStatistics.resolve.start();
     try {
       for (Source source in library.compilationUnitSources) {
@@ -7733,6 +9708,16 @@ class LibraryResolver {
             visitor.reportError(conditionalCode.analysisError);
           }
         }
+      }
+    } finally {
+      timeCounter.stop();
+    }
+    // Angular
+    timeCounter = PerformanceStatistics.angular.start();
+    try {
+      for (Source source in library.compilationUnitSources) {
+        CompilationUnit ast = library.getAST(source);
+        new AngularCompilationUnitBuilder(_errorListener, source, ast).build();
       }
     } finally {
       timeCounter.stop();
@@ -7861,12 +9846,14 @@ class MemberMap {
    * @param value the ExecutableElement value to store in the map
    */
   void put(String key, ExecutableElement value) {
+    // If we already have a value with this key, override the value
     for (int i = 0; i < _size; i++) {
       if (_keys[i] != null && _keys[i] == key) {
         _values[i] = value;
         return;
       }
     }
+    // If needed, double the size of our arrays and copy values over in both arrays
     if (_size == _keys.length) {
       int newArrayLength = _size * 2;
       List<String> keys_new_array = new List<String>(newArrayLength);
@@ -7880,15 +9867,16 @@ class MemberMap {
       _keys = keys_new_array;
       _values = values_new_array;
     }
+    // Put new value at end of array
     _keys[_size] = key;
     _values[_size] = value;
     _size++;
   }
 
   /**
-   * Given some String key, this method replaces the associated key and value pair with `null`
-   * . The size is not decremented with this call, instead it is expected that the users check for
-   * `null`.
+   * Given some [String] key, this method replaces the associated key and value pair with
+   * `null`. The size is not decremented with this call, instead it is expected that the users
+   * check for `null`.
    *
    * @param key the key of the key/value pair to remove from the map
    */
@@ -7932,14 +9920,6 @@ class MemberMap {
  */
 class ProxyConditionalAnalysisError {
   /**
-   * Return `true` if the given element represents a class that has the proxy annotation.
-   *
-   * @param element the class being tested
-   * @return `true` if the given element represents a class that has the proxy annotation
-   */
-  static bool classHasProxyAnnotation(Element element) => (element is ClassElement) && (element as ClassElement).isProxy;
-
-  /**
    * The enclosing [ClassElement], this is what will determine if the error code should, or
    * should not, be generated on the source.
    */
@@ -7951,8 +9931,8 @@ class ProxyConditionalAnalysisError {
   final AnalysisError analysisError;
 
   /**
-   * Instantiate a new ProxyConditionalErrorCode with some enclosing element and the conditional
-   * analysis error.
+   * Instantiate a new [ProxyConditionalAnalysisError] with some enclosing element and the
+   * conditional analysis error.
    *
    * @param enclosingElement the enclosing element
    * @param analysisError the conditional analysis error
@@ -7966,14 +9946,17 @@ class ProxyConditionalAnalysisError {
    *
    * @return `true` iff the enclosing class has the proxy annotation
    */
-  bool shouldIncludeErrorCode() => !classHasProxyAnnotation(_enclosingElement);
+  bool shouldIncludeErrorCode() {
+    if (_enclosingElement is ClassElement) {
+      return !(_enclosingElement as ClassElement).isOrInheritsProxy;
+    }
+    return true;
+  }
 }
 
 /**
  * Instances of the class `ResolverVisitor` are used to resolve the nodes within a single
  * compilation unit.
- *
- * @coverage dart.engine.resolver
  */
 class ResolverVisitor extends ScopedVisitor {
   /**
@@ -8002,6 +9985,12 @@ class ResolverVisitor extends ScopedVisitor {
    * current node is not contained in a function.
    */
   ExecutableElement _enclosingFunction = null;
+
+  /**
+   * The [Comment] before a [FunctionDeclaration] or a [MethodDeclaration] that
+   * cannot be resolved where we visited it, because it should be resolved in the scope of the body.
+   */
+  Comment _commentBeforeFunction = null;
 
   /**
    * The object keeping track of which elements have had their types overridden.
@@ -8102,10 +10091,12 @@ class ResolverVisitor extends ScopedVisitor {
           _overrideManager.enterScope();
           _promoteManager.enterScope();
           propagateTrueState(leftOperand);
+          // Type promotion.
           promoteTypes(leftOperand);
           clearTypePromotionsIfPotentiallyMutatedIn(leftOperand);
           clearTypePromotionsIfPotentiallyMutatedIn(rightOperand);
           clearTypePromotionsIfAccessedInClosureAndProtentiallyMutated(rightOperand);
+          // Visit right operand.
           rightOperand.accept(this);
         } finally {
           _overrideManager.exitScope();
@@ -8133,6 +10124,7 @@ class ResolverVisitor extends ScopedVisitor {
   }
 
   Object visitBlockFunctionBody(BlockFunctionBody node) {
+    safelyVisit(_commentBeforeFunction);
     try {
       _overrideManager.enterScope();
       super.visitBlockFunctionBody(node);
@@ -8143,6 +10135,9 @@ class ResolverVisitor extends ScopedVisitor {
   }
 
   Object visitBreakStatement(BreakStatement node) {
+    //
+    // We do not visit the label because it needs to be visited in the context of the statement.
+    //
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
     return null;
@@ -8161,13 +10156,36 @@ class ResolverVisitor extends ScopedVisitor {
     return null;
   }
 
+  Object visitComment(Comment node) {
+    if (node.parent is FunctionDeclaration || node.parent is ConstructorDeclaration || node.parent is MethodDeclaration) {
+      if (node != _commentBeforeFunction) {
+        _commentBeforeFunction = node;
+        return null;
+      }
+    }
+    super.visitComment(node);
+    _commentBeforeFunction = null;
+    return null;
+  }
+
   Object visitCommentReference(CommentReference node) {
+    //
+    // We do not visit the identifier because it needs to be visited in the context of the reference.
+    //
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
     return null;
   }
 
   Object visitCompilationUnit(CompilationUnit node) {
+    //
+    // TODO(brianwilkerson) The goal of the code below is to visit the declarations in such an
+    // order that we can infer type information for top-level variables before we visit references
+    // to them. This is better than making no effort, but still doesn't completely satisfy that
+    // goal (consider for example "final var a = b; final var b = 0;"; we'll infer a type of 'int'
+    // for 'b', but not for 'a' because of the order of the visits). Ideally we would create a
+    // dependency graph, but that would require references to be resolved, which they are not.
+    //
     try {
       _overrideManager.enterScope();
       NodeList<Directive> directives = node.directives;
@@ -8206,9 +10224,11 @@ class ResolverVisitor extends ScopedVisitor {
         _overrideManager.enterScope();
         _promoteManager.enterScope();
         propagateTrueState(condition);
+        // Type promotion.
         promoteTypes(condition);
         clearTypePromotionsIfPotentiallyMutatedIn(thenExpression);
         clearTypePromotionsIfAccessedInClosureAndProtentiallyMutated(thenExpression);
+        // Visit "then" expression.
         thenExpression.accept(this);
       } finally {
         _overrideManager.exitScope();
@@ -8251,6 +10271,10 @@ class ResolverVisitor extends ScopedVisitor {
   }
 
   Object visitConstructorFieldInitializer(ConstructorFieldInitializer node) {
+    //
+    // We visit the expression, but do not visit the field name because it needs to be visited in
+    // the context of the constructor field initializer node.
+    //
     safelyVisit(node.expression);
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
@@ -8258,12 +10282,19 @@ class ResolverVisitor extends ScopedVisitor {
   }
 
   Object visitConstructorName(ConstructorName node) {
+    //
+    // We do not visit either the type name, because it won't be visited anyway, or the name,
+    // because it needs to be visited in the context of the constructor name.
+    //
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
     return null;
   }
 
   Object visitContinueStatement(ContinueStatement node) {
+    //
+    // We do not visit the label because it needs to be visited in the context of the statement.
+    //
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
     return null;
@@ -8276,10 +10307,18 @@ class ResolverVisitor extends ScopedVisitor {
     } finally {
       _overrideManager.exitScope();
     }
+    // TODO(brianwilkerson) If the loop can only be exited because the condition is false, then
+    // propagateFalseState(node.getCondition());
     return null;
   }
 
+  Object visitEmptyFunctionBody(EmptyFunctionBody node) {
+    safelyVisit(_commentBeforeFunction);
+    return super.visitEmptyFunctionBody(node);
+  }
+
   Object visitExpressionFunctionBody(ExpressionFunctionBody node) {
+    safelyVisit(_commentBeforeFunction);
     try {
       _overrideManager.enterScope();
       super.visitExpressionFunctionBody(node);
@@ -8367,9 +10406,11 @@ class ResolverVisitor extends ScopedVisitor {
         _overrideManager.enterScope();
         _promoteManager.enterScope();
         propagateTrueState(condition);
+        // Type promotion.
         promoteTypes(condition);
         clearTypePromotionsIfPotentiallyMutatedIn(thenStatement);
         clearTypePromotionsIfAccessedInClosureAndProtentiallyMutated(thenStatement);
+        // Visit "then".
         visitStatementInScope(thenStatement);
       } finally {
         thenOverrides = _overrideManager.captureLocalOverrides();
@@ -8423,6 +10464,10 @@ class ResolverVisitor extends ScopedVisitor {
   }
 
   Object visitMethodInvocation(MethodInvocation node) {
+    //
+    // We visit the target and argument list, but do not visit the method name because it needs to
+    // be visited in the context of the invocation.
+    //
     safelyVisit(node.target);
     node.accept(_elementResolver);
     inferFunctionExpressionsParametersTypes(node.argumentList);
@@ -8431,7 +10476,7 @@ class ResolverVisitor extends ScopedVisitor {
     return null;
   }
 
-  Object visitNode(ASTNode node) {
+  Object visitNode(AstNode node) {
     node.visitChildren(this);
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
@@ -8439,6 +10484,10 @@ class ResolverVisitor extends ScopedVisitor {
   }
 
   Object visitPrefixedIdentifier(PrefixedIdentifier node) {
+    //
+    // We visit the prefix, but do not visit the identifier because it needs to be visited in the
+    // context of the prefix.
+    //
     safelyVisit(node.prefix);
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
@@ -8446,6 +10495,10 @@ class ResolverVisitor extends ScopedVisitor {
   }
 
   Object visitPropertyAccess(PropertyAccess node) {
+    //
+    // We visit the target, but do not visit the property name because it needs to be visited in the
+    // context of the property access node.
+    //
     safelyVisit(node.target);
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
@@ -8453,6 +10506,10 @@ class ResolverVisitor extends ScopedVisitor {
   }
 
   Object visitRedirectingConstructorInvocation(RedirectingConstructorInvocation node) {
+    //
+    // We visit the argument list, but do not visit the optional identifier because it needs to be
+    // visited in the context of the constructor invocation.
+    //
     safelyVisit(node.argumentList);
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
@@ -8462,6 +10519,10 @@ class ResolverVisitor extends ScopedVisitor {
   Object visitShowCombinator(ShowCombinator node) => null;
 
   Object visitSuperConstructorInvocation(SuperConstructorInvocation node) {
+    //
+    // We visit the argument list, but do not visit the optional identifier because it needs to be
+    // visited in the context of the constructor invocation.
+    //
     safelyVisit(node.argumentList);
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
@@ -8515,6 +10576,8 @@ class ResolverVisitor extends ScopedVisitor {
         _overrideManager.exitScope();
       }
     }
+    // TODO(brianwilkerson) If the loop can only be exited because the condition is false, then
+    // propagateFalseState(condition);
     node.accept(_elementResolver);
     node.accept(_typeAnalyzer);
     return null;
@@ -8546,11 +10609,11 @@ class ResolverVisitor extends ScopedVisitor {
   VariableElement getOverridablePropagatedElement(Expression expression) {
     Element element = null;
     if (expression is SimpleIdentifier) {
-      element = (expression as SimpleIdentifier).propagatedElement;
+      element = expression.propagatedElement;
     } else if (expression is PrefixedIdentifier) {
-      element = (expression as PrefixedIdentifier).propagatedElement;
+      element = expression.propagatedElement;
     } else if (expression is PropertyAccess) {
-      element = (expression as PropertyAccess).propertyName.propagatedElement;
+      element = expression.propertyName.propagatedElement;
     }
     if (element is VariableElement) {
       return element as VariableElement;
@@ -8568,11 +10631,11 @@ class ResolverVisitor extends ScopedVisitor {
   VariableElement getOverridableStaticElement(Expression expression) {
     Element element = null;
     if (expression is SimpleIdentifier) {
-      element = (expression as SimpleIdentifier).staticElement;
+      element = expression.staticElement;
     } else if (expression is PrefixedIdentifier) {
-      element = (expression as PrefixedIdentifier).staticElement;
+      element = expression.staticElement;
     } else if (expression is PropertyAccess) {
-      element = (expression as PropertyAccess).propertyName.staticElement;
+      element = expression.propertyName.staticElement;
     }
     if (element is VariableElement) {
       return element as VariableElement;
@@ -8642,7 +10705,7 @@ class ResolverVisitor extends ScopedVisitor {
       return;
     }
     if (element is PropertyInducingElement) {
-      PropertyInducingElement variable = element as PropertyInducingElement;
+      PropertyInducingElement variable = element;
       if (!variable.isConst && !variable.isFinal) {
         return;
       }
@@ -8661,7 +10724,7 @@ class ResolverVisitor extends ScopedVisitor {
    * @param node the node specifying the location of the error
    * @param arguments the arguments to the error, used to compose the error message
    */
-  void reportErrorProxyConditionalAnalysisError(Element enclosingElement, ErrorCode errorCode, ASTNode node, List<Object> arguments) {
+  void reportErrorProxyConditionalAnalysisError(Element enclosingElement, ErrorCode errorCode, AstNode node, List<Object> arguments) {
     _proxyConditionalAnalysisErrors.add(new ProxyConditionalAnalysisError(enclosingElement, new AnalysisError.con2(source, node.offset, node.length, errorCode, arguments)));
   }
 
@@ -8691,6 +10754,10 @@ class ResolverVisitor extends ScopedVisitor {
   }
 
   void visitForEachStatementInScope(ForEachStatement node) {
+    //
+    // We visit the iterator before the loop variable because the loop variable cannot be in scope
+    // while visiting the iterator.
+    //
     Expression iterator = node.iterator;
     safelyVisit(iterator);
     DeclaredIdentifier loopVariable = node.loopVariable;
@@ -8712,7 +10779,7 @@ class ResolverVisitor extends ScopedVisitor {
           Element identifierElement = identifier.staticElement;
           if (identifierElement is VariableElement) {
             Type2 iteratorElementType = getIteratorElementType(iterator);
-            override2(identifierElement as VariableElement, iteratorElementType);
+            override2(identifierElement, iteratorElementType);
             recordPropagatedType(identifier, iteratorElementType);
           }
         }
@@ -8746,7 +10813,7 @@ class ResolverVisitor extends ScopedVisitor {
    * If the variable <i>v</i> is accessed by a closure in <i>s<sub>1</sub></i> then the variable
    * <i>v</i> is not potentially mutated anywhere in the scope of <i>v</i>.
    */
-  void clearTypePromotionsIfAccessedInClosureAndProtentiallyMutated(ASTNode target) {
+  void clearTypePromotionsIfAccessedInClosureAndProtentiallyMutated(AstNode target) {
     for (Element element in _promoteManager.promotedElements) {
       if ((element as VariableElementImpl).isPotentiallyMutatedInScope) {
         if (isVariableAccessedInClosure(element, target)) {
@@ -8762,7 +10829,7 @@ class ResolverVisitor extends ScopedVisitor {
    *
    * <i>v</i> is not potentially mutated in <i>s<sub>1</sub></i> or within a closure.
    */
-  void clearTypePromotionsIfPotentiallyMutatedIn(ASTNode target) {
+  void clearTypePromotionsIfPotentiallyMutatedIn(AstNode target) {
     for (Element element in _promoteManager.promotedElements) {
       if (isVariablePotentiallyMutatedIn(element, target)) {
         _promoteManager.setType(element, null);
@@ -8781,9 +10848,9 @@ class ResolverVisitor extends ScopedVisitor {
     Type2 bestType = _overrideManager.getType(element);
     if (bestType == null) {
       if (element is LocalVariableElement) {
-        bestType = (element as LocalVariableElement).type;
+        bestType = element.type;
       } else if (element is ParameterElement) {
-        bestType = (element as ParameterElement).type;
+        bestType = element.type;
       }
     }
     return bestType;
@@ -8800,16 +10867,18 @@ class ResolverVisitor extends ScopedVisitor {
   Type2 getIteratorElementType(Expression iteratorExpression) {
     Type2 expressionType = iteratorExpression.staticType;
     if (expressionType is InterfaceType) {
-      InterfaceType interfaceType = expressionType as InterfaceType;
+      InterfaceType interfaceType = expressionType;
       FunctionType iteratorFunction = _inheritanceManager.lookupMemberType(interfaceType, "iterator");
       if (iteratorFunction == null) {
+        // TODO(brianwilkerson) Should we report this error?
         return null;
       }
       Type2 iteratorType = iteratorFunction.returnType;
       if (iteratorType is InterfaceType) {
-        InterfaceType iteratorInterfaceType = iteratorType as InterfaceType;
+        InterfaceType iteratorInterfaceType = iteratorType;
         FunctionType currentFunction = _inheritanceManager.lookupMemberType(iteratorInterfaceType, "current");
         if (currentFunction == null) {
+          // TODO(brianwilkerson) Should we report this error?
           return null;
         }
         return currentFunction.returnType;
@@ -8823,21 +10892,26 @@ class ResolverVisitor extends ScopedVisitor {
    * required type is [FunctionType], then infer parameters types from [FunctionType].
    */
   void inferFunctionExpressionParametersTypes(Expression mayBeClosure, Type2 mayByFunctionType) {
+    // prepare closure
     if (mayBeClosure is! FunctionExpression) {
       return;
     }
     FunctionExpression closure = mayBeClosure as FunctionExpression;
+    // prepare expected closure type
     if (mayByFunctionType is! FunctionType) {
       return;
     }
     FunctionType expectedClosureType = mayByFunctionType as FunctionType;
+    // set propagated type for the closure
     closure.propagatedType = expectedClosureType;
+    // set inferred types for parameters
     NodeList<FormalParameter> parameters = closure.parameters.parameters;
     List<ParameterElement> expectedParameters = expectedClosureType.parameters;
     for (int i = 0; i < parameters.length && i < expectedParameters.length; i++) {
       FormalParameter parameter = parameters[i];
       ParameterElement element = parameter.element;
       Type2 currentType = getBestType(element);
+      // may be override the type
       Type2 expectedType = expectedParameters[i].type;
       if (currentType == null || expectedType.isMoreSpecificThan(currentType)) {
         _overrideManager.setType(element, expectedType);
@@ -8868,6 +10942,9 @@ class ResolverVisitor extends ScopedVisitor {
    * @return `true` if the given expression terminates abruptly
    */
   bool isAbruptTermination(Expression expression) {
+    // TODO(brianwilkerson) This needs to be significantly improved. Ideally we would eventually
+    // turn this into a method on Expression that returns a termination indication (normal, abrupt
+    // with no exception, abrupt with an exception).
     while (expression is ParenthesizedExpression) {
       expression = (expression as ParenthesizedExpression).expression;
     }
@@ -8882,12 +10959,15 @@ class ResolverVisitor extends ScopedVisitor {
    * @return `true` if the given statement terminates abruptly
    */
   bool isAbruptTermination2(Statement statement) {
+    // TODO(brianwilkerson) This needs to be significantly improved. Ideally we would eventually
+    // turn this into a method on Statement that returns a termination indication (normal, abrupt
+    // with no exception, abrupt with an exception).
     if (statement is ReturnStatement || statement is BreakStatement || statement is ContinueStatement) {
       return true;
     } else if (statement is ExpressionStatement) {
-      return isAbruptTermination((statement as ExpressionStatement).expression);
+      return isAbruptTermination(statement.expression);
     } else if (statement is Block) {
-      NodeList<Statement> statements = (statement as Block).statements;
+      NodeList<Statement> statements = statement.statements;
       int size = statements.length;
       if (size == 0) {
         return false;
@@ -8899,30 +10979,30 @@ class ResolverVisitor extends ScopedVisitor {
 
   /**
    * Return `true` if the given variable is accessed within a closure in the given
-   * [ASTNode] and also mutated somewhere in variable scope. This information is only
+   * [AstNode] and also mutated somewhere in variable scope. This information is only
    * available for local variables (including parameters).
    *
    * @param variable the variable to check
-   * @param target the [ASTNode] to check within
+   * @param target the [AstNode] to check within
    * @return `true` if this variable is potentially mutated somewhere in the given ASTNode
    */
-  bool isVariableAccessedInClosure(Element variable, ASTNode target) {
+  bool isVariableAccessedInClosure(Element variable, AstNode target) {
     List<bool> result = [false];
-    target.accept(new RecursiveASTVisitor_8(result, variable));
+    target.accept(new RecursiveAstVisitor_ResolverVisitor_isVariableAccessedInClosure(result, variable));
     return result[0];
   }
 
   /**
    * Return `true` if the given variable is potentially mutated somewhere in the given
-   * [ASTNode]. This information is only available for local variables (including parameters).
+   * [AstNode]. This information is only available for local variables (including parameters).
    *
    * @param variable the variable to check
-   * @param target the [ASTNode] to check within
+   * @param target the [AstNode] to check within
    * @return `true` if this variable is potentially mutated somewhere in the given ASTNode
    */
-  bool isVariablePotentiallyMutatedIn(Element variable, ASTNode target) {
+  bool isVariablePotentiallyMutatedIn(Element variable, AstNode target) {
     List<bool> result = [false];
-    target.accept(new RecursiveASTVisitor_9(result, variable));
+    target.accept(new RecursiveAstVisitor_ResolverVisitor_isVariablePotentiallyMutatedIn(result, variable));
     return result[0];
   }
 
@@ -8938,22 +11018,28 @@ class ResolverVisitor extends ScopedVisitor {
   void promote(Expression expression, Type2 potentialType) {
     VariableElement element = getPromotionStaticElement(expression);
     if (element != null) {
+      // may be mutated somewhere in closure
       if ((element as VariableElementImpl).isPotentiallyMutatedInClosure) {
         return;
       }
+      // prepare current variable type
       Type2 type = _promoteManager.getType(element);
       if (type == null) {
         type = expression.staticType;
       }
+      // Declared type should not be "dynamic".
       if (type == null || type.isDynamic) {
         return;
       }
+      // Promoted type should not be "dynamic".
       if (potentialType == null || potentialType.isDynamic) {
         return;
       }
+      // Promoted type should be more specific than declared.
       if (!potentialType.isMoreSpecificThan(type)) {
         return;
       }
+      // Do promote type of variable.
       _promoteManager.setType(element, potentialType);
     }
   }
@@ -8963,7 +11049,7 @@ class ResolverVisitor extends ScopedVisitor {
    */
   void promoteTypes(Expression condition) {
     if (condition is BinaryExpression) {
-      BinaryExpression binary = condition as BinaryExpression;
+      BinaryExpression binary = condition;
       if (identical(binary.operator.type, sc.TokenType.AMPERSAND_AMPERSAND)) {
         Expression left = binary.leftOperand;
         Expression right = binary.rightOperand;
@@ -8972,12 +11058,12 @@ class ResolverVisitor extends ScopedVisitor {
         clearTypePromotionsIfPotentiallyMutatedIn(right);
       }
     } else if (condition is IsExpression) {
-      IsExpression is2 = condition as IsExpression;
+      IsExpression is2 = condition;
       if (is2.notOperator == null) {
         promote(is2.expression, is2.type.type);
       }
     } else if (condition is ParenthesizedExpression) {
-      promoteTypes((condition as ParenthesizedExpression).expression);
+      promoteTypes(condition.expression);
     }
   }
 
@@ -8989,23 +11075,23 @@ class ResolverVisitor extends ScopedVisitor {
    */
   void propagateFalseState(Expression condition) {
     if (condition is BinaryExpression) {
-      BinaryExpression binary = condition as BinaryExpression;
+      BinaryExpression binary = condition;
       if (identical(binary.operator.type, sc.TokenType.BAR_BAR)) {
         propagateFalseState(binary.leftOperand);
         propagateFalseState(binary.rightOperand);
       }
     } else if (condition is IsExpression) {
-      IsExpression is2 = condition as IsExpression;
+      IsExpression is2 = condition;
       if (is2.notOperator != null) {
         override(is2.expression, is2.type.type);
       }
     } else if (condition is PrefixExpression) {
-      PrefixExpression prefix = condition as PrefixExpression;
+      PrefixExpression prefix = condition;
       if (identical(prefix.operator.type, sc.TokenType.BANG)) {
         propagateTrueState(prefix.operand);
       }
     } else if (condition is ParenthesizedExpression) {
-      propagateFalseState((condition as ParenthesizedExpression).expression);
+      propagateFalseState(condition.expression);
     }
   }
 
@@ -9026,23 +11112,23 @@ class ResolverVisitor extends ScopedVisitor {
    */
   void propagateTrueState(Expression condition) {
     if (condition is BinaryExpression) {
-      BinaryExpression binary = condition as BinaryExpression;
+      BinaryExpression binary = condition;
       if (identical(binary.operator.type, sc.TokenType.AMPERSAND_AMPERSAND)) {
         propagateTrueState(binary.leftOperand);
         propagateTrueState(binary.rightOperand);
       }
     } else if (condition is IsExpression) {
-      IsExpression is2 = condition as IsExpression;
+      IsExpression is2 = condition;
       if (is2.notOperator == null) {
         override(is2.expression, is2.type.type);
       }
     } else if (condition is PrefixExpression) {
-      PrefixExpression prefix = condition as PrefixExpression;
+      PrefixExpression prefix = condition;
       if (identical(prefix.operator.type, sc.TokenType.BANG)) {
         propagateFalseState(prefix.operand);
       }
     } else if (condition is ParenthesizedExpression) {
-      propagateTrueState((condition as ParenthesizedExpression).expression);
+      propagateTrueState(condition.expression);
     }
   }
 
@@ -9079,12 +11165,12 @@ class ResolverVisitor extends ScopedVisitor {
   set enclosingClass_J2DAccessor(__v) => _enclosingClass = __v;
 }
 
-class RecursiveASTVisitor_8 extends RecursiveASTVisitor<Object> {
+class RecursiveAstVisitor_ResolverVisitor_isVariableAccessedInClosure extends RecursiveAstVisitor<Object> {
   List<bool> result;
 
   Element variable;
 
-  RecursiveASTVisitor_8(this.result, this.variable) : super();
+  RecursiveAstVisitor_ResolverVisitor_isVariableAccessedInClosure(this.result, this.variable) : super();
 
   bool _inClosure = false;
 
@@ -9109,12 +11195,12 @@ class RecursiveASTVisitor_8 extends RecursiveASTVisitor<Object> {
   }
 }
 
-class RecursiveASTVisitor_9 extends RecursiveASTVisitor<Object> {
+class RecursiveAstVisitor_ResolverVisitor_isVariablePotentiallyMutatedIn extends RecursiveAstVisitor<Object> {
   List<bool> result;
 
   Element variable;
 
-  RecursiveASTVisitor_9(this.result, this.variable) : super();
+  RecursiveAstVisitor_ResolverVisitor_isVariablePotentiallyMutatedIn(this.result, this.variable) : super();
 
   Object visitSimpleIdentifier(SimpleIdentifier node) {
     if (result[0]) {
@@ -9132,10 +11218,8 @@ class RecursiveASTVisitor_9 extends RecursiveASTVisitor<Object> {
 /**
  * The abstract class `ScopedVisitor` maintains name and label scopes as an AST structure is
  * being visited.
- *
- * @coverage dart.engine.resolver
  */
-abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
+abstract class ScopedVisitor extends UnifyingAstVisitor<Object> {
   /**
    * The element for the library containing the compilation unit being visited.
    */
@@ -9222,6 +11306,27 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
   LibraryElement get definingLibrary => _definingLibrary;
 
   /**
+   * Replaces the current [Scope] with the enclosing [Scope].
+   *
+   * @return the enclosing [Scope].
+   */
+  Scope popNameScope() {
+    _nameScope = _nameScope.enclosingScope;
+    return _nameScope;
+  }
+
+  /**
+   * Pushes a new [Scope] into the visitor.
+   *
+   * @return the new [Scope].
+   */
+  Scope pushNameScope() {
+    Scope newScope = new EnclosedScope(_nameScope);
+    _nameScope = newScope;
+    return _nameScope;
+  }
+
+  /**
    * Report an error with the given analysis error.
    *
    * @param errorCode analysis error
@@ -9268,7 +11373,7 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
     Scope outerScope = _nameScope;
     try {
       _nameScope = new ClassScope(_nameScope, node.element);
-      super.visitClassDeclaration(node);
+      visitClassDeclarationInScope(node);
     } finally {
       _nameScope = outerScope;
     }
@@ -9334,6 +11439,7 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
 
   Object visitFormalParameterList(FormalParameterList node) {
     super.visitFormalParameterList(node);
+    // We finished resolving function signature, now include formal parameters scope.
     if (_nameScope is FunctionScope) {
       (_nameScope as FunctionScope).defineParameters();
     }
@@ -9374,6 +11480,7 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
 
   Object visitFunctionExpression(FunctionExpression node) {
     if (node.parent is FunctionDeclaration) {
+      // We have already created a function scope and don't need to do so again.
       super.visitFunctionExpression(node);
     } else {
       Scope outerScope = _nameScope;
@@ -9515,7 +11622,7 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
    * @param node the node specifying the location of the error
    * @param arguments the arguments to the error, used to compose the error message
    */
-  void reportError6(ErrorCode errorCode, ASTNode node, List<Object> arguments) {
+  void reportErrorForNode(ErrorCode errorCode, AstNode node, List<Object> arguments) {
     _errorListener.onError(new AnalysisError.con2(source, node.offset, node.length, errorCode, arguments));
   }
 
@@ -9527,7 +11634,7 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
    * @param length the length of the location of the error
    * @param arguments the arguments to the error, used to compose the error message
    */
-  void reportError7(ErrorCode errorCode, int offset, int length, List<Object> arguments) {
+  void reportErrorForOffset(ErrorCode errorCode, int offset, int length, List<Object> arguments) {
     _errorListener.onError(new AnalysisError.con2(source, offset, length, errorCode, arguments));
   }
 
@@ -9538,7 +11645,7 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
    * @param token the token specifying the location of the error
    * @param arguments the arguments to the error, used to compose the error message
    */
-  void reportError8(ErrorCode errorCode, sc.Token token, List<Object> arguments) {
+  void reportErrorForToken(ErrorCode errorCode, sc.Token token, List<Object> arguments) {
     _errorListener.onError(new AnalysisError.con2(source, token.offset, token.length, errorCode, arguments));
   }
 
@@ -9547,10 +11654,14 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
    *
    * @param node the node to be visited
    */
-  void safelyVisit(ASTNode node) {
+  void safelyVisit(AstNode node) {
     if (node != null) {
       node.accept(this);
     }
+  }
+
+  void visitClassDeclarationInScope(ClassDeclaration node) {
+    super.visitClassDeclaration(node);
   }
 
   /**
@@ -9561,6 +11672,10 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
    * @param node the statement to be visited
    */
   void visitForEachStatementInScope(ForEachStatement node) {
+    //
+    // We visit the iterator before the loop variable because the loop variable cannot be in scope
+    // while visiting the iterator.
+    //
     safelyVisit(node.identifier);
     safelyVisit(node.iterator);
     safelyVisit(node.loopVariable);
@@ -9590,7 +11705,8 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
    */
   void visitStatementInScope(Statement node) {
     if (node is Block) {
-      visitBlock(node as Block);
+      // Don't create a scope around a block because the block will create it's own scope.
+      visitBlock(node);
     } else if (node != null) {
       Scope outerNameScope = _nameScope;
       try {
@@ -9630,14 +11746,14 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
     for (int i = 0; i < statementCount; i++) {
       Statement statement = statements[i];
       if (statement is VariableDeclarationStatement) {
-        VariableDeclarationStatement vds = statement as VariableDeclarationStatement;
+        VariableDeclarationStatement vds = statement;
         NodeList<VariableDeclaration> variables = vds.variables.variables;
         int variableCount = variables.length;
         for (int j = 0; j < variableCount; j++) {
           scope.hide(variables[j].element);
         }
       } else if (statement is FunctionDeclarationStatement) {
-        FunctionDeclarationStatement fds = statement as FunctionDeclarationStatement;
+        FunctionDeclarationStatement fds = statement;
         scope.hide(fds.functionDeclaration.element);
       }
     }
@@ -9652,10 +11768,8 @@ abstract class ScopedVisitor extends UnifyingASTVisitor<Object> {
  * * Every element that refers to types should be fully populated.
  * * Every node representing an expression should be resolved to the Type of the expression.
  * </ol>
- *
- * @coverage dart.engine.resolver
  */
-class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
+class StaticTypeAnalyzer extends SimpleAstVisitor<Object> {
   /**
    * Create a table mapping HTML tag names to the names of the classes (in 'dart:html') that
    * implement those tags.
@@ -9816,7 +11930,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * The static type of a cast expression <i>e as T</i> is <i>T</i>.</blockquote>
    */
   Object visitAsExpression(AsExpression node) {
-    recordStaticType(node, getType2(node.type));
+    recordStaticType(node, getType(node.type));
     return null;
   }
 
@@ -9869,7 +11983,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       Type2 propagatedType = rightHandSide.propagatedType;
       if (propagatedType != null) {
         if (propagatedType.isMoreSpecificThan(staticType)) {
-          recordPropagatedType2(node, propagatedType);
+          recordPropagatedType(node, propagatedType);
         }
         overrideType = propagatedType;
       }
@@ -9882,7 +11996,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       if (propagatedMethodElement != staticMethodElement) {
         Type2 propagatedType = computeStaticReturnType(propagatedMethodElement);
         if (propagatedType != null && propagatedType.isMoreSpecificThan(staticType)) {
-          recordPropagatedType2(node, propagatedType);
+          recordPropagatedType(node, propagatedType);
         }
       }
     }
@@ -9935,7 +12049,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
     if (propagatedMethodElement != staticMethodElement) {
       Type2 propagatedType = computeStaticReturnType(propagatedMethodElement);
       if (propagatedType != null && propagatedType.isMoreSpecificThan(staticType)) {
-        recordPropagatedType2(node, propagatedType);
+        recordPropagatedType(node, propagatedType);
       }
     }
     return null;
@@ -9957,7 +12071,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    */
   Object visitCascadeExpression(CascadeExpression node) {
     recordStaticType(node, getStaticType(node.target));
-    recordPropagatedType2(node, node.target.propagatedType);
+    recordPropagatedType(node, node.target.propagatedType);
     return null;
   }
 
@@ -9974,9 +12088,11 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
     Type2 staticThenType = getStaticType(node.thenExpression);
     Type2 staticElseType = getStaticType(node.elseExpression);
     if (staticThenType == null) {
+      // TODO(brianwilkerson) Determine whether this can still happen.
       staticThenType = _dynamicType;
     }
     if (staticElseType == null) {
+      // TODO(brianwilkerson) Determine whether this can still happen.
       staticElseType = _dynamicType;
     }
     Type2 staticType = staticThenType.getLeastUpperBound(staticElseType);
@@ -9995,7 +12111,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       }
       Type2 propagatedType = propagatedThenType.getLeastUpperBound(propagatedElseType);
       if (propagatedType != null && propagatedType.isMoreSpecificThan(staticType)) {
-        recordPropagatedType2(node, propagatedType);
+        recordPropagatedType(node, propagatedType);
       }
     }
     return null;
@@ -10013,8 +12129,8 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
   Object visitFunctionDeclaration(FunctionDeclaration node) {
     FunctionExpression function = node.functionExpression;
     ExecutableElementImpl functionElement = node.element as ExecutableElementImpl;
-    functionElement.returnType = computeStaticReturnType2(node);
-    recordPropagatedType(functionElement, function.body);
+    functionElement.returnType = computeStaticReturnTypeOfFunctionDeclaration(node);
+    recordPropagatedTypeOfFunction(functionElement, function.body);
     recordStaticType(function, functionElement.type);
     return null;
   }
@@ -10051,11 +12167,12 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    */
   Object visitFunctionExpression(FunctionExpression node) {
     if (node.parent is FunctionDeclaration) {
+      // The function type will be resolved and set when we visit the parent node.
       return null;
     }
     ExecutableElementImpl functionElement = node.element as ExecutableElementImpl;
-    functionElement.returnType = computeStaticReturnType3(node);
-    recordPropagatedType(functionElement, node.body);
+    functionElement.returnType = computeStaticReturnTypeOfFunctionExpression(node);
+    recordPropagatedTypeOfFunction(functionElement, node.body);
     recordStaticType(node, node.element.type);
     return null;
   }
@@ -10074,21 +12191,25 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    */
   Object visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
     ExecutableElement staticMethodElement = node.staticElement;
+    // Record static return type of the static element.
     Type2 staticStaticType = computeStaticReturnType(staticMethodElement);
     recordStaticType(node, staticStaticType);
+    // Record propagated return type of the static element.
     Type2 staticPropagatedType = computePropagatedReturnType(staticMethodElement);
     if (staticPropagatedType != null && (staticStaticType == null || staticPropagatedType.isMoreSpecificThan(staticStaticType))) {
-      recordPropagatedType2(node, staticPropagatedType);
+      recordPropagatedType(node, staticPropagatedType);
     }
     ExecutableElement propagatedMethodElement = node.propagatedElement;
     if (propagatedMethodElement != staticMethodElement) {
+      // Record static return type of the propagated element.
       Type2 propagatedStaticType = computeStaticReturnType(propagatedMethodElement);
       if (propagatedStaticType != null && (staticStaticType == null || propagatedStaticType.isMoreSpecificThan(staticStaticType)) && (staticPropagatedType == null || propagatedStaticType.isMoreSpecificThan(staticPropagatedType))) {
-        recordPropagatedType2(node, propagatedStaticType);
+        recordPropagatedType(node, propagatedStaticType);
       }
+      // Record propagated return type of the propagated element.
       Type2 propagatedPropagatedType = computePropagatedReturnType(propagatedMethodElement);
       if (propagatedPropagatedType != null && (staticStaticType == null || propagatedPropagatedType.isMoreSpecificThan(staticStaticType)) && (staticPropagatedType == null || propagatedPropagatedType.isMoreSpecificThan(staticPropagatedType)) && (propagatedStaticType == null || propagatedPropagatedType.isMoreSpecificThan(propagatedStaticType))) {
-        recordPropagatedType2(node, propagatedPropagatedType);
+        recordPropagatedType(node, propagatedPropagatedType);
       }
     }
     return null;
@@ -10108,7 +12229,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       if (propagatedMethodElement != staticMethodElement) {
         Type2 propagatedType = computeArgumentType(propagatedMethodElement);
         if (propagatedType != null && propagatedType.isMoreSpecificThan(staticType)) {
-          recordPropagatedType2(node, propagatedType);
+          recordPropagatedType(node, propagatedType);
         }
       }
     } else {
@@ -10119,7 +12240,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       if (propagatedMethodElement != staticMethodElement) {
         Type2 propagatedType = computeStaticReturnType(propagatedMethodElement);
         if (propagatedType != null && propagatedType.isMoreSpecificThan(staticType)) {
-          recordPropagatedType2(node, propagatedType);
+          recordPropagatedType(node, propagatedType);
         }
       }
     }
@@ -10143,14 +12264,14 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       if (isHtmlLibrary(library)) {
         String constructorName = element.name;
         if ("tag" == constructorName) {
-          Type2 returnType = getFirstArgumentAsType2(library, node.argumentList, _HTML_ELEMENT_TO_CLASS_MAP);
+          Type2 returnType = getFirstArgumentAsTypeWithMap(library, node.argumentList, _HTML_ELEMENT_TO_CLASS_MAP);
           if (returnType != null) {
-            recordPropagatedType2(node, returnType);
+            recordPropagatedType(node, returnType);
           }
         } else {
           Type2 returnType = getElementNameAsType(library, constructorName, _HTML_ELEMENT_TO_CLASS_MAP);
           if (returnType != null) {
-            recordPropagatedType2(node, returnType);
+            recordPropagatedType(node, returnType);
           }
         }
       }
@@ -10193,7 +12314,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       NodeList<TypeName> arguments = typeArguments.arguments;
       if (arguments != null && arguments.length == 1) {
         TypeName argumentTypeName = arguments[0];
-        Type2 argumentType = getType2(argumentTypeName);
+        Type2 argumentType = getType(argumentTypeName);
         if (argumentType != null) {
           staticType = argumentType;
         }
@@ -10216,7 +12337,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
         }
       }
       if (propagatedType.isMoreSpecificThan(staticType)) {
-        recordPropagatedType2(node, _typeProvider.listType.substitute4(<Type2> [propagatedType]));
+        recordPropagatedType(node, _typeProvider.listType.substitute4(<Type2> [propagatedType]));
       }
     }
     return null;
@@ -10242,12 +12363,12 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       NodeList<TypeName> arguments = typeArguments.arguments;
       if (arguments != null && arguments.length == 2) {
         TypeName entryKeyTypeName = arguments[0];
-        Type2 entryKeyType = getType2(entryKeyTypeName);
+        Type2 entryKeyType = getType(entryKeyTypeName);
         if (entryKeyType != null) {
           staticKeyType = entryKeyType;
         }
         TypeName entryValueTypeName = arguments[1];
-        Type2 entryValueType = getType2(entryValueTypeName);
+        Type2 entryValueType = getType(entryValueTypeName);
         if (entryValueType != null) {
           staticValueType = entryValueType;
         }
@@ -10290,7 +12411,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
         if (!betterValue) {
           propagatedValueType = staticValueType;
         }
-        recordPropagatedType2(node, _typeProvider.mapType.substitute4(<Type2> [propagatedKeyType, propagatedValueType]));
+        recordPropagatedType(node, _typeProvider.mapType.substitute4(<Type2> [propagatedKeyType, propagatedValueType]));
       }
     }
     return null;
@@ -10335,33 +12456,41 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
   Object visitMethodInvocation(MethodInvocation node) {
     SimpleIdentifier methodNameNode = node.methodName;
     Element staticMethodElement = methodNameNode.staticElement;
+    // Record types of the local variable invoked as a function.
     if (staticMethodElement is LocalVariableElement) {
-      LocalVariableElement variable = staticMethodElement as LocalVariableElement;
+      LocalVariableElement variable = staticMethodElement;
       Type2 staticType = variable.type;
       recordStaticType(methodNameNode, staticType);
       Type2 propagatedType = _overrideManager.getType(variable);
       if (propagatedType != null && propagatedType.isMoreSpecificThan(staticType)) {
-        recordPropagatedType2(methodNameNode, propagatedType);
+        recordPropagatedType(methodNameNode, propagatedType);
       }
     }
+    // Record static return type of the static element.
     Type2 staticStaticType = computeStaticReturnType(staticMethodElement);
     recordStaticType(node, staticStaticType);
+    // Record propagated return type of the static element.
     Type2 staticPropagatedType = computePropagatedReturnType(staticMethodElement);
     if (staticPropagatedType != null && (staticStaticType == null || staticPropagatedType.isMoreSpecificThan(staticStaticType))) {
-      recordPropagatedType2(node, staticPropagatedType);
+      recordPropagatedType(node, staticPropagatedType);
     }
     String methodName = methodNameNode.name;
+    // Future.then(closure) return type is:
+    // 1) the returned Future type, if the closure returns a Future;
+    // 2) Future<valueType>, if the closure returns a value.
     if (methodName == "then") {
       Expression target = node.realTarget;
       Type2 targetType = target == null ? null : target.bestType;
       if (isAsyncFutureType(targetType)) {
         NodeList<Expression> arguments = node.argumentList.arguments;
         if (arguments.length == 1) {
+          // TODO(brianwilkerson) Handle the case where both arguments are provided.
           Expression closureArg = arguments[0];
           if (closureArg is FunctionExpression) {
-            FunctionExpression closureExpr = closureArg as FunctionExpression;
+            FunctionExpression closureExpr = closureArg;
             Type2 returnType = computePropagatedReturnType(closureExpr.element);
             if (returnType != null) {
+              // prepare the type of the returned Future
               InterfaceTypeImpl newFutureType;
               if (isAsyncFutureType(returnType)) {
                 newFutureType = returnType as InterfaceTypeImpl;
@@ -10370,7 +12499,8 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
                 newFutureType = new InterfaceTypeImpl.con1(futureType.element);
                 newFutureType.typeArguments = <Type2> [returnType];
               }
-              recordPropagatedType2(node, newFutureType);
+              // set the 'then' invocation type
+              recordPropagatedType(node, newFutureType);
               return null;
             }
           }
@@ -10386,7 +12516,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
           if (isHtmlLibrary(library)) {
             Type2 returnType = getFirstArgumentAsType(library, node.argumentList);
             if (returnType != null) {
-              recordPropagatedType2(node, returnType);
+              recordPropagatedType(node, returnType);
             }
           }
         }
@@ -10400,7 +12530,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
           if (isHtmlLibrary(library)) {
             Type2 returnType = getFirstArgumentAsQuery(library, node.argumentList);
             if (returnType != null) {
-              recordPropagatedType2(node, returnType);
+              recordPropagatedType(node, returnType);
             }
           }
         }
@@ -10411,7 +12541,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
           if (isHtmlLibrary(library)) {
             Type2 returnType = getFirstArgumentAsQuery(library, node.argumentList);
             if (returnType != null) {
-              recordPropagatedType2(node, returnType);
+              recordPropagatedType(node, returnType);
             }
           }
         }
@@ -10424,25 +12554,27 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
         if (isHtmlLibrary(library)) {
           Type2 returnType = getFirstArgumentAsQuery(library, node.argumentList);
           if (returnType != null) {
-            recordPropagatedType2(node, returnType);
+            recordPropagatedType(node, returnType);
           }
         }
       }
     } else if (methodName == "JS") {
       Type2 returnType = getFirstArgumentAsType(_typeProvider.objectType.element.library, node.argumentList);
       if (returnType != null) {
-        recordPropagatedType2(node, returnType);
+        recordPropagatedType(node, returnType);
       }
     } else {
       Element propagatedElement = methodNameNode.propagatedElement;
       if (propagatedElement != staticMethodElement) {
+        // Record static return type of the propagated element.
         Type2 propagatedStaticType = computeStaticReturnType(propagatedElement);
         if (propagatedStaticType != null && (staticStaticType == null || propagatedStaticType.isMoreSpecificThan(staticStaticType)) && (staticPropagatedType == null || propagatedStaticType.isMoreSpecificThan(staticPropagatedType))) {
-          recordPropagatedType2(node, propagatedStaticType);
+          recordPropagatedType(node, propagatedStaticType);
         }
+        // Record propagated return type of the propagated element.
         Type2 propagatedPropagatedType = computePropagatedReturnType(propagatedElement);
         if (propagatedPropagatedType != null && (staticStaticType == null || propagatedPropagatedType.isMoreSpecificThan(staticStaticType)) && (staticPropagatedType == null || propagatedPropagatedType.isMoreSpecificThan(staticPropagatedType)) && (propagatedStaticType == null || propagatedPropagatedType.isMoreSpecificThan(propagatedStaticType))) {
-          recordPropagatedType2(node, propagatedPropagatedType);
+          recordPropagatedType(node, propagatedPropagatedType);
         }
       }
     }
@@ -10452,7 +12584,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
   Object visitNamedExpression(NamedExpression node) {
     Expression expression = node.expression;
     recordStaticType(node, getStaticType(expression));
-    recordPropagatedType2(node, expression.propagatedType);
+    recordPropagatedType(node, expression.propagatedType);
     return null;
   }
 
@@ -10468,7 +12600,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
   Object visitParenthesizedExpression(ParenthesizedExpression node) {
     Expression expression = node.expression;
     recordStaticType(node, getStaticType(expression));
-    recordPropagatedType2(node, expression.propagatedType);
+    recordPropagatedType(node, expression.propagatedType);
     return null;
   }
 
@@ -10509,7 +12641,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       }
     }
     recordStaticType(node, staticType);
-    recordPropagatedType2(node, operand.propagatedType);
+    recordPropagatedType(node, operand.propagatedType);
     return null;
   }
 
@@ -10522,26 +12654,26 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
     Type2 staticType = _dynamicType;
     if (staticElement is ClassElement) {
       if (isNotTypeLiteral(node)) {
-        staticType = (staticElement as ClassElement).type;
+        staticType = staticElement.type;
       } else {
         staticType = _typeProvider.typeType;
       }
     } else if (staticElement is FunctionTypeAliasElement) {
       if (isNotTypeLiteral(node)) {
-        staticType = (staticElement as FunctionTypeAliasElement).type;
+        staticType = staticElement.type;
       } else {
         staticType = _typeProvider.typeType;
       }
     } else if (staticElement is MethodElement) {
-      staticType = (staticElement as MethodElement).type;
+      staticType = staticElement.type;
     } else if (staticElement is PropertyAccessorElement) {
-      staticType = getType(staticElement as PropertyAccessorElement, node.prefix.staticType);
+      staticType = getTypeOfProperty(staticElement, node.prefix.staticType);
     } else if (staticElement is ExecutableElement) {
-      staticType = (staticElement as ExecutableElement).type;
+      staticType = staticElement.type;
     } else if (staticElement is TypeParameterElement) {
-      staticType = (staticElement as TypeParameterElement).type;
+      staticType = staticElement.type;
     } else if (staticElement is VariableElement) {
-      staticType = (staticElement as VariableElement).type;
+      staticType = staticElement.type;
     }
     recordStaticType(prefixedIdentifier, staticType);
     recordStaticType(node, staticType);
@@ -10549,30 +12681,30 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
     Type2 propagatedType = null;
     if (propagatedElement is ClassElement) {
       if (isNotTypeLiteral(node)) {
-        propagatedType = (propagatedElement as ClassElement).type;
+        propagatedType = propagatedElement.type;
       } else {
         propagatedType = _typeProvider.typeType;
       }
     } else if (propagatedElement is FunctionTypeAliasElement) {
-      propagatedType = (propagatedElement as FunctionTypeAliasElement).type;
+      propagatedType = propagatedElement.type;
     } else if (propagatedElement is MethodElement) {
-      propagatedType = (propagatedElement as MethodElement).type;
+      propagatedType = propagatedElement.type;
     } else if (propagatedElement is PropertyAccessorElement) {
-      propagatedType = getType(propagatedElement as PropertyAccessorElement, node.prefix.staticType);
+      propagatedType = getTypeOfProperty(propagatedElement, node.prefix.staticType);
     } else if (propagatedElement is ExecutableElement) {
-      propagatedType = (propagatedElement as ExecutableElement).type;
+      propagatedType = propagatedElement.type;
     } else if (propagatedElement is TypeParameterElement) {
-      propagatedType = (propagatedElement as TypeParameterElement).type;
+      propagatedType = propagatedElement.type;
     } else if (propagatedElement is VariableElement) {
-      propagatedType = (propagatedElement as VariableElement).type;
+      propagatedType = propagatedElement.type;
     }
     Type2 overriddenType = _overrideManager.getType(propagatedElement);
     if (propagatedType == null || (overriddenType != null && overriddenType.isMoreSpecificThan(propagatedType))) {
       propagatedType = overriddenType;
     }
     if (propagatedType != null && propagatedType.isMoreSpecificThan(staticType)) {
-      recordPropagatedType2(prefixedIdentifier, propagatedType);
-      recordPropagatedType2(node, propagatedType);
+      recordPropagatedType(prefixedIdentifier, propagatedType);
+      recordPropagatedType(node, propagatedType);
     }
     return null;
   }
@@ -10587,6 +12719,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
     if (identical(operator, sc.TokenType.BANG)) {
       recordStaticType(node, _typeProvider.boolType);
     } else {
+      // The other cases are equivalent to invoking a method.
       ExecutableElement staticMethodElement = node.staticElement;
       Type2 staticType = computeStaticReturnType(staticMethodElement);
       if (identical(operator, sc.TokenType.MINUS_MINUS) || identical(operator, sc.TokenType.PLUS_PLUS)) {
@@ -10600,7 +12733,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       if (propagatedMethodElement != staticMethodElement) {
         Type2 propagatedType = computeStaticReturnType(propagatedMethodElement);
         if (propagatedType != null && propagatedType.isMoreSpecificThan(staticType)) {
-          recordPropagatedType2(node, propagatedType);
+          recordPropagatedType(node, propagatedType);
         }
       }
     }
@@ -10611,7 +12744,6 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * The Dart Language Specification, 12.13: <blockquote> Property extraction allows for a member of
    * an object to be concisely extracted from the object. If <i>o</i> is an object, and if <i>m</i>
    * is the name of a method member of <i>o</i>, then
-   *
    * * <i>o.m</i> is defined to be equivalent to: <i>(r<sub>1</sub>, &hellip;, r<sub>n</sub>,
    * {p<sub>1</sub> : d<sub>1</sub>, &hellip;, p<sub>k</sub> : d<sub>k</sub>}){return
    * o.m(r<sub>1</sub>, &hellip;, r<sub>n</sub>, p<sub>1</sub>: p<sub>1</sub>, &hellip;,
@@ -10624,7 +12756,6 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * <i>r<sub>1</sub>, &hellip;, r<sub>n</sub></i>, and optional positional parameters
    * <i>p<sub>1</sub> &hellip; p<sub>k</sub></i> with defaults <i>d<sub>1</sub>, &hellip;,
    * d<sub>k</sub></i>.
-   *
    * Otherwise, if <i>m</i> is the name of a getter member of <i>o</i> (declared implicitly or
    * explicitly) then <i>o.m</i> evaluates to the result of invoking the getter. </blockquote>
    *
@@ -10652,19 +12783,29 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    */
   Object visitPropertyAccess(PropertyAccess node) {
     SimpleIdentifier propertyName = node.propertyName;
-    Element element = propertyName.staticElement;
+    Element staticElement = propertyName.staticElement;
     Type2 staticType = _dynamicType;
-    if (element is MethodElement) {
-      staticType = (element as MethodElement).type;
-    } else if (element is PropertyAccessorElement) {
-      staticType = getType(element as PropertyAccessorElement, node.target != null ? getStaticType(node.target) : null);
+    if (staticElement is MethodElement) {
+      staticType = staticElement.type;
+    } else if (staticElement is PropertyAccessorElement) {
+      Expression realTarget = node.realTarget;
+      staticType = getTypeOfProperty(staticElement, realTarget != null ? getStaticType(realTarget) : null);
     } else {
     }
     recordStaticType(propertyName, staticType);
     recordStaticType(node, staticType);
-    Type2 propagatedType = _overrideManager.getType(element);
+    Element propagatedElement = propertyName.propagatedElement;
+    Type2 propagatedType = _overrideManager.getType(propagatedElement);
+    if (propagatedElement is MethodElement) {
+      propagatedType = propagatedElement.type;
+    } else if (propagatedElement is PropertyAccessorElement) {
+      Expression realTarget = node.realTarget;
+      propagatedType = getTypeOfProperty(propagatedElement, realTarget != null ? realTarget.bestType : null);
+    } else {
+    }
     if (propagatedType != null && propagatedType.isMoreSpecificThan(staticType)) {
-      recordPropagatedType2(node, propagatedType);
+      recordPropagatedType(propertyName, propagatedType);
+      recordPropagatedType(node, propagatedType);
     }
     return null;
   }
@@ -10685,7 +12826,6 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * Let <i>d</i> be the innermost declaration in the enclosing lexical scope whose name is
    * <i>id</i>. If no such declaration exists in the lexical scope, let <i>d</i> be the declaration
    * of the inherited member named <i>id</i> if it exists.
-   *
    * * If <i>d</i> is a class or type alias <i>T</i>, the value of <i>e</i> is the unique instance
    * of class `Type` reifying <i>T</i>.
    * * If <i>d</i> is a type parameter <i>T</i>, then the value of <i>e</i> is the value of the
@@ -10693,7 +12833,6 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * that created the current binding of this. We are assured that this is well defined, because if
    * we were in a static member the reference to <i>T</i> would be a compile-time error.
    * * If <i>d</i> is a library variable then:
-   *
    * * If <i>d</i> is of one of the forms <i>var v = e<sub>i</sub>;</i>, <i>T v =
    * e<sub>i</sub>;</i>, <i>final v = e<sub>i</sub>;</i>, <i>final T v = e<sub>i</sub>;</i>, and no
    * value has yet been stored into <i>v</i> then the initializer expression <i>e<sub>i</sub></i> is
@@ -10704,7 +12843,6 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * * If <i>d</i> is of one of the forms <i>const v = e;</i> or <i>const T v = e;</i> the result
    * of the getter is the value of the compile time constant <i>e</i>. Otherwise
    * * <i>e</i> evaluates to the current binding of <i>id</i>.
-   *
    * * If <i>d</i> is a local variable or formal parameter then <i>e</i> evaluates to the current
    * binding of <i>id</i>.
    * * If <i>d</i> is a static method, top level function or local function then <i>e</i>
@@ -10717,7 +12855,6 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * method, getter, or setter) or variable initializer, evaluation of e causes a NoSuchMethodError
    * to be thrown.
    * * Otherwise <i>e</i> is equivalent to the property extraction <i>this.id</i>.
-   *
    * </blockquote>
    */
   Object visitSimpleIdentifier(SimpleIdentifier node) {
@@ -10725,26 +12862,27 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
     Type2 staticType = _dynamicType;
     if (element is ClassElement) {
       if (isNotTypeLiteral(node)) {
-        staticType = (element as ClassElement).type;
+        staticType = element.type;
       } else {
         staticType = _typeProvider.typeType;
       }
     } else if (element is FunctionTypeAliasElement) {
       if (isNotTypeLiteral(node)) {
-        staticType = (element as FunctionTypeAliasElement).type;
+        staticType = element.type;
       } else {
         staticType = _typeProvider.typeType;
       }
     } else if (element is MethodElement) {
-      staticType = (element as MethodElement).type;
+      staticType = element.type;
     } else if (element is PropertyAccessorElement) {
-      staticType = getType(element as PropertyAccessorElement, null);
+      staticType = getTypeOfProperty(element, null);
     } else if (element is ExecutableElement) {
-      staticType = (element as ExecutableElement).type;
+      staticType = element.type;
     } else if (element is TypeParameterElement) {
-      staticType = (element as TypeParameterElement).type;
+      //      if (isTypeName(node)) {
+      staticType = element.type;
     } else if (element is VariableElement) {
-      VariableElement variable = element as VariableElement;
+      VariableElement variable = element;
       staticType = _promoteManager.getStaticType(variable);
     } else if (element is PrefixElement) {
       return null;
@@ -10752,9 +12890,11 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       staticType = _dynamicType;
     }
     recordStaticType(node, staticType);
+    // TODO(brianwilkerson) I think we want to repeat the logic above using the propagated element
+    // to get another candidate for the propagated type.
     Type2 propagatedType = _overrideManager.getType(element);
     if (propagatedType != null && propagatedType.isMoreSpecificThan(staticType)) {
-      recordPropagatedType2(node, propagatedType);
+      recordPropagatedType(node, propagatedType);
     }
     return null;
   }
@@ -10779,6 +12919,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
 
   Object visitSuperExpression(SuperExpression node) {
     if (_thisType == null) {
+      // TODO(brianwilkerson) Report this error if it hasn't already been reported
       recordStaticType(node, _dynamicType);
     } else {
       recordStaticType(node, _thisType);
@@ -10797,6 +12938,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    */
   Object visitThisExpression(ThisExpression node) {
     if (_thisType == null) {
+      // TODO(brianwilkerson) Report this error if it hasn't already been reported
       recordStaticType(node, _dynamicType);
     } else {
       recordStaticType(node, _thisType);
@@ -10818,7 +12960,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
     if (initializer != null) {
       Type2 rightType = initializer.bestType;
       SimpleIdentifier name = node.name;
-      recordPropagatedType2(name, rightType);
+      recordPropagatedType(name, rightType);
       VariableElement element = name.staticElement as VariableElement;
       if (element != null) {
         _resolver.override2(element, rightType);
@@ -10864,14 +13006,14 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * @param body the boy of the function whose propagated return type is to be computed
    * @return the propagated return type that was computed
    */
-  Type2 computePropagatedReturnType2(FunctionBody body) {
+  Type2 computePropagatedReturnTypeOfFunction(FunctionBody body) {
     if (body is ExpressionFunctionBody) {
-      ExpressionFunctionBody expressionBody = body as ExpressionFunctionBody;
+      ExpressionFunctionBody expressionBody = body;
       return expressionBody.expression.bestType;
     }
     if (body is BlockFunctionBody) {
       List<Type2> result = [null];
-      body.accept(new GeneralizingASTVisitor_10(result));
+      body.accept(new GeneralizingAstVisitor_StaticTypeAnalyzer_computePropagatedReturnTypeOfFunction(result));
       return result[0];
     }
     return null;
@@ -10885,18 +13027,22 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    */
   Type2 computeStaticReturnType(Element element) {
     if (element is PropertyAccessorElement) {
-      FunctionType propertyType = (element as PropertyAccessorElement).type;
+      //
+      // This is a function invocation expression disguised as something else. We are invoking a
+      // getter and then invoking the returned function.
+      //
+      FunctionType propertyType = element.type;
       if (propertyType != null) {
         Type2 returnType = propertyType.returnType;
         if (returnType.isDartCoreFunction) {
           return _dynamicType;
         } else if (returnType is InterfaceType) {
-          MethodElement callMethod = (returnType as InterfaceType).lookUpMethod(ElementResolver.CALL_METHOD_NAME, _resolver.definingLibrary);
+          MethodElement callMethod = returnType.lookUpMethod(ElementResolver.CALL_METHOD_NAME, _resolver.definingLibrary);
           if (callMethod != null) {
             return callMethod.type.returnType;
           }
         } else if (returnType is FunctionType) {
-          Type2 innerReturnType = (returnType as FunctionType).returnType;
+          Type2 innerReturnType = returnType.returnType;
           if (innerReturnType != null) {
             return innerReturnType;
           }
@@ -10906,15 +13052,16 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
         }
       }
     } else if (element is ExecutableElement) {
-      FunctionType type = (element as ExecutableElement).type;
+      FunctionType type = element.type;
       if (type != null) {
+        // TODO(brianwilkerson) Figure out the conditions under which the type is null.
         return type.returnType;
       }
     } else if (element is VariableElement) {
-      VariableElement variable = element as VariableElement;
+      VariableElement variable = element;
       Type2 variableType = _promoteManager.getStaticType(variable);
       if (variableType is FunctionType) {
-        return (variableType as FunctionType).returnType;
+        return variableType.returnType;
       }
     }
     return _dynamicType;
@@ -10928,7 +13075,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * @param node the function expression whose static return type is to be computed
    * @return the static return type that was computed
    */
-  Type2 computeStaticReturnType2(FunctionDeclaration node) {
+  Type2 computeStaticReturnTypeOfFunctionDeclaration(FunctionDeclaration node) {
     TypeName returnType = node.returnType;
     if (returnType == null) {
       return _dynamicType;
@@ -10944,10 +13091,10 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * @param node the function expression whose return type is to be computed
    * @return the return type that was computed
    */
-  Type2 computeStaticReturnType3(FunctionExpression node) {
+  Type2 computeStaticReturnTypeOfFunctionExpression(FunctionExpression node) {
     FunctionBody body = node.body;
     if (body is ExpressionFunctionBody) {
-      return getStaticType((body as ExpressionFunctionBody).expression);
+      return getStaticType(body.expression);
     }
     return _dynamicType;
   }
@@ -10986,14 +13133,21 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
   Type2 getFirstArgumentAsQuery(LibraryElement library, ArgumentList argumentList) {
     String argumentValue = getFirstArgumentAsString(argumentList);
     if (argumentValue != null) {
-      if (argumentValue.contains(" ")) {
+      //
+      // If the query has spaces, full parsing is required because it might be:
+      //   E[text='warning text']
+      //
+      if (StringUtilities.indexOf1(argumentValue, 0, 0x20) >= 0) {
         return null;
       }
+      //
+      // Otherwise, try to extract the tag based on http://www.w3.org/TR/CSS2/selector.html.
+      //
       String tag = argumentValue;
-      tag = StringUtilities.substringBefore(tag, ":");
-      tag = StringUtilities.substringBefore(tag, "[");
-      tag = StringUtilities.substringBefore(tag, ".");
-      tag = StringUtilities.substringBefore(tag, "#");
+      tag = StringUtilities.substringBeforeChar(tag, 0x3A);
+      tag = StringUtilities.substringBeforeChar(tag, 0x5B);
+      tag = StringUtilities.substringBeforeChar(tag, 0x2E);
+      tag = StringUtilities.substringBeforeChar(tag, 0x23);
       tag = _HTML_ELEMENT_TO_CLASS_MAP[tag.toLowerCase()];
       ClassElement returnType = library.getType(tag);
       if (returnType != null) {
@@ -11015,7 +13169,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
     if (arguments.length > 0) {
       Expression argument = arguments[0];
       if (argument is SimpleStringLiteral) {
-        return (argument as SimpleStringLiteral).value;
+        return argument.value;
       }
     }
     return null;
@@ -11030,7 +13184,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * @param argumentList the list of arguments from which a type is to be extracted
    * @return the type specified by the first argument in the argument list
    */
-  Type2 getFirstArgumentAsType(LibraryElement library, ArgumentList argumentList) => getFirstArgumentAsType2(library, argumentList, null);
+  Type2 getFirstArgumentAsType(LibraryElement library, ArgumentList argumentList) => getFirstArgumentAsTypeWithMap(library, argumentList, null);
 
   /**
    * If the given argument list contains at least one argument, and if the argument is a simple
@@ -11042,7 +13196,7 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * @param nameMap an optional map used to map the element name to a type name
    * @return the type specified by the first argument in the argument list
    */
-  Type2 getFirstArgumentAsType2(LibraryElement library, ArgumentList argumentList, Map<String, String> nameMap) => getElementNameAsType(library, getFirstArgumentAsString(argumentList), nameMap);
+  Type2 getFirstArgumentAsTypeWithMap(LibraryElement library, ArgumentList argumentList, Map<String, String> nameMap) => getElementNameAsType(library, getFirstArgumentAsString(argumentList), nameMap);
 
   /**
    * Return the static type of the given expression.
@@ -11053,6 +13207,22 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
   Type2 getStaticType(Expression expression) {
     Type2 type = expression.staticType;
     if (type == null) {
+      // TODO(brianwilkerson) Determine the conditions for which the static type is null.
+      return _dynamicType;
+    }
+    return type;
+  }
+
+  /**
+   * Return the type represented by the given type name.
+   *
+   * @param typeName the type name representing the type to be returned
+   * @return the type represented by the type name
+   */
+  Type2 getType(TypeName typeName) {
+    Type2 type = typeName.type;
+    if (type == null) {
+      //TODO(brianwilkerson) Determine the conditions for which the type is null.
       return _dynamicType;
     }
     return type;
@@ -11068,9 +13238,12 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    *          specific type information
    * @return the type that should be recorded for a node that resolved to the given accessor
    */
-  Type2 getType(PropertyAccessorElement accessor, Type2 context) {
+  Type2 getTypeOfProperty(PropertyAccessorElement accessor, Type2 context) {
     FunctionType functionType = accessor.type;
     if (functionType == null) {
+      // TODO(brianwilkerson) Report this internal error. This happens when we are analyzing a
+      // reference to a property before we have analyzed the declaration of the property or when
+      // the property does not have a defined type.
       return _dynamicType;
     }
     if (accessor.isSetter) {
@@ -11089,7 +13262,10 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
     }
     Type2 returnType = functionType.returnType;
     if (returnType is TypeParameterType && context is InterfaceType) {
-      InterfaceType interfaceTypeContext = context as InterfaceType;
+      // if the return type is a TypeParameter, we try to use the context [that the function is being
+      // called on] to get a more accurate returnType type
+      InterfaceType interfaceTypeContext = context;
+      //      Type[] argumentTypes = interfaceTypeContext.getTypeArguments();
       List<TypeParameterElement> typeParameterElements = interfaceTypeContext.element != null ? interfaceTypeContext.element.typeParameters : null;
       if (typeParameterElements != null) {
         for (int i = 0; i < typeParameterElements.length; i++) {
@@ -11101,20 +13277,6 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
       }
     }
     return returnType;
-  }
-
-  /**
-   * Return the type represented by the given type name.
-   *
-   * @param typeName the type name representing the type to be returned
-   * @return the type represented by the type name
-   */
-  Type2 getType2(TypeName typeName) {
-    Type2 type = typeName.type;
-    if (type == null) {
-      return _dynamicType;
-    }
-    return type;
   }
 
   /**
@@ -11146,8 +13308,20 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * @return `true` if the given node is not a type literal
    */
   bool isNotTypeLiteral(Identifier node) {
-    ASTNode parent = node.parent;
-    return parent is TypeName || (parent is PrefixedIdentifier && (parent.parent is TypeName || identical((parent as PrefixedIdentifier).prefix, node))) || (parent is PropertyAccess && identical((parent as PropertyAccess).target, node)) || (parent is MethodInvocation && identical(node, (parent as MethodInvocation).target));
+    AstNode parent = node.parent;
+    return parent is TypeName || (parent is PrefixedIdentifier && (parent.parent is TypeName || identical(parent.prefix, node))) || (parent is PropertyAccess && identical(parent.target, node)) || (parent is MethodInvocation && identical(node, parent.target));
+  }
+
+  /**
+   * Record that the propagated type of the given node is the given type.
+   *
+   * @param expression the node whose type is to be recorded
+   * @param type the propagated type of the node
+   */
+  void recordPropagatedType(Expression expression, Type2 type) {
+    if (type != null && !type.isDynamic) {
+      expression.propagatedType = type;
+    }
   }
 
   /**
@@ -11159,31 +13333,22 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    * @return the propagated return type that was computed, may be `null` if it is not more
    *         specific than the static return type.
    */
-  void recordPropagatedType(ExecutableElement functionElement, FunctionBody body) {
-    Type2 propagatedReturnType = computePropagatedReturnType2(body);
+  void recordPropagatedTypeOfFunction(ExecutableElement functionElement, FunctionBody body) {
+    Type2 propagatedReturnType = computePropagatedReturnTypeOfFunction(body);
     if (propagatedReturnType == null) {
       return;
     }
+    // Ignore 'bottom' type.
     if (propagatedReturnType.isBottom) {
       return;
     }
+    // Record only if we inferred more specific type.
     Type2 staticReturnType = functionElement.returnType;
     if (!propagatedReturnType.isMoreSpecificThan(staticReturnType)) {
       return;
     }
+    // OK, do record.
     _propagatedReturnTypes[functionElement] = propagatedReturnType;
-  }
-
-  /**
-   * Record that the propagated type of the given node is the given type.
-   *
-   * @param expression the node whose type is to be recorded
-   * @param type the propagated type of the node
-   */
-  void recordPropagatedType2(Expression expression, Type2 type) {
-    if (type != null && !type.isDynamic) {
-      expression.propagatedType = type;
-    }
   }
 
   /**
@@ -11209,23 +13374,27 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
    */
   Type2 refineBinaryExpressionType(BinaryExpression node, Type2 staticType) {
     sc.TokenType operator = node.operator.type;
+    // bool
     if (identical(operator, sc.TokenType.AMPERSAND_AMPERSAND) || identical(operator, sc.TokenType.BAR_BAR) || identical(operator, sc.TokenType.EQ_EQ) || identical(operator, sc.TokenType.BANG_EQ)) {
       return _typeProvider.boolType;
     }
     Type2 intType = _typeProvider.intType;
     if (getStaticType(node.leftOperand) == intType) {
+      // int op double
       if (identical(operator, sc.TokenType.MINUS) || identical(operator, sc.TokenType.PERCENT) || identical(operator, sc.TokenType.PLUS) || identical(operator, sc.TokenType.STAR)) {
         Type2 doubleType = _typeProvider.doubleType;
         if (getStaticType(node.rightOperand) == doubleType) {
           return doubleType;
         }
       }
+      // int op int
       if (identical(operator, sc.TokenType.MINUS) || identical(operator, sc.TokenType.PERCENT) || identical(operator, sc.TokenType.PLUS) || identical(operator, sc.TokenType.STAR) || identical(operator, sc.TokenType.TILDE_SLASH)) {
         if (getStaticType(node.rightOperand) == intType) {
           staticType = intType;
         }
       }
     }
+    // default
     return staticType;
   }
 
@@ -11234,14 +13403,15 @@ class StaticTypeAnalyzer extends SimpleASTVisitor<Object> {
   set thisType_J2DAccessor(__v) => _thisType = __v;
 }
 
-class GeneralizingASTVisitor_10 extends GeneralizingASTVisitor<Object> {
+class GeneralizingAstVisitor_StaticTypeAnalyzer_computePropagatedReturnTypeOfFunction extends GeneralizingAstVisitor<Object> {
   List<Type2> result;
 
-  GeneralizingASTVisitor_10(this.result) : super();
+  GeneralizingAstVisitor_StaticTypeAnalyzer_computePropagatedReturnTypeOfFunction(this.result) : super();
 
   Object visitExpression(Expression node) => null;
 
   Object visitReturnStatement(ReturnStatement node) {
+    // prepare this 'return' type
     Type2 type;
     Expression expression = node.expression;
     if (expression != null) {
@@ -11249,6 +13419,7 @@ class GeneralizingASTVisitor_10 extends GeneralizingASTVisitor<Object> {
     } else {
       type = BottomTypeImpl.instance;
     }
+    // merge types
     if (result[0] == null) {
       result[0] = type;
     } else {
@@ -11281,9 +13452,11 @@ class SubtypeManager {
    * @param classElement the class to recursively return the set of subtypes of
    */
   Set<ClassElement> computeAllSubtypes(ClassElement classElement) {
+    // Ensure that we have generated the subtype map for the library
     computeSubtypesInLibrary(classElement.library);
+    // use the subtypeMap to compute the set of all subtypes and subtype's subtypes
     Set<ClassElement> allSubtypes = new Set<ClassElement>();
-    computeAllSubtypes2(classElement, new Set<ClassElement>(), allSubtypes);
+    safelyComputeAllSubtypes(classElement, new Set<ClassElement>(), allSubtypes);
     return allSubtypes;
   }
 
@@ -11295,28 +13468,6 @@ class SubtypeManager {
    */
   void ensureLibraryVisited(LibraryElement libraryElement) {
     computeSubtypesInLibrary(libraryElement);
-  }
-
-  /**
-   * Given some [ClassElement] and a [HashSet<ClassElement>], this method recursively
-   * adds all of the subtypes of the [ClassElement] to the passed array.
-   *
-   * @param classElement the type to compute the set of subtypes of
-   * @param visitedClasses the set of class elements that this method has already recursively seen
-   * @param allSubtypes the computed set of subtypes of the passed class element
-   */
-  void computeAllSubtypes2(ClassElement classElement, Set<ClassElement> visitedClasses, Set<ClassElement> allSubtypes) {
-    if (!visitedClasses.add(classElement)) {
-      return;
-    }
-    Set<ClassElement> subtypes = _subtypeMap[classElement];
-    if (subtypes == null) {
-      return;
-    }
-    for (ClassElement subtype in subtypes) {
-      computeAllSubtypes2(subtype, visitedClasses, allSubtypes);
-    }
-    allSubtypes.addAll(subtypes);
   }
 
   /**
@@ -11404,6 +13555,29 @@ class SubtypeManager {
       _subtypeMap[supertypeElement] = subtypes;
     }
     subtypes.add(subtypeElement);
+  }
+
+  /**
+   * Given some [ClassElement] and a [HashSet<ClassElement>], this method recursively
+   * adds all of the subtypes of the [ClassElement] to the passed array.
+   *
+   * @param classElement the type to compute the set of subtypes of
+   * @param visitedClasses the set of class elements that this method has already recursively seen
+   * @param allSubtypes the computed set of subtypes of the passed class element
+   */
+  void safelyComputeAllSubtypes(ClassElement classElement, Set<ClassElement> visitedClasses, Set<ClassElement> allSubtypes) {
+    if (!visitedClasses.add(classElement)) {
+      // if this class has already been called on this class element
+      return;
+    }
+    Set<ClassElement> subtypes = _subtypeMap[classElement];
+    if (subtypes == null) {
+      return;
+    }
+    for (ClassElement subtype in subtypes) {
+      safelyComputeAllSubtypes(subtype, visitedClasses, allSubtypes);
+    }
+    allSubtypes.addAll(subtypes);
   }
 }
 
@@ -11577,7 +13751,7 @@ class TypeOverrideManager_TypeOverrideScope {
   Type2 getType(Element element) {
     Type2 type = _overridenTypes[element];
     if (type == null && element is PropertyAccessorElement) {
-      type = _overridenTypes[(element as PropertyAccessorElement).variable];
+      type = _overridenTypes[element.variable];
     }
     if (type != null) {
       return type;
@@ -11710,7 +13884,7 @@ class TypePromotionManager_TypePromoteScope {
   Type2 getType(Element element) {
     Type2 type = _promotedTypes[element];
     if (type == null && element is PropertyAccessorElement) {
-      type = _promotedTypes[(element as PropertyAccessorElement).variable];
+      type = _promotedTypes[element.variable];
     }
     if (type != null) {
       return type;
@@ -11734,8 +13908,6 @@ class TypePromotionManager_TypePromoteScope {
 /**
  * The interface `TypeProvider` defines the behavior of objects that provide access to types
  * defined by the language.
- *
- * @coverage dart.engine.resolver
  */
 abstract class TypeProvider {
   /**
@@ -11854,8 +14026,6 @@ abstract class TypeProvider {
 /**
  * Instances of the class `TypeProviderImpl` provide access to types defined by the language
  * by looking for those types in the element model for the core library.
- *
- * @coverage dart.engine.resolver
  */
 class TypeProviderImpl implements TypeProvider {
   /**
@@ -12027,8 +14197,6 @@ class TypeProviderImpl implements TypeProvider {
  * the elements in the element model. This includes the types of superclasses, mixins, interfaces,
  * fields, methods, parameters, and local variables. As a side-effect, this also finishes building
  * the type hierarchy.
- *
- * @coverage dart.engine.resolver
  */
 class TypeResolverVisitor extends ScopedVisitor {
   /**
@@ -12043,15 +14211,15 @@ class TypeResolverVisitor extends ScopedVisitor {
    * @return `true` if given [TypeName] is used as a type annotation.
    */
   static bool isTypeAnnotation(TypeName node) {
-    ASTNode parent = node.parent;
+    AstNode parent = node.parent;
     if (parent is VariableDeclarationList) {
-      return identical((parent as VariableDeclarationList).type, node);
+      return identical(parent.type, node);
     }
     if (parent is FieldFormalParameter) {
-      return identical((parent as FieldFormalParameter).type, node);
+      return identical(parent.type, node);
     }
     if (parent is SimpleFormalParameter) {
-      return identical((parent as SimpleFormalParameter).type, node);
+      return identical(parent.type, node);
     }
     return false;
   }
@@ -12109,17 +14277,19 @@ class TypeResolverVisitor extends ScopedVisitor {
     super.visitCatchClause(node);
     SimpleIdentifier exception = node.exceptionParameter;
     if (exception != null) {
+      // If an 'on' clause is provided the type of the exception parameter is the type in the 'on'
+      // clause. Otherwise, the type of the exception parameter is 'Object'.
       TypeName exceptionTypeName = node.exceptionType;
       Type2 exceptionType;
       if (exceptionTypeName == null) {
         exceptionType = typeProvider.dynamicType;
       } else {
-        exceptionType = getType3(exceptionTypeName);
+        exceptionType = getType(exceptionTypeName);
       }
       recordType(exception, exceptionType);
       Element element = exception.staticElement;
       if (element is VariableElementImpl) {
-        (element as VariableElementImpl).type = exceptionType;
+        element.type = exceptionType;
       } else {
       }
     }
@@ -12137,7 +14307,7 @@ class TypeResolverVisitor extends ScopedVisitor {
     InterfaceType superclassType = null;
     ExtendsClause extendsClause = node.extendsClause;
     if (extendsClause != null) {
-      ErrorCode errorCode = (node.withClause == null ? CompileTimeErrorCode.EXTENDS_NON_CLASS : CompileTimeErrorCode.MIXIN_WITH_NON_CLASS_SUPERCLASS) as ErrorCode;
+      ErrorCode errorCode = (node.withClause == null ? CompileTimeErrorCode.EXTENDS_NON_CLASS : CompileTimeErrorCode.MIXIN_WITH_NON_CLASS_SUPERCLASS);
       superclassType = resolveType(extendsClause.superclass, errorCode, errorCode);
       if (superclassType != typeProvider.objectType) {
         classElement.validMixin = false;
@@ -12167,6 +14337,24 @@ class TypeResolverVisitor extends ScopedVisitor {
     }
     if (classElement != null && superclassType != null) {
       classElement.supertype = superclassType;
+      ClassElement superclassElement = superclassType.element;
+      if (superclassElement != null) {
+        List<ConstructorElement> constructors = superclassElement.constructors;
+        int count = constructors.length;
+        if (count > 0) {
+          List<Type2> parameterTypes = TypeParameterTypeImpl.getTypes(superclassType.typeParameters);
+          List<Type2> argumentTypes = getArgumentTypes(node.superclass.typeArguments, parameterTypes);
+          InterfaceType classType = classElement.type;
+          List<ConstructorElement> implicitConstructors = new List<ConstructorElement>();
+          for (int i = 0; i < count; i++) {
+            ConstructorElement explicitConstructor = constructors[i];
+            if (!explicitConstructor.isFactory) {
+              implicitConstructors.add(createImplicitContructor(classType, explicitConstructor, parameterTypes, argumentTypes));
+            }
+          }
+          classElement.constructors = new List.from(implicitConstructors);
+        }
+      }
     }
     resolve(classElement, node.withClause, node.implementsClause);
     return null;
@@ -12190,15 +14378,10 @@ class TypeResolverVisitor extends ScopedVisitor {
     if (typeName == null) {
       declaredType = _dynamicType;
     } else {
-      declaredType = getType3(typeName);
+      declaredType = getType(typeName);
     }
     LocalVariableElementImpl element = node.element as LocalVariableElementImpl;
     element.type = declaredType;
-    return null;
-  }
-
-  Object visitDefaultFormalParameter(DefaultFormalParameter node) {
-    super.visitDefaultFormalParameter(node);
     return null;
   }
 
@@ -12206,15 +14389,21 @@ class TypeResolverVisitor extends ScopedVisitor {
     super.visitFieldFormalParameter(node);
     Element element = node.identifier.staticElement;
     if (element is ParameterElementImpl) {
-      ParameterElementImpl parameter = element as ParameterElementImpl;
+      ParameterElementImpl parameter = element;
       FormalParameterList parameterList = node.parameters;
       if (parameterList == null) {
         Type2 type;
         TypeName typeName = node.type;
         if (typeName == null) {
           type = _dynamicType;
+          if (parameter is FieldFormalParameterElement) {
+            FieldElement fieldElement = (parameter as FieldFormalParameterElement).field;
+            if (fieldElement != null) {
+              type = fieldElement.type;
+            }
+          }
         } else {
-          type = getType3(typeName);
+          type = getType(typeName);
         }
         parameter.type = type;
       } else {
@@ -12230,7 +14419,7 @@ class TypeResolverVisitor extends ScopedVisitor {
     ExecutableElementImpl element = node.element as ExecutableElementImpl;
     element.returnType = computeReturnType(node.returnType);
     FunctionTypeImpl type = new FunctionTypeImpl.con1(element);
-    ClassElement definingClass = element.getAncestor(ClassElement);
+    ClassElement definingClass = element.getAncestor((element) => element is ClassElement);
     if (definingClass != null) {
       type.typeArguments = definingClass.type.typeArguments;
     }
@@ -12249,7 +14438,7 @@ class TypeResolverVisitor extends ScopedVisitor {
     super.visitFunctionTypedFormalParameter(node);
     Element element = node.identifier.staticElement;
     if (element is ParameterElementImpl) {
-      setFunctionTypedParameterType(element as ParameterElementImpl, node.returnType, node.parameters);
+      setFunctionTypedParameterType(element, node.returnType, node.parameters);
     } else {
     }
     return null;
@@ -12260,7 +14449,7 @@ class TypeResolverVisitor extends ScopedVisitor {
     ExecutableElementImpl element = node.element as ExecutableElementImpl;
     element.returnType = computeReturnType(node.returnType);
     FunctionTypeImpl type = new FunctionTypeImpl.con1(element);
-    ClassElement definingClass = element.getAncestor(ClassElement);
+    ClassElement definingClass = element.getAncestor((element) => element is ClassElement);
     if (definingClass != null) {
       type.typeArguments = definingClass.type.typeArguments;
     }
@@ -12287,7 +14476,7 @@ class TypeResolverVisitor extends ScopedVisitor {
     if (typeName == null) {
       declaredType = _dynamicType;
     } else {
-      declaredType = getType3(typeName);
+      declaredType = getType(typeName);
     }
     Element element = node.identifier.staticElement;
     if (element is ParameterElement) {
@@ -12308,6 +14497,10 @@ class TypeResolverVisitor extends ScopedVisitor {
     TypeArgumentList argumentList = node.typeArguments;
     Element element = nameScope.lookup(typeName, definingLibrary);
     if (element == null) {
+      //
+      // Check to see whether the type name is either 'dynamic' or 'void', neither of which are in
+      // the name scope and hence will not be found by normal means.
+      //
       if (typeName.name == this._dynamicType.name) {
         setElement(typeName, this._dynamicType.element);
         if (argumentList != null) {
@@ -12318,28 +14511,42 @@ class TypeResolverVisitor extends ScopedVisitor {
       }
       VoidTypeImpl voidType = VoidTypeImpl.instance;
       if (typeName.name == voidType.name) {
+        // There is no element for 'void'.
         if (argumentList != null) {
         }
         typeName.staticType = voidType;
         node.type = voidType;
         return null;
       }
-      ASTNode parent = node.parent;
+      //
+      // If not, the look to see whether we might have created the wrong AST structure for a
+      // constructor name. If so, fix the AST structure and then proceed.
+      //
+      AstNode parent = node.parent;
       if (typeName is PrefixedIdentifier && parent is ConstructorName && argumentList == null) {
-        ConstructorName name = parent as ConstructorName;
+        ConstructorName name = parent;
         if (name.name == null) {
           PrefixedIdentifier prefixedIdentifier = typeName as PrefixedIdentifier;
           SimpleIdentifier prefix = prefixedIdentifier.prefix;
           element = nameScope.lookup(prefix, definingLibrary);
           if (element is PrefixElement) {
             if (parent.parent is InstanceCreationExpression && (parent.parent as InstanceCreationExpression).isConst) {
-              reportError6(CompileTimeErrorCode.CONST_WITH_NON_TYPE, prefixedIdentifier.identifier, [prefixedIdentifier.identifier.name]);
+              // If, if this is a const expression, then generate a
+              // CompileTimeErrorCode.CONST_WITH_NON_TYPE error.
+              reportErrorForNode(CompileTimeErrorCode.CONST_WITH_NON_TYPE, prefixedIdentifier.identifier, [prefixedIdentifier.identifier.name]);
             } else {
-              reportError6(StaticWarningCode.NEW_WITH_NON_TYPE, prefixedIdentifier.identifier, [prefixedIdentifier.identifier.name]);
+              // Else, if this expression is a new expression, report a NEW_WITH_NON_TYPE warning.
+              reportErrorForNode(StaticWarningCode.NEW_WITH_NON_TYPE, prefixedIdentifier.identifier, [prefixedIdentifier.identifier.name]);
             }
             setElement(prefix, element);
             return null;
           } else if (element != null) {
+            //
+            // Rewrite the constructor name. The parser, when it sees a constructor named "a.b",
+            // cannot tell whether "a" is a prefix and "b" is a class name, or whether "a" is a
+            // class name and "b" is a constructor name. It arbitrarily chooses the former, but
+            // in this case was wrong.
+            //
             name.name = prefixedIdentifier.identifier;
             name.period = prefixedIdentifier.period;
             node.name = prefix;
@@ -12348,44 +14555,49 @@ class TypeResolverVisitor extends ScopedVisitor {
         }
       }
     }
+    // check element
     bool elementValid = element is! MultiplyDefinedElement;
     if (elementValid && element is! ClassElement && isTypeNameInInstanceCreationExpression(node)) {
       SimpleIdentifier typeNameSimple = getTypeSimpleIdentifier(typeName);
       InstanceCreationExpression creation = node.parent.parent as InstanceCreationExpression;
       if (creation.isConst) {
         if (element == null) {
-          reportError6(CompileTimeErrorCode.UNDEFINED_CLASS, typeNameSimple, [typeName]);
+          reportErrorForNode(CompileTimeErrorCode.UNDEFINED_CLASS, typeNameSimple, [typeName]);
         } else {
-          reportError6(CompileTimeErrorCode.CONST_WITH_NON_TYPE, typeNameSimple, [typeName]);
+          reportErrorForNode(CompileTimeErrorCode.CONST_WITH_NON_TYPE, typeNameSimple, [typeName]);
         }
         elementValid = false;
       } else {
         if (element != null) {
-          reportError6(StaticWarningCode.NEW_WITH_NON_TYPE, typeNameSimple, [typeName]);
+          reportErrorForNode(StaticWarningCode.NEW_WITH_NON_TYPE, typeNameSimple, [typeName]);
           elementValid = false;
         }
       }
     }
     if (elementValid && element == null) {
+      // We couldn't resolve the type name.
+      // TODO(jwren) Consider moving the check for CompileTimeErrorCode.BUILT_IN_IDENTIFIER_AS_TYPE
+      // from the ErrorVerifier, so that we don't have two errors on a built in identifier being
+      // used as a class name. See CompileTimeErrorCodeTest.test_builtInIdentifierAsType().
       SimpleIdentifier typeNameSimple = getTypeSimpleIdentifier(typeName);
       RedirectingConstructorKind redirectingConstructorKind;
       if (isBuiltInIdentifier(node) && isTypeAnnotation(node)) {
-        reportError6(CompileTimeErrorCode.BUILT_IN_IDENTIFIER_AS_TYPE, typeName, [typeName.name]);
+        reportErrorForNode(CompileTimeErrorCode.BUILT_IN_IDENTIFIER_AS_TYPE, typeName, [typeName.name]);
       } else if (typeNameSimple.name == "boolean") {
-        reportError6(StaticWarningCode.UNDEFINED_CLASS_BOOLEAN, typeNameSimple, []);
+        reportErrorForNode(StaticWarningCode.UNDEFINED_CLASS_BOOLEAN, typeNameSimple, []);
       } else if (isTypeNameInCatchClause(node)) {
-        reportError6(StaticWarningCode.NON_TYPE_IN_CATCH_CLAUSE, typeName, [typeName.name]);
+        reportErrorForNode(StaticWarningCode.NON_TYPE_IN_CATCH_CLAUSE, typeName, [typeName.name]);
       } else if (isTypeNameInAsExpression(node)) {
-        reportError6(StaticWarningCode.CAST_TO_NON_TYPE, typeName, [typeName.name]);
+        reportErrorForNode(StaticWarningCode.CAST_TO_NON_TYPE, typeName, [typeName.name]);
       } else if (isTypeNameInIsExpression(node)) {
-        reportError6(StaticWarningCode.TYPE_TEST_NON_TYPE, typeName, [typeName.name]);
+        reportErrorForNode(StaticWarningCode.TYPE_TEST_NON_TYPE, typeName, [typeName.name]);
       } else if ((redirectingConstructorKind = getRedirectingConstructorKind(node)) != null) {
         ErrorCode errorCode = (identical(redirectingConstructorKind, RedirectingConstructorKind.CONST) ? CompileTimeErrorCode.REDIRECT_TO_NON_CLASS : StaticWarningCode.REDIRECT_TO_NON_CLASS) as ErrorCode;
-        reportError6(errorCode, typeName, [typeName.name]);
+        reportErrorForNode(errorCode, typeName, [typeName.name]);
       } else if (isTypeNameInTypeArgumentList(node)) {
-        reportError6(StaticTypeWarningCode.NON_TYPE_AS_TYPE_ARGUMENT, typeName, [typeName.name]);
+        reportErrorForNode(StaticTypeWarningCode.NON_TYPE_AS_TYPE_ARGUMENT, typeName, [typeName.name]);
       } else {
-        reportError6(StaticWarningCode.UNDEFINED_CLASS, typeName, [typeName.name]);
+        reportErrorForNode(StaticWarningCode.UNDEFINED_CLASS, typeName, [typeName.name]);
       }
       elementValid = false;
     }
@@ -12413,31 +14625,32 @@ class TypeResolverVisitor extends ScopedVisitor {
       }
     } else if (element is MultiplyDefinedElement) {
       List<Element> elements = (element as MultiplyDefinedElement).conflictingElements;
-      type = getType(elements);
+      type = getTypeWhenMultiplyDefined(elements);
       if (type != null) {
         node.type = type;
       }
     } else {
+      // The name does not represent a type.
       RedirectingConstructorKind redirectingConstructorKind;
       if (isTypeNameInCatchClause(node)) {
-        reportError6(StaticWarningCode.NON_TYPE_IN_CATCH_CLAUSE, typeName, [typeName.name]);
+        reportErrorForNode(StaticWarningCode.NON_TYPE_IN_CATCH_CLAUSE, typeName, [typeName.name]);
       } else if (isTypeNameInAsExpression(node)) {
-        reportError6(StaticWarningCode.CAST_TO_NON_TYPE, typeName, [typeName.name]);
+        reportErrorForNode(StaticWarningCode.CAST_TO_NON_TYPE, typeName, [typeName.name]);
       } else if (isTypeNameInIsExpression(node)) {
-        reportError6(StaticWarningCode.TYPE_TEST_NON_TYPE, typeName, [typeName.name]);
+        reportErrorForNode(StaticWarningCode.TYPE_TEST_NON_TYPE, typeName, [typeName.name]);
       } else if ((redirectingConstructorKind = getRedirectingConstructorKind(node)) != null) {
         ErrorCode errorCode = (identical(redirectingConstructorKind, RedirectingConstructorKind.CONST) ? CompileTimeErrorCode.REDIRECT_TO_NON_CLASS : StaticWarningCode.REDIRECT_TO_NON_CLASS) as ErrorCode;
-        reportError6(errorCode, typeName, [typeName.name]);
+        reportErrorForNode(errorCode, typeName, [typeName.name]);
       } else if (isTypeNameInTypeArgumentList(node)) {
-        reportError6(StaticTypeWarningCode.NON_TYPE_AS_TYPE_ARGUMENT, typeName, [typeName.name]);
+        reportErrorForNode(StaticTypeWarningCode.NON_TYPE_AS_TYPE_ARGUMENT, typeName, [typeName.name]);
       } else {
-        ASTNode parent = typeName.parent;
+        AstNode parent = typeName.parent;
         while (parent is TypeName) {
           parent = parent.parent;
         }
         if (parent is ExtendsClause || parent is ImplementsClause || parent is WithClause || parent is ClassTypeAlias) {
         } else {
-          reportError6(StaticWarningCode.NOT_A_TYPE, typeName, [typeName.name]);
+          reportErrorForNode(StaticWarningCode.NOT_A_TYPE, typeName, [typeName.name]);
         }
       }
       setElement(typeName, this._dynamicType.element);
@@ -12453,16 +14666,21 @@ class TypeResolverVisitor extends ScopedVisitor {
       int count = Math.min(argumentCount, parameterCount);
       List<Type2> typeArguments = new List<Type2>();
       for (int i = 0; i < count; i++) {
-        Type2 argumentType = getType3(arguments[i]);
+        Type2 argumentType = getType(arguments[i]);
         if (argumentType != null) {
           typeArguments.add(argumentType);
         }
       }
       if (argumentCount != parameterCount) {
-        reportError6(getInvalidTypeParametersErrorCode(node), node, [typeName.name, parameterCount, argumentCount]);
+        reportErrorForNode(getInvalidTypeParametersErrorCode(node), node, [typeName.name, parameterCount, argumentCount]);
       }
       argumentCount = typeArguments.length;
       if (argumentCount < parameterCount) {
+        //
+        // If there were too many arguments, we already handled it by not adding the values of the
+        // extra arguments to the list. If there are too few, we handle it by adding 'dynamic'
+        // enough times to make the count equal.
+        //
         for (int i = argumentCount; i < parameterCount; i++) {
           typeArguments.add(this._dynamicType);
         }
@@ -12476,6 +14694,9 @@ class TypeResolverVisitor extends ScopedVisitor {
       } else {
       }
     } else {
+      //
+      // Check for the case where there are no type arguments given for a parameterized type.
+      //
       List<Type2> parameters = getTypeArguments(type);
       int parameterCount = parameters.length;
       if (parameterCount > 0) {
@@ -12492,6 +14713,18 @@ class TypeResolverVisitor extends ScopedVisitor {
     return null;
   }
 
+  Object visitTypeParameter(TypeParameter node) {
+    super.visitTypeParameter(node);
+    TypeName bound = node.bound;
+    if (bound != null) {
+      TypeParameterElementImpl typeParameter = node.name.staticElement as TypeParameterElementImpl;
+      if (typeParameter != null) {
+        typeParameter.bound = bound.type;
+      }
+    }
+    return null;
+  }
+
   Object visitVariableDeclaration(VariableDeclaration node) {
     super.visitVariableDeclaration(node);
     Type2 declaredType;
@@ -12499,17 +14732,17 @@ class TypeResolverVisitor extends ScopedVisitor {
     if (typeName == null) {
       declaredType = _dynamicType;
     } else {
-      declaredType = getType3(typeName);
+      declaredType = getType(typeName);
     }
     Element element = node.name.staticElement;
     if (element is VariableElement) {
       (element as VariableElementImpl).type = declaredType;
       if (element is PropertyInducingElement) {
-        PropertyInducingElement variableElement = element as PropertyInducingElement;
+        PropertyInducingElement variableElement = element;
         PropertyAccessorElementImpl getter = variableElement.getter as PropertyAccessorElementImpl;
         getter.returnType = declaredType;
         FunctionTypeImpl getterType = new FunctionTypeImpl.con1(getter);
-        ClassElement definingClass = element.getAncestor(ClassElement);
+        ClassElement definingClass = element.getAncestor((element) => element is ClassElement);
         if (definingClass != null) {
           getterType.typeArguments = definingClass.type.typeArguments;
         }
@@ -12533,6 +14766,19 @@ class TypeResolverVisitor extends ScopedVisitor {
     return null;
   }
 
+  void visitClassDeclarationInScope(ClassDeclaration node) {
+    //
+    // Process field declarations before constructors and methods so that the types of field formal
+    // parameters can be correctly resolved.
+    //
+    List<ClassMember> nonFields = new List<ClassMember>();
+    node.visitChildren(new UnifyingAstVisitor_TypeResolverVisitor_visitClassDeclarationInScope(this, nonFields));
+    int count = nonFields.length;
+    for (int i = 0; i < count; i++) {
+      nonFields[i].accept(this);
+    }
+  }
+
   /**
    * Given a type name representing the return type of a function, compute the return type of the
    * function.
@@ -12549,17 +14795,89 @@ class TypeResolverVisitor extends ScopedVisitor {
   }
 
   /**
+   * Create an implicit constructor that is copied from the given constructor, but that is in the
+   * given class.
+   *
+   * @param classType the class in which the implicit constructor is defined
+   * @param explicitConstructor the constructor on which the implicit constructor is modeled
+   * @param parameterTypes the types to be replaced when creating parameters
+   * @param argumentTypes the types with which the parameters are to be replaced
+   * @return the implicit constructor that was created
+   */
+  ConstructorElement createImplicitContructor(InterfaceType classType, ConstructorElement explicitConstructor, List<Type2> parameterTypes, List<Type2> argumentTypes) {
+    ConstructorElementImpl implicitConstructor = new ConstructorElementImpl.con2(explicitConstructor.name, -1);
+    implicitConstructor.synthetic = true;
+    implicitConstructor.redirectedConstructor = explicitConstructor;
+    implicitConstructor.const2 = explicitConstructor.isConst;
+    implicitConstructor.returnType = classType;
+    List<ParameterElement> explicitParameters = explicitConstructor.parameters;
+    int count = explicitParameters.length;
+    if (count > 0) {
+      List<ParameterElement> implicitParameters = new List<ParameterElement>(count);
+      for (int i = 0; i < count; i++) {
+        ParameterElement explicitParameter = explicitParameters[i];
+        ParameterElementImpl implicitParameter = new ParameterElementImpl.con2(explicitParameter.name, -1);
+        implicitParameter.const3 = explicitParameter.isConst;
+        implicitParameter.final2 = explicitParameter.isFinal;
+        implicitParameter.parameterKind = explicitParameter.parameterKind;
+        implicitParameter.synthetic = true;
+        implicitParameter.type = explicitParameter.type.substitute2(argumentTypes, parameterTypes);
+        implicitParameters[i] = implicitParameter;
+      }
+      implicitConstructor.parameters = implicitParameters;
+    }
+    FunctionTypeImpl type = new FunctionTypeImpl.con1(implicitConstructor);
+    type.typeArguments = classType.typeArguments;
+    implicitConstructor.type = type;
+    return implicitConstructor;
+  }
+
+  /**
+   * Return an array of argument types that corresponds to the array of parameter types and that are
+   * derived from the given list of type arguments.
+   *
+   * @param typeArguments the type arguments from which the types will be taken
+   * @param parameterTypes the parameter types that must be matched by the type arguments
+   * @return the argument types that correspond to the parameter types
+   */
+  List<Type2> getArgumentTypes(TypeArgumentList typeArguments, List<Type2> parameterTypes) {
+    DynamicTypeImpl dynamic = DynamicTypeImpl.instance;
+    int parameterCount = parameterTypes.length;
+    List<Type2> types = new List<Type2>(parameterCount);
+    if (typeArguments == null) {
+      for (int i = 0; i < parameterCount; i++) {
+        types[i] = dynamic;
+      }
+    } else {
+      NodeList<TypeName> arguments = typeArguments.arguments;
+      int argumentCount = Math.min(arguments.length, parameterCount);
+      for (int i = 0; i < argumentCount; i++) {
+        types[i] = arguments[i].type;
+      }
+      for (int i = argumentCount; i < parameterCount; i++) {
+        types[i] = dynamic;
+      }
+    }
+    return types;
+  }
+
+  /**
    * Return the class element that represents the class whose name was provided.
    *
    * @param identifier the name from the declaration of a class
    * @return the class element that represents the class
    */
   ClassElementImpl getClassElement(SimpleIdentifier identifier) {
+    // TODO(brianwilkerson) Seems like we should be using ClassDeclaration.getElement().
     if (identifier == null) {
+      // TODO(brianwilkerson) Report this
+      // Internal error: We should never build a class declaration without a name.
       return null;
     }
     Element element = identifier.staticElement;
     if (element is! ClassElementImpl) {
+      // TODO(brianwilkerson) Report this
+      // Internal error: Failed to create an element for a class declaration.
       return null;
     }
     return element as ClassElementImpl;
@@ -12576,6 +14894,7 @@ class TypeResolverVisitor extends ScopedVisitor {
     List<ParameterElement> elements = new List<ParameterElement>();
     for (FormalParameter parameter in parameterList.parameters) {
       ParameterElement element = parameter.identifier.staticElement as ParameterElement;
+      // TODO(brianwilkerson) Understand why the element would be null.
       if (element != null) {
         elements.add(element);
       }
@@ -12593,7 +14912,7 @@ class TypeResolverVisitor extends ScopedVisitor {
    *         were provided
    */
   ErrorCode getInvalidTypeParametersErrorCode(TypeName node) {
-    ASTNode parent = node.parent;
+    AstNode parent = node.parent;
     if (parent is ConstructorName) {
       parent = parent.parent;
       if (parent is InstanceCreationExpression) {
@@ -12615,7 +14934,7 @@ class TypeResolverVisitor extends ScopedVisitor {
    *         redirected constructor, or `null` otherwise
    */
   RedirectingConstructorKind getRedirectingConstructorKind(TypeName typeName) {
-    ASTNode parent = typeName.parent;
+    AstNode parent = typeName.parent;
     if (parent is ConstructorName) {
       ConstructorName constructorName = parent as ConstructorName;
       parent = constructorName.parent;
@@ -12633,32 +14952,12 @@ class TypeResolverVisitor extends ScopedVisitor {
   }
 
   /**
-   * Given the multiple elements to which a single name could potentially be resolved, return the
-   * single interface type that should be used, or `null` if there is no clear choice.
-   *
-   * @param elements the elements to which a single name could potentially be resolved
-   * @return the single interface type that should be used for the type name
-   */
-  InterfaceType getType(List<Element> elements) {
-    InterfaceType type = null;
-    for (Element element in elements) {
-      if (element is ClassElement) {
-        if (type != null) {
-          return null;
-        }
-        type = (element as ClassElement).type;
-      }
-    }
-    return type;
-  }
-
-  /**
    * Return the type represented by the given type name.
    *
    * @param typeName the type name representing the type to be returned
    * @return the type represented by the type name
    */
-  Type2 getType3(TypeName typeName) {
+  Type2 getType(TypeName typeName) {
     Type2 type = typeName.type;
     if (type == null) {
       return _dynamicType;
@@ -12674,9 +14973,9 @@ class TypeResolverVisitor extends ScopedVisitor {
    */
   List<Type2> getTypeArguments(Type2 type) {
     if (type is InterfaceType) {
-      return (type as InterfaceType).typeArguments;
+      return type.typeArguments;
     } else if (type is FunctionType) {
-      return (type as FunctionType).typeArguments;
+      return type.typeArguments;
     }
     return TypeImpl.EMPTY_ARRAY;
   }
@@ -12689,10 +14988,30 @@ class TypeResolverVisitor extends ScopedVisitor {
    */
   SimpleIdentifier getTypeSimpleIdentifier(Identifier typeName) {
     if (typeName is SimpleIdentifier) {
-      return typeName as SimpleIdentifier;
+      return typeName;
     } else {
       return (typeName as PrefixedIdentifier).identifier;
     }
+  }
+
+  /**
+   * Given the multiple elements to which a single name could potentially be resolved, return the
+   * single interface type that should be used, or `null` if there is no clear choice.
+   *
+   * @param elements the elements to which a single name could potentially be resolved
+   * @return the single interface type that should be used for the type name
+   */
+  InterfaceType getTypeWhenMultiplyDefined(List<Element> elements) {
+    InterfaceType type = null;
+    for (Element element in elements) {
+      if (element is ClassElement) {
+        if (type != null) {
+          return null;
+        }
+        type = element.type;
+      }
+    }
+    return type;
   }
 
   /**
@@ -12702,9 +15021,9 @@ class TypeResolverVisitor extends ScopedVisitor {
    * @return `true` if the given type name is used as the type in an as expression
    */
   bool isTypeNameInAsExpression(TypeName typeName) {
-    ASTNode parent = typeName.parent;
+    AstNode parent = typeName.parent;
     if (parent is AsExpression) {
-      AsExpression asExpression = parent as AsExpression;
+      AsExpression asExpression = parent;
       return identical(asExpression.type, typeName);
     }
     return false;
@@ -12717,9 +15036,9 @@ class TypeResolverVisitor extends ScopedVisitor {
    * @return `true` if the given type name is used as the exception type in a catch clause
    */
   bool isTypeNameInCatchClause(TypeName typeName) {
-    ASTNode parent = typeName.parent;
+    AstNode parent = typeName.parent;
     if (parent is CatchClause) {
-      CatchClause catchClause = parent as CatchClause;
+      CatchClause catchClause = parent;
       return identical(catchClause.exceptionType, typeName);
     }
     return false;
@@ -12733,9 +15052,9 @@ class TypeResolverVisitor extends ScopedVisitor {
    *         expression
    */
   bool isTypeNameInInstanceCreationExpression(TypeName typeName) {
-    ASTNode parent = typeName.parent;
+    AstNode parent = typeName.parent;
     if (parent is ConstructorName && parent.parent is InstanceCreationExpression) {
-      ConstructorName constructorName = parent as ConstructorName;
+      ConstructorName constructorName = parent;
       return constructorName != null && identical(constructorName.type, typeName);
     }
     return false;
@@ -12748,9 +15067,9 @@ class TypeResolverVisitor extends ScopedVisitor {
    * @return `true` if the given type name is used as the type in an is expression
    */
   bool isTypeNameInIsExpression(TypeName typeName) {
-    ASTNode parent = typeName.parent;
+    AstNode parent = typeName.parent;
     if (parent is IsExpression) {
-      IsExpression isExpression = parent as IsExpression;
+      IsExpression isExpression = parent;
       return identical(isExpression.type, typeName);
     }
     return false;
@@ -12801,6 +15120,7 @@ class TypeResolverVisitor extends ScopedVisitor {
       if (classElement != null) {
         classElement.interfaces = interfaceTypes;
       }
+      // TODO(brianwilkerson) Move the following checks to ErrorVerifier.
       List<TypeName> typeNames = new List.from(interfaces);
       List<bool> detectedRepeatOnIndex = new List<bool>.filled(typeNames.length, false);
       for (int i = 0; i < detectedRepeatOnIndex.length; i++) {
@@ -12817,7 +15137,7 @@ class TypeResolverVisitor extends ScopedVisitor {
             Element element2 = identifier2.staticElement;
             if (element != null && element == element2) {
               detectedRepeatOnIndex[j] = true;
-              reportError6(CompileTimeErrorCode.IMPLEMENTS_REPEATED, typeName2, [name2]);
+              reportErrorForNode(CompileTimeErrorCode.IMPLEMENTS_REPEATED, typeName2, [name2]);
             }
           }
         }
@@ -12837,13 +15157,14 @@ class TypeResolverVisitor extends ScopedVisitor {
   InterfaceType resolveType(TypeName typeName, ErrorCode nonTypeError, ErrorCode dynamicTypeError) {
     Type2 type = typeName.type;
     if (type is InterfaceType) {
-      return type as InterfaceType;
+      return type;
     }
+    // If the type is not an InterfaceType, then visitTypeName() sets the type to be a DynamicTypeImpl
     Identifier name = typeName.name;
     if (name.name == sc.Keyword.DYNAMIC.syntax) {
-      reportError6(dynamicTypeError, name, [name.name]);
+      reportErrorForNode(dynamicTypeError, name, [name.name]);
     } else {
-      reportError6(nonTypeError, name, [name.name]);
+      reportErrorForNode(nonTypeError, name, [name.name]);
     }
     return null;
   }
@@ -12871,9 +15192,9 @@ class TypeResolverVisitor extends ScopedVisitor {
   void setElement(Identifier typeName, Element element) {
     if (element != null) {
       if (typeName is SimpleIdentifier) {
-        (typeName as SimpleIdentifier).staticElement = element;
+        typeName.staticElement = element;
       } else if (typeName is PrefixedIdentifier) {
-        PrefixedIdentifier identifier = typeName as PrefixedIdentifier;
+        PrefixedIdentifier identifier = typeName;
         identifier.identifier.staticElement = element;
         SimpleIdentifier prefix = identifier.prefix;
         Element prefixElement = nameScope.lookup(prefix, definingLibrary);
@@ -12899,14 +15220,14 @@ class TypeResolverVisitor extends ScopedVisitor {
     aliasElement.shareParameters(parameters);
     aliasElement.returnType = computeReturnType(returnType);
     FunctionTypeImpl type = new FunctionTypeImpl.con2(aliasElement);
-    ClassElement definingClass = element.getAncestor(ClassElement);
+    ClassElement definingClass = element.getAncestor((element) => element is ClassElement);
     if (definingClass != null) {
       aliasElement.shareTypeParameters(definingClass.typeParameters);
       type.typeArguments = definingClass.type.typeArguments;
     } else {
-      FunctionTypeAliasElement alias = element.getAncestor(FunctionTypeAliasElement);
+      FunctionTypeAliasElement alias = element.getAncestor((element) => element is FunctionTypeAliasElement);
       while (alias != null && alias.isSynthetic) {
-        alias = alias.getAncestor(FunctionTypeAliasElement);
+        alias = alias.getAncestor((element) => element is FunctionTypeAliasElement);
       }
       if (alias != null) {
         aliasElement.typeParameters = alias.typeParameters;
@@ -12932,11 +15253,29 @@ class RedirectingConstructorKind extends Enum<RedirectingConstructorKind> {
   RedirectingConstructorKind(String name, int ordinal) : super(name, ordinal);
 }
 
+class UnifyingAstVisitor_TypeResolverVisitor_visitClassDeclarationInScope extends UnifyingAstVisitor<Object> {
+  final TypeResolverVisitor TypeResolverVisitor_this;
+
+  List<ClassMember> nonFields;
+
+  UnifyingAstVisitor_TypeResolverVisitor_visitClassDeclarationInScope(this.TypeResolverVisitor_this, this.nonFields) : super();
+
+  Object visitConstructorDeclaration(ConstructorDeclaration node) {
+    nonFields.add(node);
+    return null;
+  }
+
+  Object visitMethodDeclaration(MethodDeclaration node) {
+    nonFields.add(node);
+    return null;
+  }
+
+  Object visitNode(AstNode node) => node.accept(TypeResolverVisitor_this);
+}
+
 /**
  * Instances of the class `VariableResolverVisitor` are used to resolve
  * [SimpleIdentifier]s to local variables and formal parameters.
- *
- * @coverage dart.engine.resolver
  */
 class VariableResolverVisitor extends ScopedVisitor {
   /**
@@ -12991,17 +15330,19 @@ class VariableResolverVisitor extends ScopedVisitor {
   }
 
   Object visitSimpleIdentifier(SimpleIdentifier node) {
+    // Ignore if already resolved - declaration or type.
     if (node.staticElement != null) {
       return null;
     }
-    ASTNode parent = node.parent;
-    if (parent is PrefixedIdentifier && identical((parent as PrefixedIdentifier).identifier, node)) {
+    // Ignore if qualified.
+    AstNode parent = node.parent;
+    if (parent is PrefixedIdentifier && identical(parent.identifier, node)) {
       return null;
     }
-    if (parent is PropertyAccess && identical((parent as PropertyAccess).propertyName, node)) {
+    if (parent is PropertyAccess && identical(parent.propertyName, node)) {
       return null;
     }
-    if (parent is MethodInvocation && identical((parent as MethodInvocation).methodName, node)) {
+    if (parent is MethodInvocation && identical(parent.methodName, node)) {
       return null;
     }
     if (parent is ConstructorName) {
@@ -13010,10 +15351,12 @@ class VariableResolverVisitor extends ScopedVisitor {
     if (parent is Label) {
       return null;
     }
+    // Prepare VariableElement.
     Element element = nameScope.lookup(node, definingLibrary);
     if (element is! VariableElement) {
       return null;
     }
+    // Must be local or parameter.
     ElementKind kind = element.kind;
     if (identical(kind, ElementKind.LOCAL_VARIABLE)) {
       node.staticElement = element;
@@ -13029,6 +15372,7 @@ class VariableResolverVisitor extends ScopedVisitor {
       if (node.inSetterContext()) {
         ParameterElementImpl parameterImpl = element as ParameterElementImpl;
         parameterImpl.markPotentiallyMutatedInScope();
+        // If we are in some closure, check if it is not the same as where variable is declared.
         if (_enclosingFunction != null && (element.enclosingElement != _enclosingFunction)) {
           parameterImpl.markPotentiallyMutatedInClosure();
         }
@@ -13040,8 +15384,6 @@ class VariableResolverVisitor extends ScopedVisitor {
 
 /**
  * Instances of the class `ClassScope` implement the scope defined by a class.
- *
- * @coverage dart.engine.resolver
  */
 class ClassScope extends EnclosedScope {
   /**
@@ -13096,8 +15438,6 @@ class ClassScope extends EnclosedScope {
 /**
  * Instances of the class `EnclosedScope` implement a scope that is lexically enclosed in
  * another scope.
- *
- * @coverage dart.engine.resolver
  */
 class EnclosedScope extends Scope {
   /**
@@ -13148,6 +15488,7 @@ class EnclosedScope extends Scope {
     if (element != null) {
       return element;
     }
+    // May be there is a hidden Element.
     if (_hasHiddenName) {
       Element hiddenElement = _hiddenElements[name];
       if (hiddenElement != null) {
@@ -13155,14 +15496,13 @@ class EnclosedScope extends Scope {
         return hiddenElement;
       }
     }
+    // Check enclosing scope.
     return enclosingScope.lookup3(identifier, name, referencingLibrary);
   }
 }
 
 /**
  * Instances of the class `FunctionScope` implement the scope defined by a function.
- *
- * @coverage dart.engine.resolver
  */
 class FunctionScope extends EnclosedScope {
   ExecutableElement _functionElement;
@@ -13205,8 +15545,6 @@ class FunctionScope extends EnclosedScope {
 /**
  * Instances of the class `FunctionTypeScope` implement the scope defined by a function type
  * alias.
- *
- * @coverage dart.engine.resolver
  */
 class FunctionTypeScope extends EnclosedScope {
   FunctionTypeAliasElement _typeElement;
@@ -13254,8 +15592,6 @@ class FunctionTypeScope extends EnclosedScope {
 
 /**
  * Instances of the class `LabelScope` represent a scope in which a single label is defined.
- *
- * @coverage dart.engine.resolver
  */
 class LabelScope {
   /**
@@ -13338,8 +15674,6 @@ class LabelScope {
 /**
  * Instances of the class `LibraryImportScope` represent the scope containing all of the names
  * available from imported libraries.
- *
- * @coverage dart.engine.resolver
  */
 class LibraryImportScope extends Scope {
   /**
@@ -13399,6 +15733,8 @@ class LibraryImportScope extends Scope {
       List<Element> conflictingMembers = (foundElement as MultiplyDefinedElementImpl).conflictingElements;
       String libName1 = getLibraryName(conflictingMembers[0], "");
       String libName2 = getLibraryName(conflictingMembers[1], "");
+      // TODO (jwren) Change the error message to include a list of all library names instead of
+      // just the first two
       errorListener.onError(new AnalysisError.con2(getSource(identifier), identifier.offset, identifier.length, StaticWarningCode.AMBIGUOUS_IMPORT, [foundEltName, libName1, libName2]));
       return foundElement;
     }
@@ -13471,10 +15807,13 @@ class LibraryImportScope extends Scope {
       errorListener.onError(new AnalysisError.con2(getSource(identifier), identifier.offset, identifier.length, StaticWarningCode.CONFLICTING_DART_IMPORT, [name, sdkLibName, otherLibName]));
     }
     if (to == length) {
+      // None of the members were removed
       return foundElement;
     } else if (to == 1) {
+      // All but one member was removed
       return conflictingMembers[0];
     } else if (to == 0) {
+      // All members were removed
       AnalysisEngine.instance.logger.logInformation("Multiply defined SDK element: ${foundElement}");
       return foundElement;
     }
@@ -13487,8 +15826,6 @@ class LibraryImportScope extends Scope {
 /**
  * Instances of the class `LibraryScope` implement a scope containing all of the names defined
  * in a given library.
- *
- * @coverage dart.engine.resolver
  */
 class LibraryScope extends EnclosedScope {
   /**
@@ -13503,9 +15840,10 @@ class LibraryScope extends EnclosedScope {
 
   AnalysisError getErrorForDuplicate(Element existing, Element duplicate) {
     if (existing is PrefixElement) {
+      // TODO(scheglov) consider providing actual 'nameOffset' from the synthetic accessor
       int offset = duplicate.nameOffset;
       if (duplicate is PropertyAccessorElement) {
-        PropertyAccessorElement accessor = duplicate as PropertyAccessorElement;
+        PropertyAccessorElement accessor = duplicate;
         if (accessor.isSynthetic) {
           offset = accessor.variable.nameOffset;
         }
@@ -13557,8 +15895,6 @@ class LibraryScope extends EnclosedScope {
 /**
  * Instances of the class `Namespace` implement a mapping of identifiers to the elements
  * represented by those identifiers. Namespaces are the building blocks for scopes.
- *
- * @coverage dart.engine.resolver
  */
 class Namespace {
   /**
@@ -13602,8 +15938,6 @@ class Namespace {
 /**
  * Instances of the class `NamespaceBuilder` are used to build a `Namespace`. Namespace
  * builders are thread-safe and re-usable.
- *
- * @coverage dart.engine.resolver
  */
 class NamespaceBuilder {
   /**
@@ -13615,6 +15949,9 @@ class NamespaceBuilder {
   Namespace createExportNamespace(ExportElement element) {
     LibraryElement exportedLibrary = element.exportedLibrary;
     if (exportedLibrary == null) {
+      //
+      // The exported library will be null if the URI does not reference a valid library.
+      //
       return Namespace.EMPTY;
     }
     Map<String, Element> definedNames = createExportMapping(exportedLibrary, new Set<LibraryElement>());
@@ -13639,6 +15976,9 @@ class NamespaceBuilder {
   Namespace createImportNamespace(ImportElement element) {
     LibraryElement importedLibrary = element.importedLibrary;
     if (importedLibrary == null) {
+      //
+      // The imported library will be null if the URI does not reference a valid library.
+      //
       return Namespace.EMPTY;
     }
     Map<String, Element> definedNames = createExportMapping(importedLibrary, new Set<LibraryElement>());
@@ -13731,10 +16071,11 @@ class NamespaceBuilder {
   Map<String, Element> apply(Map<String, Element> definedNames, List<NamespaceCombinator> combinators) {
     for (NamespaceCombinator combinator in combinators) {
       if (combinator is HideElementCombinator) {
-        hide(definedNames, (combinator as HideElementCombinator).hiddenNames);
+        hide(definedNames, combinator.hiddenNames);
       } else if (combinator is ShowElementCombinator) {
-        definedNames = show(definedNames, (combinator as ShowElementCombinator).shownNames);
+        definedNames = show(definedNames, combinator.shownNames);
       } else {
+        // Internal error.
         AnalysisEngine.instance.logger.logError("Unknown type of combinator: ${combinator.runtimeType.toString()}");
       }
     }
@@ -13776,6 +16117,9 @@ class NamespaceBuilder {
       for (ExportElement element in library.exports) {
         LibraryElement exportedLibrary = element.exportedLibrary;
         if (exportedLibrary != null && !visitedElements.contains(exportedLibrary)) {
+          //
+          // The exported library will be null if the URI does not reference a valid library.
+          //
           Map<String, Element> exportedNames = createExportMapping(exportedLibrary, visitedElements);
           exportedNames = apply(exportedNames, element.combinators);
           addAll(definedNames, exportedNames);
@@ -13828,14 +16172,12 @@ class NamespaceBuilder {
 /**
  * The abstract class `Scope` defines the behavior common to name scopes used by the resolver
  * to determine which names are visible at any given point in the code.
- *
- * @coverage dart.engine.resolver
  */
 abstract class Scope {
   /**
    * The prefix used to mark an identifier as being private to its library.
    */
-  static String PRIVATE_NAME_PREFIX = "_";
+  static int PRIVATE_NAME_PREFIX = 0x5F;
 
   /**
    * The suffix added to the declared name of a setter when looking up the setter. Used to
@@ -13855,7 +16197,7 @@ abstract class Scope {
    * @param name the name being tested
    * @return `true` if the given name is a library-private name
    */
-  static bool isPrivateName(String name) => name != null && name.startsWith(PRIVATE_NAME_PREFIX);
+  static bool isPrivateName(String name) => name != null && StringUtilities.startsWithChar(name, PRIVATE_NAME_PREFIX);
 
   /**
    * A table mapping names that are defined in this scope to the element representing the thing
@@ -13936,6 +16278,9 @@ abstract class Scope {
    * @return the error code used to report duplicate names within a scope
    */
   AnalysisError getErrorForDuplicate(Element existing, Element duplicate) {
+    // TODO(brianwilkerson) Customize the error message based on the types of elements that share
+    // the same name.
+    // TODO(jwren) There are 4 error codes for duplicate, but only 1 is being generated.
     Source source = duplicate.source;
     return new AnalysisError.con2(source, duplicate.nameOffset, duplicate.displayName.length, CompileTimeErrorCode.DUPLICATE_DEFINITION, [existing.displayName]);
   }
@@ -13954,8 +16299,8 @@ abstract class Scope {
    * @param identifier the identifier whose source is to be returned
    * @return the source that contains the given identifier
    */
-  Source getSource(ASTNode node) {
-    CompilationUnit unit = node.getAncestor(CompilationUnit);
+  Source getSource(AstNode node) {
+    CompilationUnit unit = node.getAncestor((node) => node is CompilationUnit);
     if (unit != null) {
       CompilationUnitElement unitElement = unit.element;
       if (unitElement != null) {
@@ -14003,7 +16348,7 @@ abstract class Scope {
    */
   String getName(Element element) {
     if (element is MethodElement) {
-      MethodElement method = element as MethodElement;
+      MethodElement method = element;
       if (method.name == "-" && method.parameters.length == 0) {
         return UNARY_MINUS;
       }
@@ -14026,14 +16371,14 @@ class ScopeBuilder {
    * @throws AnalysisException if the AST structure has not been resolved or is not part of a
    *           [CompilationUnit]
    */
-  static Scope scopeFor(ASTNode node, AnalysisErrorListener errorListener) {
+  static Scope scopeFor(AstNode node, AnalysisErrorListener errorListener) {
     if (node == null) {
       throw new AnalysisException.con1("Cannot create scope: node is null");
     } else if (node is CompilationUnit) {
       ScopeBuilder builder = new ScopeBuilder(errorListener);
       return builder.scopeForAstNode(node);
     }
-    ASTNode parent = node.parent;
+    AstNode parent = node.parent;
     if (parent == null) {
       throw new AnalysisException.con1("Cannot create scope: node is not part of a CompilationUnit");
     }
@@ -14067,31 +16412,31 @@ class ScopeBuilder {
    * @throws AnalysisException if the AST structure has not been resolved or is not part of a
    *           [CompilationUnit]
    */
-  Scope scopeForAstNode(ASTNode node) {
+  Scope scopeForAstNode(AstNode node) {
     if (node is CompilationUnit) {
-      return scopeForCompilationUnit(node as CompilationUnit);
+      return scopeForCompilationUnit(node);
     }
-    ASTNode parent = node.parent;
+    AstNode parent = node.parent;
     if (parent == null) {
       throw new AnalysisException.con1("Cannot create scope: node is not part of a CompilationUnit");
     }
     Scope scope = scopeForAstNode(parent);
     if (node is ClassDeclaration) {
-      scope = new ClassScope(scope, (node as ClassDeclaration).element);
+      scope = new ClassScope(scope, node.element);
     } else if (node is ClassTypeAlias) {
-      scope = new ClassScope(scope, (node as ClassTypeAlias).element);
+      scope = new ClassScope(scope, node.element);
     } else if (node is ConstructorDeclaration) {
-      FunctionScope functionScope = new FunctionScope(scope, (node as ConstructorDeclaration).element);
+      FunctionScope functionScope = new FunctionScope(scope, node.element);
       functionScope.defineParameters();
       scope = functionScope;
     } else if (node is FunctionDeclaration) {
-      FunctionScope functionScope = new FunctionScope(scope, (node as FunctionDeclaration).element);
+      FunctionScope functionScope = new FunctionScope(scope, node.element);
       functionScope.defineParameters();
       scope = functionScope;
     } else if (node is FunctionTypeAlias) {
-      scope = new FunctionTypeScope(scope, (node as FunctionTypeAlias).element);
+      scope = new FunctionTypeScope(scope, node.element);
     } else if (node is MethodDeclaration) {
-      FunctionScope functionScope = new FunctionScope(scope, (node as MethodDeclaration).element);
+      FunctionScope functionScope = new FunctionScope(scope, node.element);
       functionScope.defineParameters();
       scope = functionScope;
     }
@@ -14115,14 +16460,17 @@ class ScopeBuilder {
  * Instances of the class `ConstantVerifier` traverse an AST structure looking for additional
  * errors and warnings not covered by the parser and resolver. In particular, it looks for errors
  * and warnings related to constant expressions.
- *
- * @coverage dart.engine.resolver
  */
-class ConstantVerifier extends RecursiveASTVisitor<Object> {
+class ConstantVerifier extends RecursiveAstVisitor<Object> {
   /**
    * The error reporter by which errors will be reported.
    */
   ErrorReporter _errorReporter;
+
+  /**
+   * The type provider used to access the known types.
+   */
+  TypeProvider _typeProvider;
 
   /**
    * The type representing the type 'bool'.
@@ -14151,6 +16499,7 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
    */
   ConstantVerifier(ErrorReporter errorReporter, TypeProvider typeProvider) {
     this._errorReporter = errorReporter;
+    this._typeProvider = typeProvider;
     this._boolType = typeProvider.boolType;
     this._intType = typeProvider.intType;
     this._numType = typeProvider.numType;
@@ -14159,18 +16508,22 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
 
   Object visitAnnotation(Annotation node) {
     super.visitAnnotation(node);
+    // check annotation creation
     Element element = node.element;
     if (element is ConstructorElement) {
-      ConstructorElement constructorElement = element as ConstructorElement;
+      ConstructorElement constructorElement = element;
+      // should 'const' constructor
       if (!constructorElement.isConst) {
         _errorReporter.reportError2(CompileTimeErrorCode.NON_CONSTANT_ANNOTATION_CONSTRUCTOR, node, []);
         return null;
       }
+      // should have arguments
       ArgumentList argumentList = node.arguments;
       if (argumentList == null) {
         _errorReporter.reportError2(CompileTimeErrorCode.NO_ANNOTATION_CONSTRUCTOR_ARGUMENTS, node, []);
         return null;
       }
+      // arguments should be constants
       validateConstantArguments(argumentList);
     }
     return null;
@@ -14191,7 +16544,7 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitInstanceCreationExpression(InstanceCreationExpression node) {
-    validateConstantArguments2(node);
+    validateInstanceCreationArguments(node);
     return super.visitInstanceCreationExpression(node);
   }
 
@@ -14209,7 +16562,7 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
     super.visitMapLiteral(node);
     bool isConst = node.constKeyword != null;
     bool reportEqualKeys = true;
-    Set<Object> keys = new Set<Object>();
+    Set<DartObject> keys = new Set<DartObject>();
     List<Expression> invalidKeys = new List<Expression>();
     for (MapLiteralEntry entry in node.entries) {
       Expression key = entry.key;
@@ -14217,7 +16570,7 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
         EvaluationResultImpl result = validate(key, CompileTimeErrorCode.NON_CONSTANT_MAP_KEY);
         validate(entry.value, CompileTimeErrorCode.NON_CONSTANT_MAP_VALUE);
         if (result is ValidResult) {
-          Object value = (result as ValidResult).value;
+          DartObject value = result.value;
           if (keys.contains(value)) {
             invalidKeys.add(key);
           } else {
@@ -14225,9 +16578,9 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
           }
         }
       } else {
-        EvaluationResultImpl result = key.accept(new ConstantVisitor());
+        EvaluationResultImpl result = key.accept(new ConstantVisitor(_typeProvider));
         if (result is ValidResult) {
-          Object value = (result as ValidResult).value;
+          DartObject value = result.value;
           if (keys.contains(value)) {
             invalidKeys.add(key);
           } else {
@@ -14265,6 +16618,11 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
       VariableElementImpl element = node.element as VariableElementImpl;
       EvaluationResultImpl result = element.evaluationResult;
       if (result == null) {
+        //
+        // Normally we don't need to visit const variable declarations because we have already
+        // computed their values. But if we missed it for some reason, this gives us a second
+        // chance.
+        //
         result = validate(initializer, CompileTimeErrorCode.CONST_INITIALIZED_WITH_NON_CONSTANT_VALUE);
         element.evaluationResult = result;
       } else if (result is ErrorResult) {
@@ -14283,7 +16641,7 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
    */
   void reportErrors(EvaluationResultImpl result, ErrorCode errorCode) {
     if (result is ErrorResult) {
-      for (ErrorResult_ErrorData data in (result as ErrorResult).errorData) {
+      for (ErrorResult_ErrorData data in result.errorData) {
         ErrorCode dataErrorCode = data.errorCode;
         if (identical(dataErrorCode, CompileTimeErrorCode.CONST_EVAL_THROWS_EXCEPTION) || identical(dataErrorCode, CompileTimeErrorCode.CONST_EVAL_THROWS_IDBZE) || identical(dataErrorCode, CompileTimeErrorCode.CONST_EVAL_TYPE_BOOL_NUM_STRING) || identical(dataErrorCode, CompileTimeErrorCode.CONST_EVAL_TYPE_BOOL) || identical(dataErrorCode, CompileTimeErrorCode.CONST_EVAL_TYPE_INT) || identical(dataErrorCode, CompileTimeErrorCode.CONST_EVAL_TYPE_NUM)) {
           _errorReporter.reportError2(dataErrorCode, data.node, []);
@@ -14294,6 +16652,8 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
     }
   }
 
+  ValidResult valid(InterfaceType type, InstanceState state) => new ValidResult(new DartObjectImpl(type, state));
+
   /**
    * Validate that the given expression is a compile time constant. Return the value of the compile
    * time constant, or `null` if the expression is not a compile time constant.
@@ -14303,7 +16663,7 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
    * @return the value of the compile time constant
    */
   EvaluationResultImpl validate(Expression expression, ErrorCode errorCode) {
-    EvaluationResultImpl result = expression.accept(new ConstantVisitor());
+    EvaluationResultImpl result = expression.accept(new ConstantVisitor(_typeProvider));
     reportErrors(result, errorCode);
     return result;
   }
@@ -14323,23 +16683,6 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
   }
 
   /**
-   * Validate that if the passed instance creation is 'const' then all its arguments are constant
-   * expressions.
-   *
-   * @param node the instance creation evaluate
-   */
-  void validateConstantArguments2(InstanceCreationExpression node) {
-    if (!node.isConst) {
-      return;
-    }
-    ArgumentList argumentList = node.argumentList;
-    if (argumentList == null) {
-      return;
-    }
-    validateConstantArguments(argumentList);
-  }
-
-  /**
    * Validate that the default value associated with each of the parameters in the given list is a
    * compile time constant.
    *
@@ -14351,7 +16694,7 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
     }
     for (FormalParameter parameter in parameters.parameters) {
       if (parameter is DefaultFormalParameter) {
-        DefaultFormalParameter defaultParameter = parameter as DefaultFormalParameter;
+        DefaultFormalParameter defaultParameter = parameter;
         Expression defaultValue = defaultParameter.defaultValue;
         if (defaultValue != null) {
           EvaluationResultImpl result = validate(defaultValue, CompileTimeErrorCode.NON_CONSTANT_DEFAULT_VALUE);
@@ -14370,7 +16713,7 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
    * @param expression the expression to validate
    */
   void validateInitializerExpression(List<ParameterElement> parameterElements, Expression expression) {
-    EvaluationResultImpl result = expression.accept(new ConstantVisitor_13(this, parameterElements));
+    EvaluationResultImpl result = expression.accept(new ConstantVisitor_ConstantVerifier_validateInitializerExpression(_typeProvider, this, parameterElements));
     reportErrors(result, CompileTimeErrorCode.NON_CONSTANT_VALUE_IN_INITIALIZER);
   }
 
@@ -14401,27 +16744,44 @@ class ConstantVerifier extends RecursiveASTVisitor<Object> {
     NodeList<ConstructorInitializer> initializers = constructor.initializers;
     for (ConstructorInitializer initializer in initializers) {
       if (initializer is ConstructorFieldInitializer) {
-        ConstructorFieldInitializer fieldInitializer = initializer as ConstructorFieldInitializer;
+        ConstructorFieldInitializer fieldInitializer = initializer;
         validateInitializerExpression(parameterElements, fieldInitializer.expression);
       }
       if (initializer is RedirectingConstructorInvocation) {
-        RedirectingConstructorInvocation invocation = initializer as RedirectingConstructorInvocation;
+        RedirectingConstructorInvocation invocation = initializer;
         validateInitializerInvocationArguments(parameterElements, invocation.argumentList);
       }
       if (initializer is SuperConstructorInvocation) {
-        SuperConstructorInvocation invocation = initializer as SuperConstructorInvocation;
+        SuperConstructorInvocation invocation = initializer;
         validateInitializerInvocationArguments(parameterElements, invocation.argumentList);
       }
     }
   }
+
+  /**
+   * Validate that if the passed instance creation is 'const' then all its arguments are constant
+   * expressions.
+   *
+   * @param node the instance creation evaluate
+   */
+  void validateInstanceCreationArguments(InstanceCreationExpression node) {
+    if (!node.isConst) {
+      return;
+    }
+    ArgumentList argumentList = node.argumentList;
+    if (argumentList == null) {
+      return;
+    }
+    validateConstantArguments(argumentList);
+  }
 }
 
-class ConstantVisitor_13 extends ConstantVisitor {
+class ConstantVisitor_ConstantVerifier_validateInitializerExpression extends ConstantVisitor {
   final ConstantVerifier ConstantVerifier_this;
 
   List<ParameterElement> parameterElements;
 
-  ConstantVisitor_13(this.ConstantVerifier_this, this.parameterElements) : super();
+  ConstantVisitor_ConstantVerifier_validateInitializerExpression(TypeProvider arg0, this.ConstantVerifier_this, this.parameterElements) : super(arg0);
 
   EvaluationResultImpl visitSimpleIdentifier(SimpleIdentifier node) {
     Element element = node.staticElement;
@@ -14430,22 +16790,20 @@ class ConstantVisitor_13 extends ConstantVisitor {
         Type2 type = parameterElement.type;
         if (type != null) {
           if (type.isDynamic) {
-            return ValidResult.RESULT_DYNAMIC;
-          }
-          if (type.isSubtypeOf(ConstantVerifier_this._boolType)) {
-            return ValidResult.RESULT_BOOL;
-          }
-          if (type.isSubtypeOf(ConstantVerifier_this._intType)) {
-            return ValidResult.RESULT_INT;
-          }
-          if (type.isSubtypeOf(ConstantVerifier_this._numType)) {
-            return ValidResult.RESULT_NUM;
-          }
-          if (type.isSubtypeOf(ConstantVerifier_this._stringType)) {
-            return ValidResult.RESULT_STRING;
+            return ConstantVerifier_this.valid(ConstantVerifier_this._typeProvider.objectType, DynamicState.DYNAMIC_STATE);
+          } else if (type.isSubtypeOf(ConstantVerifier_this._boolType)) {
+            return ConstantVerifier_this.valid(ConstantVerifier_this._typeProvider.boolType, BoolState.UNKNOWN_VALUE);
+          } else if (type.isSubtypeOf(ConstantVerifier_this._typeProvider.doubleType)) {
+            return ConstantVerifier_this.valid(ConstantVerifier_this._typeProvider.doubleType, DoubleState.UNKNOWN_VALUE);
+          } else if (type.isSubtypeOf(ConstantVerifier_this._intType)) {
+            return ConstantVerifier_this.valid(ConstantVerifier_this._typeProvider.intType, IntState.UNKNOWN_VALUE);
+          } else if (type.isSubtypeOf(ConstantVerifier_this._numType)) {
+            return ConstantVerifier_this.valid(ConstantVerifier_this._typeProvider.numType, NumState.UNKNOWN_VALUE);
+          } else if (type.isSubtypeOf(ConstantVerifier_this._stringType)) {
+            return ConstantVerifier_this.valid(ConstantVerifier_this._typeProvider.stringType, StringState.UNKNOWN_VALUE);
           }
         }
-        return ValidResult.RESULT_OBJECT;
+        return ConstantVerifier_this.valid(type is InterfaceType ? type : ConstantVerifier_this._typeProvider.objectType, GenericState.UNKNOWN_VALUE);
       }
     }
     return super.visitSimpleIdentifier(node);
@@ -14455,10 +16813,8 @@ class ConstantVisitor_13 extends ConstantVisitor {
 /**
  * Instances of the class `ErrorVerifier` traverse an AST structure looking for additional
  * errors and warnings not covered by the parser and resolver.
- *
- * @coverage dart.engine.resolver
  */
-class ErrorVerifier extends RecursiveASTVisitor<Object> {
+class ErrorVerifier extends RecursiveAstVisitor<Object> {
   /**
    * The error reporter by which errors will be reported.
    */
@@ -14566,6 +16922,12 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   bool _isInSystemLibrary = false;
 
   /**
+   * A flag indicating whether the current library contains at least one import directive with a URI
+   * that uses the "dart-ext" scheme.
+   */
+  bool _hasExtUri = false;
+
+  /**
    * The class containing the AST nodes being visited, or `null` if we are not in the scope of
    * a class.
    */
@@ -14578,16 +16940,16 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   ExecutableElement _enclosingFunction;
 
   /**
-   * The number of return statements found in the method or function that we are currently visiting
-   * that have a return value.
+   * The return statements found in the method or function that we are currently visiting that have
+   * a return value.
    */
-  int _returnWithCount = 0;
+  List<ReturnStatement> _returnsWith = new List<ReturnStatement>();
 
   /**
-   * The number of return statements found in the method or function that we are currently visiting
-   * that do not have a return value.
+   * The return statements found in the method or function that we are currently visiting that do
+   * not have a return value.
    */
-  int _returnWithoutCount = 0;
+  List<ReturnStatement> _returnsWithout = new List<ReturnStatement>();
 
   /**
    * This map is initialized when visiting the contents of a class declaration. If the visitor is
@@ -14635,6 +16997,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     this._errorReporter = errorReporter;
     this._currentLibrary = currentLibrary;
     this._isInSystemLibrary = currentLibrary.source.isInSystemLibrary;
+    this._hasExtUri = currentLibrary.hasExtUri();
     this._typeProvider = typeProvider;
     this._inheritanceManager = inheritanceManager;
     _isEnclosingConstructorConst = false;
@@ -14661,7 +17024,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitArgumentList(ArgumentList node) {
-    checkForArgumentTypeNotAssignable(node);
+    checkForArgumentTypesNotAssignableInList(node);
     return super.visitArgumentList(node);
   }
 
@@ -14674,31 +17037,42 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     sc.Token operator = node.operator;
     sc.TokenType operatorType = operator.type;
     if (identical(operatorType, sc.TokenType.EQ)) {
-      checkForInvalidAssignment2(node.leftHandSide, node.rightHandSide);
+      checkForInvalidAssignment(node.leftHandSide, node.rightHandSide);
     } else {
-      checkForInvalidAssignment(node);
+      checkForInvalidCompoundAssignment(node);
     }
-    checkForAssignmentToFinal(node);
-    checkForArgumentTypeNotAssignable2(node.rightHandSide);
+    checkForAssignmentToFinal(node.leftHandSide);
+    checkForArgumentTypeNotAssignableForArgument(node.rightHandSide);
     return super.visitAssignmentExpression(node);
   }
 
   Object visitBinaryExpression(BinaryExpression node) {
-    checkForArgumentTypeNotAssignable2(node.rightOperand);
+    checkForArgumentTypeNotAssignableForArgument(node.rightOperand);
     return super.visitBinaryExpression(node);
   }
 
   Object visitBlockFunctionBody(BlockFunctionBody node) {
-    int previousReturnWithCount = _returnWithCount;
-    int previousReturnWithoutCount = _returnWithoutCount;
+    List<ReturnStatement> previousReturnsWith = _returnsWith;
+    List<ReturnStatement> previousReturnsWithout = _returnsWithout;
     try {
-      _returnWithCount = 0;
-      _returnWithoutCount = 0;
+      _returnsWith = new List<ReturnStatement>();
+      _returnsWithout = new List<ReturnStatement>();
       super.visitBlockFunctionBody(node);
       checkForMixedReturns(node);
     } finally {
-      _returnWithCount = previousReturnWithCount;
-      _returnWithoutCount = previousReturnWithoutCount;
+      _returnsWith = previousReturnsWith;
+      _returnsWithout = previousReturnsWithout;
+    }
+    return null;
+  }
+
+  Object visitBreakStatement(BreakStatement node) {
+    SimpleIdentifier labelNode = node.label;
+    if (labelNode != null) {
+      Element labelElement = labelNode.staticElement;
+      if (labelElement is LabelElementImpl && labelElement.isOnSwitchMember) {
+        _errorReporter.reportError2(ResolverErrorCode.BREAK_LABEL_ON_SWITCH_MEMBER, labelNode, []);
+      }
     }
     return null;
   }
@@ -14724,15 +17098,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       checkForBuiltInIdentifierAsName(node.name, CompileTimeErrorCode.BUILT_IN_IDENTIFIER_AS_TYPE_NAME);
       checkForMemberWithClassName();
       checkForNoDefaultSuperConstructorImplicit(node);
-      checkForAllMixinErrorCodes(withClause);
       checkForConflictingTypeVariableErrorCodes(node);
-      if (implementsClause != null || extendsClause != null) {
-        if (!checkForImplementsDisallowedClass(implementsClause) && !checkForExtendsDisallowedClass(extendsClause)) {
+      // Only do error checks on the clause nodes if there is a non-null clause
+      if (implementsClause != null || extendsClause != null || withClause != null) {
+        // Only check for all of the inheritance logic around clauses if there isn't an error code
+        // such as "Cannot extend double" already on the class.
+        if (!checkForImplementsDisallowedClass(implementsClause) && !checkForExtendsDisallowedClass(extendsClause) && !checkForAllMixinErrorCodes(withClause)) {
           checkForNonAbstractClassInheritsAbstractMember(node);
           checkForInconsistentMethodInheritance();
           checkForRecursiveInterfaceInheritance(_enclosingClass);
         }
       }
+      // initialize initialFieldElementsMap
       ClassElement classElement = node.element;
       if (classElement != null) {
         List<FieldElement> fieldElements = classElement.fields;
@@ -14743,7 +17120,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
           }
         }
       }
-      checkForFinalNotInitialized(node);
+      checkForFinalNotInitializedInClass(node);
       checkForDuplicateDefinitionInheritance();
       checkForConflictingGetterAndMethod();
       checkForConflictingInstanceGetterAndSuperclassMember();
@@ -14813,6 +17190,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   Object visitConstructorFieldInitializer(ConstructorFieldInitializer node) {
     _isInConstructorInitializer = true;
     try {
+      checkForInvalidField(node);
       checkForFieldInitializerNotAssignable(node);
       return super.visitConstructorFieldInitializer(node);
     } finally {
@@ -14820,8 +17198,19 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     }
   }
 
+  Object visitContinueStatement(ContinueStatement node) {
+    SimpleIdentifier labelNode = node.label;
+    if (labelNode != null) {
+      Element labelElement = labelNode.staticElement;
+      if (labelElement is LabelElementImpl && labelElement.isOnSwitchStatement) {
+        _errorReporter.reportError2(ResolverErrorCode.CONTINUE_LABEL_ON_SWITCH, labelNode, []);
+      }
+    }
+    return null;
+  }
+
   Object visitDefaultFormalParameter(DefaultFormalParameter node) {
-    checkForInvalidAssignment2(node.identifier, node.defaultValue);
+    checkForInvalidAssignment(node.identifier, node.defaultValue);
     checkForDefaultValueInFunctionTypedParameter(node);
     return super.visitDefaultFormalParameter(node);
   }
@@ -14855,7 +17244,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     _isInStaticVariableDeclaration = node.isStatic;
     _isInInstanceVariableDeclaration = !_isInStaticVariableDeclaration;
     try {
-      checkForAllInvalidOverrideErrorCodes2(node);
+      checkForAllInvalidOverrideErrorCodesForField(node);
       return super.visitFieldDeclaration(node);
     } finally {
       _isInStaticVariableDeclaration = false;
@@ -14864,6 +17253,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitFieldFormalParameter(FieldFormalParameter node) {
+    checkForValidField(node);
     checkForConstFormalParameter(node);
     checkForPrivateOptionalParameter(node);
     checkForFieldInitializingFormalRedirectingConstructor(node);
@@ -14897,6 +17287,8 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitFunctionExpression(FunctionExpression node) {
+    // If this function expression is wrapped in a function declaration, don't change the
+    // enclosingFunction field.
     if (node.parent is! FunctionDeclaration) {
       ExecutableElement outerFunction = _enclosingFunction;
       try {
@@ -14948,7 +17340,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitIndexExpression(IndexExpression node) {
-    checkForArgumentTypeNotAssignable2(node.index);
+    checkForArgumentTypeNotAssignableForArgument(node.index);
     return super.visitIndexExpression(node);
   }
 
@@ -14959,12 +17351,12 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       TypeName typeName = constructorName.type;
       Type2 type = typeName.type;
       if (type is InterfaceType) {
-        InterfaceType interfaceType = type as InterfaceType;
+        InterfaceType interfaceType = type;
         checkForConstOrNewWithAbstractClass(node, typeName, interfaceType);
         if (_isInConstInstanceCreation) {
           checkForConstWithNonConst(node);
           checkForConstWithUndefinedConstructor(node);
-          checkForConstWithTypeParameters(node);
+          checkForConstWithTypeParametersInCreation(node);
         } else {
           checkForNewWithUndefinedConstructor(node);
         }
@@ -15003,7 +17395,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     checkExpectedTwoMapTypeArguments(typeArguments);
     checkForNonConstMapAsExpressionStatement(node);
     checkForMapTypeNotAssignable(node);
-    checkForConstMapKeyExpressionTypeImplementsEquals2(node);
+    checkForConstMapKeyExpressionTypeImplementsEquals(node);
     return super.visitMapLiteral(node);
   }
 
@@ -15034,7 +17426,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         checkForConflictingInstanceMethodSetter(node);
       }
       checkForConcreteClassWithAbstractMember(node);
-      checkForAllInvalidOverrideErrorCodes3(node);
+      checkForAllInvalidOverrideErrorCodesForMethod(node);
       return super.visitMethodDeclaration(node);
     } finally {
       _enclosingFunction = previousFunction;
@@ -15056,6 +17448,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitNativeClause(NativeClause node) {
+    // TODO(brianwilkerson) Figure out the right rule for when 'native' is allowed.
     if (!_isInSystemLibrary) {
       _errorReporter.reportError2(ParserErrorCode.NATIVE_CLAUSE_IN_NON_SDK_CODE, node, []);
     }
@@ -15068,7 +17461,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitPostfixExpression(PostfixExpression node) {
-    checkForAssignmentToFinal2(node.operand);
+    checkForAssignmentToFinal(node.operand);
     checkForIntNotAssignable(node.operand);
     return super.visitPostfixExpression(node);
   }
@@ -15089,7 +17482,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (identical(operatorType, sc.TokenType.BANG)) {
       checkForNonBoolNegationExpression(operand);
     } else if (operatorType.isIncrementOperator) {
-      checkForAssignmentToFinal2(operand);
+      checkForAssignmentToFinal(operand);
     }
     checkForIntNotAssignable(operand);
     return super.visitPrefixExpression(node);
@@ -15119,9 +17512,9 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
 
   Object visitReturnStatement(ReturnStatement node) {
     if (node.expression == null) {
-      _returnWithoutCount++;
+      _returnsWithout.add(node);
     } else {
-      _returnWithCount++;
+      _returnsWith.add(node);
     }
     checkForAllReturnStatementErrorCodes(node);
     return super.visitReturnStatement(node);
@@ -15168,7 +17561,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   Object visitTopLevelVariableDeclaration(TopLevelVariableDeclaration node) {
-    checkForFinalNotInitialized2(node.variables);
+    checkForFinalNotInitialized(node.variables);
     return super.visitTopLevelVariableDeclaration(node);
   }
 
@@ -15187,8 +17580,11 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   Object visitVariableDeclaration(VariableDeclaration node) {
     SimpleIdentifier nameNode = node.name;
     Expression initializerNode = node.initializer;
-    checkForInvalidAssignment2(nameNode, initializerNode);
+    // do checks
+    checkForInvalidAssignment(nameNode, initializerNode);
+    // visit name
     nameNode.accept(this);
+    // visit initializer
     String name = nameNode.name;
     _namesForReferenceToDeclaredVariableInInitializer.add(name);
     _isInInstanceVariableInitializer = _isInInstanceVariableDeclaration;
@@ -15200,13 +17596,14 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       _isInInstanceVariableInitializer = false;
       _namesForReferenceToDeclaredVariableInInitializer.remove(name);
     }
+    // done
     return null;
   }
 
   Object visitVariableDeclarationList(VariableDeclarationList node) => super.visitVariableDeclarationList(node);
 
   Object visitVariableDeclarationStatement(VariableDeclarationStatement node) {
-    checkForFinalNotInitialized2(node.variables);
+    checkForFinalNotInitialized(node.variables);
     return super.visitVariableDeclarationStatement(node);
   }
 
@@ -15223,13 +17620,16 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticTypeWarningCode#EXPECTED_TWO_MAP_TYPE_ARGUMENTS
    */
   bool checkExpectedTwoMapTypeArguments(TypeArgumentList typeArguments) {
+    // has type arguments
     if (typeArguments == null) {
       return false;
     }
+    // check number of type arguments
     int num = typeArguments.arguments.length;
     if (num == 2) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(StaticTypeWarningCode.EXPECTED_TWO_MAP_TYPE_ARGUMENTS, typeArguments, [num]);
     return true;
   }
@@ -15248,11 +17648,13 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (node.factoryKeyword != null || node.redirectedConstructor != null || node.externalKeyword != null) {
       return false;
     }
+    // Ignore if native class.
     if (_isInNativeClass) {
       return false;
     }
     bool foundError = false;
     Map<FieldElement, INIT_STATE> fieldElementsMap = new Map<FieldElement, INIT_STATE>.from(_initialFieldElementsMap);
+    // Visit all of the field formal parameters
     NodeList<FormalParameter> formalParameters = node.parameters.parameters;
     for (FormalParameter formalParameter in formalParameters) {
       FormalParameter parameter = formalParameter;
@@ -15277,17 +17679,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         }
       }
     }
+    // Visit all of the initializers
     NodeList<ConstructorInitializer> initializers = node.initializers;
     for (ConstructorInitializer constructorInitializer in initializers) {
       if (constructorInitializer is RedirectingConstructorInvocation) {
         return false;
       }
       if (constructorInitializer is ConstructorFieldInitializer) {
-        ConstructorFieldInitializer constructorFieldInitializer = constructorInitializer as ConstructorFieldInitializer;
+        ConstructorFieldInitializer constructorFieldInitializer = constructorInitializer;
         SimpleIdentifier fieldName = constructorFieldInitializer.fieldName;
         Element element = fieldName.staticElement;
         if (element is FieldElement) {
-          FieldElement fieldElement = element as FieldElement;
+          FieldElement fieldElement = element;
           INIT_STATE state = fieldElementsMap[fieldElement];
           if (identical(state, INIT_STATE.NOT_INIT)) {
             fieldElementsMap[fieldElement] = INIT_STATE.INIT_IN_INITIALIZERS;
@@ -15306,6 +17709,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         }
       }
     }
+    // Visit all of the states in the map to ensure that none were never initialized.
     for (MapEntry<FieldElement, INIT_STATE> entry in getMapEntrySet(fieldElementsMap)) {
       if (identical(entry.getValue(), INIT_STATE.NOT_INIT)) {
         FieldElement fieldElement = entry.getKey();
@@ -15325,6 +17729,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * This checks the passed executable element against override-error codes.
    *
    * @param executableElement a non-null [ExecutableElement] to evaluate
+   * @param overriddenExecutable the element that the executableElement is overriding
    * @param parameters the parameters of the executable element
    * @param errorNameTarget the node to report problems on
    * @return `true` if and only if an error code is generated on the passed node
@@ -15340,33 +17745,37 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#INVALID_METHOD_OVERRIDE_NAMED_PARAM_TYPE
    * @see StaticWarningCode#INVALID_OVERRIDE_DIFFERENT_DEFAULT_VALUES
    */
-  bool checkForAllInvalidOverrideErrorCodes(ExecutableElement executableElement, List<ParameterElement> parameters, List<ASTNode> parameterLocations, SimpleIdentifier errorNameTarget) {
-    String executableElementName = executableElement.name;
-    bool executableElementPrivate = Identifier.isPrivateName(executableElementName);
-    ExecutableElement overriddenExecutable = _inheritanceManager.lookupInheritance(_enclosingClass, executableElementName);
+  bool checkForAllInvalidOverrideErrorCodes(ExecutableElement executableElement, ExecutableElement overriddenExecutable, List<ParameterElement> parameters, List<AstNode> parameterLocations, SimpleIdentifier errorNameTarget) {
     bool isGetter = false;
     bool isSetter = false;
     if (executableElement is PropertyAccessorElement) {
-      PropertyAccessorElement accessorElement = executableElement as PropertyAccessorElement;
+      PropertyAccessorElement accessorElement = executableElement;
       isGetter = accessorElement.isGetter;
       isSetter = accessorElement.isSetter;
     }
+    String executableElementName = executableElement.name;
+    // SWC.INSTANCE_METHOD_NAME_COLLIDES_WITH_SUPERCLASS_STATIC
     if (overriddenExecutable == null) {
       if (!isGetter && !isSetter && !executableElement.isOperator) {
         Set<ClassElement> visitedClasses = new Set<ClassElement>();
         InterfaceType superclassType = _enclosingClass.supertype;
         ClassElement superclassElement = superclassType == null ? null : superclassType.element;
+        bool executableElementPrivate = Identifier.isPrivateName(executableElementName);
         while (superclassElement != null && !visitedClasses.contains(superclassElement)) {
           visitedClasses.add(superclassElement);
           LibraryElement superclassLibrary = superclassElement.library;
+          // Check fields.
           List<FieldElement> fieldElts = superclassElement.fields;
           for (FieldElement fieldElt in fieldElts) {
+            // We need the same name.
             if (fieldElt.name != executableElementName) {
               continue;
             }
+            // Ignore if private in a different library - cannot collide.
             if (executableElementPrivate && _currentLibrary != superclassLibrary) {
               continue;
             }
+            // instance vs. static
             if (fieldElt.isStatic) {
               _errorReporter.reportError2(StaticWarningCode.INSTANCE_METHOD_NAME_COLLIDES_WITH_SUPERCLASS_STATIC, errorNameTarget, [
                   executableElementName,
@@ -15374,14 +17783,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
               return true;
             }
           }
+          // Check methods.
           List<MethodElement> methodElements = superclassElement.methods;
           for (MethodElement methodElement in methodElements) {
+            // We need the same name.
             if (methodElement.name != executableElementName) {
               continue;
             }
+            // Ignore if private in a different library - cannot collide.
             if (executableElementPrivate && _currentLibrary != superclassLibrary) {
               continue;
             }
+            // instance vs. static
             if (methodElement.isStatic) {
               _errorReporter.reportError2(StaticWarningCode.INSTANCE_METHOD_NAME_COLLIDES_WITH_SUPERCLASS_STATIC, errorNameTarget, [
                   executableElementName,
@@ -15410,6 +17823,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     List<Type2> overriddenPositionalPT = overriddenFT.optionalParameterTypes;
     Map<String, Type2> overridingNamedPT = overridingFT.namedParameterTypes;
     Map<String, Type2> overriddenNamedPT = overriddenFT.namedParameterTypes;
+    // CTEC.INVALID_OVERRIDE_REQUIRED, CTEC.INVALID_OVERRIDE_POSITIONAL and CTEC.INVALID_OVERRIDE_NAMED
     if (overridingNormalPT.length > overriddenNormalPT.length) {
       _errorReporter.reportError2(StaticWarningCode.INVALID_OVERRIDE_REQUIRED, errorNameTarget, [
           overriddenNormalPT.length,
@@ -15422,17 +17836,22 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
           overriddenExecutable.enclosingElement.displayName]);
       return true;
     }
+    // For each named parameter in the overridden method, verify that there is the same name in
+    // the overriding method, and in the same order.
     Set<String> overridingParameterNameSet = overridingNamedPT.keys.toSet();
     JavaIterator<String> overriddenParameterNameIterator = new JavaIterator(overriddenNamedPT.keys.toSet());
     while (overriddenParameterNameIterator.hasNext) {
       String overriddenParamName = overriddenParameterNameIterator.next();
       if (!overridingParameterNameSet.contains(overriddenParamName)) {
+        // The overridden method expected the overriding method to have overridingParamName,
+        // but it does not.
         _errorReporter.reportError2(StaticWarningCode.INVALID_OVERRIDE_NAMED, errorNameTarget, [
             overriddenParamName,
             overriddenExecutable.enclosingElement.displayName]);
         return true;
       }
     }
+    // SWC.INVALID_METHOD_OVERRIDE_RETURN_TYPE
     if (overriddenFTReturnType != VoidTypeImpl.instance && !overridingFTReturnType.isAssignableTo(overriddenFTReturnType)) {
       _errorReporter.reportError2(!isGetter ? StaticWarningCode.INVALID_METHOD_OVERRIDE_RETURN_TYPE : StaticWarningCode.INVALID_GETTER_OVERRIDE_RETURN_TYPE, errorNameTarget, [
           overridingFTReturnType.displayName,
@@ -15440,6 +17859,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
           overriddenExecutable.enclosingElement.displayName]);
       return true;
     }
+    // SWC.INVALID_METHOD_OVERRIDE_NORMAL_PARAM_TYPE
     if (parameterLocations == null) {
       return false;
     }
@@ -15454,6 +17874,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       }
       parameterIndex++;
     }
+    // SWC.INVALID_METHOD_OVERRIDE_OPTIONAL_PARAM_TYPE
     for (int i = 0; i < overriddenPositionalPT.length; i++) {
       if (!overridingPositionalPT[i].isAssignableTo(overriddenPositionalPT[i])) {
         _errorReporter.reportError2(StaticWarningCode.INVALID_METHOD_OVERRIDE_OPTIONAL_PARAM_TYPE, parameterLocations[parameterIndex], [
@@ -15464,16 +17885,20 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       }
       parameterIndex++;
     }
+    // SWC.INVALID_METHOD_OVERRIDE_NAMED_PARAM_TYPE & SWC.INVALID_OVERRIDE_DIFFERENT_DEFAULT_VALUES
     JavaIterator<MapEntry<String, Type2>> overriddenNamedPTIterator = new JavaIterator(getMapEntrySet(overriddenNamedPT));
     while (overriddenNamedPTIterator.hasNext) {
       MapEntry<String, Type2> overriddenNamedPTEntry = overriddenNamedPTIterator.next();
       Type2 overridingType = overridingNamedPT[overriddenNamedPTEntry.getKey()];
       if (overridingType == null) {
+        // Error, this is never reached- INVALID_OVERRIDE_NAMED would have been created above if
+        // this could be reached.
         continue;
       }
       if (!overriddenNamedPTEntry.getValue().isAssignableTo(overridingType)) {
+        // lookup the parameter for the error to select
         ParameterElement parameterToSelect = null;
-        ASTNode parameterLocationToSelect = null;
+        AstNode parameterLocationToSelect = null;
         for (int i = 0; i < parameters.length; i++) {
           ParameterElement parameter = parameters[i];
           if (identical(parameter.parameterKind, ParameterKind.NAMED) && overriddenNamedPTEntry.getKey() == parameter.name) {
@@ -15491,8 +17916,14 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         }
       }
     }
+    // SWC.INVALID_OVERRIDE_DIFFERENT_DEFAULT_VALUES
+    //
+    // Create three arrays: an array of the optional parameter ASTs (FormalParameters), an array of
+    // the optional parameters elements from our method, and finally an array of the optional
+    // parameter elements from the method we are overriding.
+    //
     bool foundError = false;
-    List<ASTNode> formalParameters = new List<ASTNode>();
+    List<AstNode> formalParameters = new List<AstNode>();
     List<ParameterElementImpl> parameterElts = new List<ParameterElementImpl>();
     List<ParameterElementImpl> overriddenParameterElts = new List<ParameterElementImpl>();
     List<ParameterElement> overriddenPEs = overriddenExecutable.parameters;
@@ -15506,16 +17937,22 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     for (ParameterElement parameterElt in overriddenPEs) {
       if (parameterElt.parameterKind.isOptional) {
         if (parameterElt is ParameterElementImpl) {
-          overriddenParameterElts.add(parameterElt as ParameterElementImpl);
+          overriddenParameterElts.add(parameterElt);
         }
       }
     }
+    //
+    // Next compare the list of optional parameter elements to the list of overridden optional
+    // parameter elements.
+    //
     if (parameterElts.length > 0) {
       if (identical(parameterElts[0].parameterKind, ParameterKind.NAMED)) {
+        // Named parameters, consider the names when matching the parameterElts to the overriddenParameterElts
         for (int i = 0; i < parameterElts.length; i++) {
           ParameterElementImpl parameterElt = parameterElts[i];
           EvaluationResultImpl result = parameterElt.evaluationResult;
-          if (result == null || identical(result, ValidResult.RESULT_OBJECT)) {
+          // TODO (jwren) Ignore Object types, see Dart bug 11287
+          if (isUserDefinedObject(result)) {
             continue;
           }
           String parameterName = parameterElt.name;
@@ -15524,10 +17961,10 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
             String overriddenParameterName = overriddenParameterElt.name;
             if (parameterName != null && parameterName == overriddenParameterName) {
               EvaluationResultImpl overriddenResult = overriddenParameterElt.evaluationResult;
-              if (overriddenResult == null || identical(result, ValidResult.RESULT_OBJECT)) {
+              if (isUserDefinedObject(overriddenResult)) {
                 break;
               }
-              if (!result.equalValues(overriddenResult)) {
+              if (!result.equalValues(_typeProvider, overriddenResult)) {
                 _errorReporter.reportError2(StaticWarningCode.INVALID_OVERRIDE_DIFFERENT_DEFAULT_VALUES_NAMED, formalParameters[i], [
                     overriddenExecutable.enclosingElement.displayName,
                     overriddenExecutable.displayName,
@@ -15538,18 +17975,20 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
           }
         }
       } else {
+        // Positional parameters, consider the positions when matching the parameterElts to the overriddenParameterElts
         for (int i = 0; i < parameterElts.length && i < overriddenParameterElts.length; i++) {
           ParameterElementImpl parameterElt = parameterElts[i];
           EvaluationResultImpl result = parameterElt.evaluationResult;
-          if (result == null || identical(result, ValidResult.RESULT_OBJECT)) {
+          // TODO (jwren) Ignore Object types, see Dart bug 11287
+          if (isUserDefinedObject(result)) {
             continue;
           }
           ParameterElementImpl overriddenParameterElt = overriddenParameterElts[i];
           EvaluationResultImpl overriddenResult = overriddenParameterElt.evaluationResult;
-          if (overriddenResult == null || identical(result, ValidResult.RESULT_OBJECT)) {
+          if (isUserDefinedObject(overriddenResult)) {
             continue;
           }
-          if (!result.equalValues(overriddenResult)) {
+          if (!result.equalValues(_typeProvider, overriddenResult)) {
             _errorReporter.reportError2(StaticWarningCode.INVALID_OVERRIDE_DIFFERENT_DEFAULT_VALUES_POSITIONAL, formalParameters[i], [
                 overriddenExecutable.enclosingElement.displayName,
                 overriddenExecutable.displayName]);
@@ -15562,13 +18001,50 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   /**
+   * This checks the passed executable element against override-error codes. This method computes
+   * the passed executableElement is overriding and calls
+   * [checkForAllInvalidOverrideErrorCodes]
+   * when the [InheritanceManager] returns a [MultiplyInheritedExecutableElement], this
+   * method loops through the array in the [MultiplyInheritedExecutableElement].
+   *
+   * @param executableElement a non-null [ExecutableElement] to evaluate
+   * @param parameters the parameters of the executable element
+   * @param errorNameTarget the node to report problems on
+   * @return `true` if and only if an error code is generated on the passed node
+   */
+  bool checkForAllInvalidOverrideErrorCodesForExecutable(ExecutableElement executableElement, List<ParameterElement> parameters, List<AstNode> parameterLocations, SimpleIdentifier errorNameTarget) {
+    //
+    // Compute the overridden executable from the InheritanceManager
+    //
+    ExecutableElement overriddenExecutable = _inheritanceManager.lookupInheritance(_enclosingClass, executableElement.name);
+    //
+    // If the result is a MultiplyInheritedExecutableElement call
+    // checkForAllInvalidOverrideErrorCodes on all of the elements, until an error is found.
+    //
+    if (overriddenExecutable is MultiplyInheritedExecutableElement) {
+      MultiplyInheritedExecutableElement multiplyInheritedElement = overriddenExecutable;
+      List<ExecutableElement> overriddenElement = multiplyInheritedElement.inheritedElements;
+      for (int i = 0; i < overriddenElement.length; i++) {
+        if (checkForAllInvalidOverrideErrorCodes(executableElement, overriddenElement[i], parameters, parameterLocations, errorNameTarget)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    //
+    // Otherwise, just call checkForAllInvalidOverrideErrorCodes.
+    //
+    return checkForAllInvalidOverrideErrorCodes(executableElement, overriddenExecutable, parameters, parameterLocations, errorNameTarget);
+  }
+
+  /**
    * This checks the passed field declaration against override-error codes.
    *
    * @param node the [MethodDeclaration] to evaluate
    * @return `true` if and only if an error code is generated on the passed node
    * @see #checkForAllInvalidOverrideErrorCodes(ExecutableElement)
    */
-  bool checkForAllInvalidOverrideErrorCodes2(FieldDeclaration node) {
+  bool checkForAllInvalidOverrideErrorCodesForField(FieldDeclaration node) {
     if (_enclosingClass == null || node.isStatic) {
       return false;
     }
@@ -15583,10 +18059,10 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       PropertyAccessorElement setter = element.setter;
       SimpleIdentifier fieldName = field.name;
       if (getter != null) {
-        hasProblems = javaBooleanOr(hasProblems, checkForAllInvalidOverrideErrorCodes(getter, ParameterElementImpl.EMPTY_ARRAY, ASTNode.EMPTY_ARRAY, fieldName));
+        hasProblems = javaBooleanOr(hasProblems, checkForAllInvalidOverrideErrorCodesForExecutable(getter, ParameterElementImpl.EMPTY_ARRAY, AstNode.EMPTY_ARRAY, fieldName));
       }
       if (setter != null) {
-        hasProblems = javaBooleanOr(hasProblems, checkForAllInvalidOverrideErrorCodes(setter, setter.parameters, <ASTNode> [fieldName], fieldName));
+        hasProblems = javaBooleanOr(hasProblems, checkForAllInvalidOverrideErrorCodesForExecutable(setter, setter.parameters, <AstNode> [fieldName], fieldName));
       }
     }
     return hasProblems;
@@ -15599,7 +18075,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @return `true` if and only if an error code is generated on the passed node
    * @see #checkForAllInvalidOverrideErrorCodes(ExecutableElement)
    */
-  bool checkForAllInvalidOverrideErrorCodes3(MethodDeclaration node) {
+  bool checkForAllInvalidOverrideErrorCodesForMethod(MethodDeclaration node) {
     if (_enclosingClass == null || node.isStatic || node.body is NativeFunctionBody) {
       return false;
     }
@@ -15613,8 +18089,8 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     }
     FormalParameterList formalParameterList = node.parameters;
     NodeList<FormalParameter> parameterList = formalParameterList != null ? formalParameterList.parameters : null;
-    List<ASTNode> parameters = parameterList != null ? new List.from(parameterList) : null;
-    return checkForAllInvalidOverrideErrorCodes(executableElement, executableElement.parameters, parameters, methodName);
+    List<AstNode> parameters = parameterList != null ? new List.from(parameterList) : null;
+    return checkForAllInvalidOverrideErrorCodesForExecutable(executableElement, executableElement.parameters, parameters, methodName);
   }
 
   /**
@@ -15658,15 +18134,27 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#REDIRECT_TO_MISSING_CONSTRUCTOR
    */
   bool checkForAllRedirectConstructorErrorCodes(ConstructorDeclaration node) {
+    //
+    // Prepare redirected constructor node
+    //
     ConstructorName redirectedConstructor = node.redirectedConstructor;
     if (redirectedConstructor == null) {
       return false;
     }
+    //
+    // Prepare redirected constructor type
+    //
     ConstructorElement redirectedElement = redirectedConstructor.staticElement;
     if (redirectedElement == null) {
+      //
+      // If the element is null, we check for the REDIRECT_TO_MISSING_CONSTRUCTOR case
+      //
       TypeName constructorTypeName = redirectedConstructor.type;
       Type2 redirectedType = constructorTypeName.type;
       if (redirectedType != null && redirectedType.element != null && !redirectedType.isDynamic) {
+        //
+        // Prepare the constructor name
+        //
         String constructorStrName = constructorTypeName.name.name;
         if (redirectedConstructor.name != null) {
           constructorStrName += ".${redirectedConstructor.name.name}";
@@ -15679,12 +18167,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     }
     FunctionType redirectedType = redirectedElement.type;
     Type2 redirectedReturnType = redirectedType.returnType;
+    //
+    // Report specific problem when return type is incompatible
+    //
     FunctionType constructorType = node.element.type;
     Type2 constructorReturnType = constructorType.returnType;
     if (!redirectedReturnType.isAssignableTo(constructorReturnType)) {
       _errorReporter.reportError2(StaticWarningCode.REDIRECT_TO_INVALID_RETURN_TYPE, redirectedConstructor, [redirectedReturnType, constructorReturnType]);
       return true;
     }
+    //
+    // Check parameters
+    //
     if (!redirectedType.isSubtypeOf(constructorType)) {
       _errorReporter.reportError2(StaticWarningCode.REDIRECT_TO_INVALID_FUNCTION_TYPE, redirectedConstructor, [redirectedType, constructorType]);
       return true;
@@ -15713,6 +18207,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     FunctionType functionType = _enclosingFunction == null ? null : _enclosingFunction.type;
     Type2 expectedReturnType = functionType == null ? DynamicTypeImpl.instance : functionType.returnType;
     Expression returnExpression = node.expression;
+    // RETURN_IN_GENERATIVE_CONSTRUCTOR
     bool isGenerativeConstructor = _enclosingFunction is ConstructorElement && !(_enclosingFunction as ConstructorElement).isFactory;
     if (isGenerativeConstructor) {
       if (returnExpression == null) {
@@ -15721,6 +18216,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       _errorReporter.reportError2(CompileTimeErrorCode.RETURN_IN_GENERATIVE_CONSTRUCTOR, returnExpression, []);
       return true;
     }
+    // RETURN_WITHOUT_VALUE
     if (returnExpression == null) {
       if (VoidTypeImpl.instance.isAssignableTo(expectedReturnType)) {
         return false;
@@ -15728,6 +18224,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       _errorReporter.reportError2(StaticWarningCode.RETURN_WITHOUT_VALUE, node, []);
       return true;
     }
+    // RETURN_OF_INVALID_TYPE
     return checkForReturnOfInvalidType(returnExpression, expectedReturnType);
   }
 
@@ -15740,14 +18237,17 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#AMBIGUOUS_EXPORT
    */
   bool checkForAmbiguousExport(ExportDirective node) {
+    // prepare ExportElement
     if (node.element is! ExportElement) {
       return false;
     }
     ExportElement exportElement = node.element as ExportElement;
+    // prepare exported library
     LibraryElement exportedLibrary = exportElement.exportedLibrary;
     if (exportedLibrary == null) {
       return false;
     }
+    // check exported names
     Namespace namespace = new NamespaceBuilder().createExportNamespace(exportElement);
     Map<String, Element> definedNames = namespace.definedNames;
     for (MapEntry<String, Element> definedEntry in getMapEntrySet(definedNames)) {
@@ -15785,53 +18285,6 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   /**
-   * This verifies that the passed arguments can be assigned to their corresponding parameters.
-   *
-   * @param node the arguments to evaluate
-   * @return `true` if and only if an error code is generated on the passed node
-   * @see StaticWarningCode#ARGUMENT_TYPE_NOT_ASSIGNABLE
-   */
-  bool checkForArgumentTypeNotAssignable(ArgumentList argumentList) {
-    if (argumentList == null) {
-      return false;
-    }
-    bool problemReported = false;
-    for (Expression argument in argumentList.arguments) {
-      problemReported = javaBooleanOr(problemReported, checkForArgumentTypeNotAssignable2(argument));
-    }
-    return problemReported;
-  }
-
-  /**
-   * This verifies that the passed argument can be assigned to its corresponding parameter.
-   *
-   * @param argument the argument to evaluate
-   * @return `true` if and only if an error code is generated on the passed node
-   * @see StaticWarningCode#ARGUMENT_TYPE_NOT_ASSIGNABLE
-   */
-  bool checkForArgumentTypeNotAssignable2(Expression argument) {
-    if (argument == null) {
-      return false;
-    }
-    ParameterElement staticParameterElement = argument.staticParameterElement;
-    Type2 staticParameterType = staticParameterElement == null ? null : staticParameterElement.type;
-    ParameterElement propagatedParameterElement = argument.propagatedParameterElement;
-    Type2 propagatedParameterType = propagatedParameterElement == null ? null : propagatedParameterElement.type;
-    return checkForArgumentTypeNotAssignable3(argument, staticParameterType, propagatedParameterType, StaticWarningCode.ARGUMENT_TYPE_NOT_ASSIGNABLE);
-  }
-
-  /**
-   * This verifies that the passed expression can be assigned to its corresponding parameters.
-   *
-   * @param expression the expression to evaluate
-   * @param expectedStaticType the expected static type
-   * @param expectedPropagatedType the expected propagated type, may be `null`
-   * @return `true` if and only if an error code is generated on the passed node
-   * @see StaticWarningCode#ARGUMENT_TYPE_NOT_ASSIGNABLE
-   */
-  bool checkForArgumentTypeNotAssignable3(Expression expression, Type2 expectedStaticType, Type2 expectedPropagatedType, ErrorCode errorCode) => checkForArgumentTypeNotAssignable4(expression, expectedStaticType, getStaticType(expression), expectedPropagatedType, expression.propagatedType, errorCode);
-
-  /**
    * This verifies that the passed expression can be assigned to its corresponding parameters.
    *
    * @param expression the expression to evaluate
@@ -15843,7 +18296,10 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @return `true` if and only if an error code is generated on the passed node
    * @see StaticWarningCode#ARGUMENT_TYPE_NOT_ASSIGNABLE
    */
-  bool checkForArgumentTypeNotAssignable4(Expression expression, Type2 expectedStaticType, Type2 actualStaticType, Type2 expectedPropagatedType, Type2 actualPropagatedType, ErrorCode errorCode) {
+  bool checkForArgumentTypeNotAssignable(Expression expression, Type2 expectedStaticType, Type2 actualStaticType, Type2 expectedPropagatedType, Type2 actualPropagatedType, ErrorCode errorCode) {
+    //
+    // Test static type information
+    //
     if (actualStaticType == null || expectedStaticType == null) {
       return false;
     }
@@ -15857,15 +18313,51 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   /**
-   * This verifies that left hand side of the passed assignment expression is not final.
+   * This verifies that the passed argument can be assigned to its corresponding parameter.
    *
-   * @param node the assignment expression to evaluate
+   * @param argument the argument to evaluate
    * @return `true` if and only if an error code is generated on the passed node
-   * @see StaticWarningCode#ASSIGNMENT_TO_FINAL
+   * @see StaticWarningCode#ARGUMENT_TYPE_NOT_ASSIGNABLE
    */
-  bool checkForAssignmentToFinal(AssignmentExpression node) {
-    Expression leftExpression = node.leftHandSide;
-    return checkForAssignmentToFinal2(leftExpression);
+  bool checkForArgumentTypeNotAssignableForArgument(Expression argument) {
+    if (argument == null) {
+      return false;
+    }
+    ParameterElement staticParameterElement = argument.staticParameterElement;
+    Type2 staticParameterType = staticParameterElement == null ? null : staticParameterElement.type;
+    ParameterElement propagatedParameterElement = argument.propagatedParameterElement;
+    Type2 propagatedParameterType = propagatedParameterElement == null ? null : propagatedParameterElement.type;
+    return checkForArgumentTypeNotAssignableWithExpectedTypes(argument, staticParameterType, propagatedParameterType, StaticWarningCode.ARGUMENT_TYPE_NOT_ASSIGNABLE);
+  }
+
+  /**
+   * This verifies that the passed expression can be assigned to its corresponding parameters.
+   *
+   * @param expression the expression to evaluate
+   * @param expectedStaticType the expected static type
+   * @param expectedPropagatedType the expected propagated type, may be `null`
+   * @return `true` if and only if an error code is generated on the passed node
+   * @see StaticWarningCode#ARGUMENT_TYPE_NOT_ASSIGNABLE
+   */
+  bool checkForArgumentTypeNotAssignableWithExpectedTypes(Expression expression, Type2 expectedStaticType, Type2 expectedPropagatedType, ErrorCode errorCode) => checkForArgumentTypeNotAssignable(expression, expectedStaticType, getStaticType(expression), expectedPropagatedType, expression.propagatedType, errorCode);
+
+  /**
+   * This verifies that the passed arguments can be assigned to their corresponding parameters.
+   *
+   * @param node the arguments to evaluate
+   * @return `true` if and only if an error code is generated on the passed node
+   * @see StaticWarningCode#ARGUMENT_TYPE_NOT_ASSIGNABLE
+   */
+  bool checkForArgumentTypesNotAssignableInList(ArgumentList argumentList) {
+    if (argumentList == null) {
+      return false;
+    }
+    bool problemReported = false;
+    for (Expression argument in argumentList.arguments) {
+      problemReported = javaBooleanOr(problemReported, checkForArgumentTypeNotAssignableForArgument(argument));
+    }
+    // done
+    return problemReported;
   }
 
   /**
@@ -15877,14 +18369,16 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#ASSIGNMENT_TO_FINAL
    * @see StaticWarningCode#ASSIGNMENT_TO_METHOD
    */
-  bool checkForAssignmentToFinal2(Expression expression) {
+  bool checkForAssignmentToFinal(Expression expression) {
+    // prepare element
     Element element = null;
     if (expression is Identifier) {
-      element = (expression as Identifier).staticElement;
+      element = expression.staticElement;
     }
     if (expression is PropertyAccess) {
-      element = (expression as PropertyAccess).propertyName.staticElement;
+      element = expression.propertyName.staticElement;
     }
+    // check if element is assignable
     if (element is PropertyAccessorElement) {
       PropertyAccessorElement accessor = element as PropertyAccessorElement;
       element = accessor.variable;
@@ -15896,7 +18390,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         return true;
       }
       if (variable.isFinal) {
-        _errorReporter.reportError2(StaticWarningCode.ASSIGNMENT_TO_FINAL, expression, []);
+        _errorReporter.reportError2(StaticWarningCode.ASSIGNMENT_TO_FINAL, expression, [variable.name]);
         return true;
       }
       return false;
@@ -15943,9 +18437,10 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   bool checkForCaseBlockNotTerminated(SwitchCase node) {
     NodeList<Statement> statements = node.statements;
     if (statements.isEmpty) {
-      ASTNode parent = node.parent;
+      // fall-through without statements at all
+      AstNode parent = node.parent;
       if (parent is SwitchStatement) {
-        SwitchStatement switchStatement = parent as SwitchStatement;
+        SwitchStatement switchStatement = parent;
         NodeList<SwitchMember> members = switchStatement.members;
         int index = members.indexOf(node);
         if (index != -1 && index < members.length - 1) {
@@ -15954,16 +18449,19 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       }
     } else {
       Statement statement = statements[statements.length - 1];
+      // terminated with statement
       if (statement is BreakStatement || statement is ContinueStatement || statement is ReturnStatement) {
         return false;
       }
+      // terminated with 'throw' expression
       if (statement is ExpressionStatement) {
-        Expression expression = (statement as ExpressionStatement).expression;
+        Expression expression = statement.expression;
         if (expression is ThrowExpression) {
           return false;
         }
       }
     }
+    // report error
     _errorReporter.reportError5(StaticWarningCode.CASE_BLOCK_NOT_TERMINATED, node.keyword, []);
     return true;
   }
@@ -15983,7 +18481,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     for (int i = 0; i < lastMember; i++) {
       SwitchMember member = members[i];
       if (member is SwitchCase) {
-        foundError = javaBooleanOr(foundError, checkForCaseBlockNotTerminated(member as SwitchCase));
+        foundError = javaBooleanOr(foundError, checkForCaseBlockNotTerminated(member));
       }
     }
     return foundError;
@@ -16002,6 +18500,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (!implementsEqualsWhenNotAllowed(type)) {
       return false;
     }
+    // report error
     _errorReporter.reportError5(CompileTimeErrorCode.CASE_EXPRESSION_TYPE_IMPLEMENTS_EQUALS, node.keyword, [type.displayName]);
     return true;
   }
@@ -16039,6 +18538,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     SimpleIdentifier constructorName = node.name;
     String name = constructorElement.name;
     ClassElement classElement = constructorElement.enclosingElement;
+    // constructors
     List<ConstructorElement> constructors = classElement.constructors;
     for (ConstructorElement otherConstructor in constructors) {
       if (identical(otherConstructor, constructorElement)) {
@@ -16053,20 +18553,19 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         return true;
       }
     }
+    // conflict with class member
     if (constructorName != null && constructorElement != null && !constructorName.isSynthetic) {
-      List<FieldElement> fields = classElement.fields;
-      for (FieldElement field in fields) {
-        if (field.name == name) {
-          _errorReporter.reportError2(CompileTimeErrorCode.CONFLICTING_CONSTRUCTOR_NAME_AND_FIELD, node, [name]);
-          return true;
-        }
+      // fields
+      FieldElement field = classElement.getField(name);
+      if (field != null) {
+        _errorReporter.reportError2(CompileTimeErrorCode.CONFLICTING_CONSTRUCTOR_NAME_AND_FIELD, node, [name]);
+        return true;
       }
-      List<MethodElement> methods = classElement.methods;
-      for (MethodElement method in methods) {
-        if (method.name == name) {
-          _errorReporter.reportError2(CompileTimeErrorCode.CONFLICTING_CONSTRUCTOR_NAME_AND_METHOD, node, [name]);
-          return true;
-        }
+      // methods
+      MethodElement method = classElement.getMethod(name);
+      if (method != null) {
+        _errorReporter.reportError2(CompileTimeErrorCode.CONFLICTING_CONSTRUCTOR_NAME_AND_METHOD, node, [name]);
+        return true;
       }
     }
     return false;
@@ -16085,33 +18584,40 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       return false;
     }
     bool hasProblem = false;
+    // method declared in the enclosing class vs. inherited getter
     for (MethodElement method in _enclosingClass.methods) {
       String name = method.name;
+      // find inherited property accessor (and can be only getter)
       ExecutableElement inherited = _inheritanceManager.lookupInheritance(_enclosingClass, name);
       if (inherited is! PropertyAccessorElement) {
         continue;
       }
+      // report problem
       hasProblem = true;
       _errorReporter.reportError4(CompileTimeErrorCode.CONFLICTING_GETTER_AND_METHOD, method.nameOffset, name.length, [
           _enclosingClass.displayName,
           inherited.enclosingElement.displayName,
           name]);
     }
+    // getter declared in the enclosing class vs. inherited method
     for (PropertyAccessorElement accessor in _enclosingClass.accessors) {
       if (!accessor.isGetter) {
         continue;
       }
       String name = accessor.name;
+      // find inherited method
       ExecutableElement inherited = _inheritanceManager.lookupInheritance(_enclosingClass, name);
       if (inherited is! MethodElement) {
         continue;
       }
+      // report problem
       hasProblem = true;
       _errorReporter.reportError4(CompileTimeErrorCode.CONFLICTING_METHOD_AND_GETTER, accessor.nameOffset, name.length, [
           _enclosingClass.displayName,
           inherited.enclosingElement.displayName,
           name]);
     }
+    // done
     return hasProblem;
   }
 
@@ -16130,16 +18636,21 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       return false;
     }
     InterfaceType enclosingType = _enclosingClass.type;
+    // check every accessor
     bool hasProblem = false;
     for (PropertyAccessorElement accessor in _enclosingClass.accessors) {
+      // we analyze instance accessors here
       if (accessor.isStatic) {
         continue;
       }
+      // prepare accessor properties
       String name = accessor.displayName;
       bool getter = accessor.isGetter;
+      // if non-final variable, ignore setter - we alreay reported problem for getter
       if (accessor.isSetter && accessor.isSynthetic) {
         continue;
       }
+      // try to find super element
       ExecutableElement superElement;
       superElement = enclosingType.lookUpGetterInSuperclass(name, _currentLibrary);
       if (superElement == null) {
@@ -16151,11 +18662,14 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       if (superElement == null) {
         continue;
       }
+      // OK, not static
       if (!superElement.isStatic) {
         continue;
       }
+      // prepare "super" type to report its name
       ClassElement superElementClass = superElement.enclosingElement as ClassElement;
       InterfaceType superElementType = superElementClass.type;
+      // report problem
       hasProblem = true;
       if (getter) {
         _errorReporter.reportError3(StaticWarningCode.CONFLICTING_INSTANCE_GETTER_AND_SUPERCLASS_MEMBER, accessor, [superElementType.displayName]);
@@ -16163,6 +18677,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         _errorReporter.reportError3(StaticWarningCode.CONFLICTING_INSTANCE_SETTER_AND_SUPERCLASS_MEMBER, accessor, [superElementType.displayName]);
       }
     }
+    // done
     return hasProblem;
   }
 
@@ -16178,18 +18693,22 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (node.isStatic) {
       return false;
     }
+    // prepare name
     SimpleIdentifier nameNode = node.name;
     if (nameNode == null) {
       return false;
     }
     String name = nameNode.name;
+    // ensure that we have enclosing class
     if (_enclosingClass == null) {
       return false;
     }
+    // try to find setter
     ExecutableElement setter = _inheritanceManager.lookupMember(_enclosingClass, "${name}=");
     if (setter == null) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(StaticWarningCode.CONFLICTING_INSTANCE_METHOD_SETTER, nameNode, [
         _enclosingClass.displayName,
         name,
@@ -16209,24 +18728,30 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (!node.isStatic) {
       return false;
     }
+    // prepare name
     SimpleIdentifier nameNode = node.name;
     if (nameNode == null) {
       return false;
     }
     String name = nameNode.name;
+    // prepare enclosing type
     if (_enclosingClass == null) {
       return false;
     }
     InterfaceType enclosingType = _enclosingClass.type;
+    // try to find setter
     ExecutableElement setter = enclosingType.lookUpSetter(name, _currentLibrary);
     if (setter == null) {
       return false;
     }
+    // OK, also static
     if (setter.isStatic) {
       return false;
     }
+    // prepare "setter" type to report its name
     ClassElement setterClass = setter.enclosingElement as ClassElement;
     InterfaceType setterType = setterClass.type;
+    // report problem
     _errorReporter.reportError2(StaticWarningCode.CONFLICTING_STATIC_GETTER_AND_INSTANCE_SETTER, nameNode, [setterType.displayName]);
     return true;
   }
@@ -16243,15 +18768,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (!node.isStatic) {
       return false;
     }
+    // prepare name
     SimpleIdentifier nameNode = node.name;
     if (nameNode == null) {
       return false;
     }
     String name = nameNode.name;
+    // prepare enclosing type
     if (_enclosingClass == null) {
       return false;
     }
     InterfaceType enclosingType = _enclosingClass.type;
+    // try to find member
     ExecutableElement member;
     member = enclosingType.lookUpMethod(name, _currentLibrary);
     if (member == null) {
@@ -16263,11 +18791,14 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (member == null) {
       return false;
     }
+    // OK, also static
     if (member.isStatic) {
       return false;
     }
+    // prepare "member" type to report its name
     ClassElement memberClass = member.enclosingElement as ClassElement;
     InterfaceType memberType = memberClass.type;
+    // report problem
     _errorReporter.reportError2(StaticWarningCode.CONFLICTING_STATIC_SETTER_AND_INSTANCE_MEMBER, nameNode, [memberType.displayName]);
     return true;
   }
@@ -16284,10 +18815,12 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     bool problemReported = false;
     for (TypeParameterElement typeParameter in _enclosingClass.typeParameters) {
       String name = typeParameter.name;
+      // name is same as the name of the enclosing class
       if (_enclosingClass.name == name) {
         _errorReporter.reportError4(CompileTimeErrorCode.CONFLICTING_TYPE_VARIABLE_AND_CLASS, typeParameter.nameOffset, name.length, [name]);
         problemReported = true;
       }
+      // check members
       if (_enclosingClass.getMethod(name) != null || _enclosingClass.getGetter(name) != null || _enclosingClass.getSetter(name) != null) {
         _errorReporter.reportError4(CompileTimeErrorCode.CONFLICTING_TYPE_VARIABLE_AND_MEMBER, typeParameter.nameOffset, name.length, [name]);
         problemReported = true;
@@ -16308,12 +18841,14 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (!_isEnclosingConstructorConst) {
       return false;
     }
+    // OK, const factory, checked elsewhere
     if (node.factoryKeyword != null) {
       return false;
     }
+    // try to find and check super constructor invocation
     for (ConstructorInitializer initializer in node.initializers) {
       if (initializer is SuperConstructorInvocation) {
-        SuperConstructorInvocation superInvocation = initializer as SuperConstructorInvocation;
+        SuperConstructorInvocation superInvocation = initializer;
         ConstructorElement element = superInvocation.staticElement;
         if (element == null || element.isConst) {
           return false;
@@ -16322,6 +18857,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         return true;
       }
     }
+    // no explicit super constructor invocation, check default constructor
     InterfaceType supertype = _enclosingClass.supertype;
     if (supertype == null) {
       return false;
@@ -16336,6 +18872,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (unnamedConstructor.isConst) {
       return false;
     }
+    // default constructor is not 'const', report problem
     _errorReporter.reportError2(CompileTimeErrorCode.CONST_CONSTRUCTOR_WITH_NON_CONST_SUPER, node, []);
     return true;
   }
@@ -16352,11 +18889,13 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (!_isEnclosingConstructorConst) {
       return false;
     }
+    // check if there is non-final field
     ConstructorElement constructorElement = node.element;
     ClassElement classElement = constructorElement.enclosingElement;
     if (!classElement.hasNonFinalField()) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(CompileTimeErrorCode.CONST_CONSTRUCTOR_WITH_NON_FINAL_FIELD, node, []);
     return true;
   }
@@ -16393,23 +18932,6 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   /**
-   * This verifies that the passed expression (used as a key in constant map) has class type that
-   * does not declare operator <i>==<i>.
-   *
-   * @param key the expression to evaluate
-   * @return `true` if and only if an error code is generated on the passed node
-   * @see CompileTimeErrorCode#CONST_MAP_KEY_EXPRESSION_TYPE_IMPLEMENTS_EQUALS
-   */
-  bool checkForConstMapKeyExpressionTypeImplementsEquals(Expression key) {
-    Type2 type = key.staticType;
-    if (!implementsEqualsWhenNotAllowed(type)) {
-      return false;
-    }
-    _errorReporter.reportError2(CompileTimeErrorCode.CONST_MAP_KEY_EXPRESSION_TYPE_IMPLEMENTS_EQUALS, key, [type.displayName]);
-    return true;
-  }
-
-  /**
    * This verifies that the all keys of the passed map literal have class type that does not declare
    * operator <i>==<i>.
    *
@@ -16417,14 +18939,20 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @return `true` if and only if an error code is generated on the passed node
    * @see CompileTimeErrorCode#CONST_MAP_KEY_EXPRESSION_TYPE_IMPLEMENTS_EQUALS
    */
-  bool checkForConstMapKeyExpressionTypeImplementsEquals2(MapLiteral node) {
+  bool checkForConstMapKeyExpressionTypeImplementsEquals(MapLiteral node) {
+    // OK, not const.
     if (node.constKeyword == null) {
       return false;
     }
+    // Check every map entry.
     bool hasProblems = false;
     for (MapLiteralEntry entry in node.entries) {
       Expression key = entry.key;
-      hasProblems = javaBooleanOr(hasProblems, checkForConstMapKeyExpressionTypeImplementsEquals(key));
+      Type2 type = key.staticType;
+      if (implementsEqualsWhenNotAllowed(type)) {
+        _errorReporter.reportError2(CompileTimeErrorCode.CONST_MAP_KEY_EXPRESSION_TYPE_IMPLEMENTS_EQUALS, key, [type.displayName]);
+        hasProblems = true;
+      }
     }
     return hasProblems;
   }
@@ -16476,6 +19004,39 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   /**
+   * This verifies that the passed type name does not reference any type parameters.
+   *
+   * @param typeName the type name to evaluate
+   * @return `true` if and only if an error code is generated on the passed node
+   * @see CompileTimeErrorCode#CONST_WITH_TYPE_PARAMETERS
+   */
+  bool checkForConstWithTypeParameters(TypeName typeName) {
+    // something wrong with AST
+    if (typeName == null) {
+      return false;
+    }
+    Identifier name = typeName.name;
+    if (name == null) {
+      return false;
+    }
+    // should not be a type parameter
+    if (name.staticElement is TypeParameterElement) {
+      _errorReporter.reportError2(CompileTimeErrorCode.CONST_WITH_TYPE_PARAMETERS, name, []);
+    }
+    // check type arguments
+    TypeArgumentList typeArguments = typeName.typeArguments;
+    if (typeArguments != null) {
+      bool hasError = false;
+      for (TypeName argument in typeArguments.arguments) {
+        hasError = javaBooleanOr(hasError, checkForConstWithTypeParameters(argument));
+      }
+      return hasError;
+    }
+    // OK
+    return false;
+  }
+
+  /**
    * This verifies that the passed 'const' instance creation expression does not reference any type
    * parameters.
    *
@@ -16485,42 +19046,13 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @return `true` if and only if an error code is generated on the passed node
    * @see CompileTimeErrorCode#CONST_WITH_TYPE_PARAMETERS
    */
-  bool checkForConstWithTypeParameters(InstanceCreationExpression node) {
+  bool checkForConstWithTypeParametersInCreation(InstanceCreationExpression node) {
     ConstructorName constructorName = node.constructorName;
     if (constructorName == null) {
       return false;
     }
     TypeName typeName = constructorName.type;
-    return checkForConstWithTypeParameters2(typeName);
-  }
-
-  /**
-   * This verifies that the passed type name does not reference any type parameters.
-   *
-   * @param typeName the type name to evaluate
-   * @return `true` if and only if an error code is generated on the passed node
-   * @see CompileTimeErrorCode#CONST_WITH_TYPE_PARAMETERS
-   */
-  bool checkForConstWithTypeParameters2(TypeName typeName) {
-    if (typeName == null) {
-      return false;
-    }
-    Identifier name = typeName.name;
-    if (name == null) {
-      return false;
-    }
-    if (name.staticElement is TypeParameterElement) {
-      _errorReporter.reportError2(CompileTimeErrorCode.CONST_WITH_TYPE_PARAMETERS, name, []);
-    }
-    TypeArgumentList typeArguments = typeName.typeArguments;
-    if (typeArguments != null) {
-      bool hasError = false;
-      for (TypeName argument in typeArguments.arguments) {
-        hasError = javaBooleanOr(hasError, checkForConstWithTypeParameters2(argument));
-      }
-      return hasError;
-    }
-    return false;
+    return checkForConstWithTypeParameters(typeName);
   }
 
   /**
@@ -16535,18 +19067,22 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#CONST_WITH_UNDEFINED_CONSTRUCTOR_DEFAULT
    */
   bool checkForConstWithUndefinedConstructor(InstanceCreationExpression node) {
+    // OK if resolved
     if (node.staticElement != null) {
       return false;
     }
+    // prepare constructor name
     ConstructorName constructorName = node.constructorName;
     if (constructorName == null) {
       return false;
     }
+    // prepare class name
     TypeName type = constructorName.type;
     if (type == null) {
       return false;
     }
     Identifier className = type.name;
+    // report as named or default constructor absence
     SimpleIdentifier name = constructorName.name;
     if (name != null) {
       _errorReporter.reportError2(CompileTimeErrorCode.CONST_WITH_UNDEFINED_CONSTRUCTOR, name, [className, name]);
@@ -16569,7 +19105,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     NodeList<FormalParameter> parameters = formalParameterList.parameters;
     for (FormalParameter formalParameter in parameters) {
       if (formalParameter is DefaultFormalParameter) {
-        DefaultFormalParameter defaultFormalParameter = formalParameter as DefaultFormalParameter;
+        DefaultFormalParameter defaultFormalParameter = formalParameter;
         if (defaultFormalParameter.defaultValue != null) {
           _errorReporter.reportError2(CompileTimeErrorCode.DEFAULT_VALUE_IN_FUNCTION_TYPE_ALIAS, node, []);
           result = true;
@@ -16588,12 +19124,15 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#DEFAULT_VALUE_IN_FUNCTION_TYPED_PARAMETER
    */
   bool checkForDefaultValueInFunctionTypedParameter(DefaultFormalParameter node) {
+    // OK, not in a function typed parameter.
     if (!_isInFunctionTypedFormalParameter) {
       return false;
     }
+    // OK, no default value.
     if (node.defaultValue == null) {
       return false;
     }
+    // Report problem.
     _errorReporter.reportError2(CompileTimeErrorCode.DEFAULT_VALUE_IN_FUNCTION_TYPED_PARAMETER, node, []);
     return true;
   }
@@ -16614,13 +19153,13 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       if (!member.isStatic) {
         continue;
       }
-      hasProblem = javaBooleanOr(hasProblem, checkForDuplicateDefinitionInheritance2(member));
+      hasProblem = javaBooleanOr(hasProblem, checkForDuplicateDefinitionOfMember(member));
     }
     for (ExecutableElement member in _enclosingClass.accessors) {
       if (!member.isStatic) {
         continue;
       }
-      hasProblem = javaBooleanOr(hasProblem, checkForDuplicateDefinitionInheritance2(member));
+      hasProblem = javaBooleanOr(hasProblem, checkForDuplicateDefinitionOfMember(member));
     }
     return hasProblem;
   }
@@ -16633,18 +19172,22 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @return `true` if and only if an error code is generated on the passed node
    * @see CompileTimeErrorCode#DUPLICATE_DEFINITION_INHERITANCE
    */
-  bool checkForDuplicateDefinitionInheritance2(ExecutableElement staticMember) {
+  bool checkForDuplicateDefinitionOfMember(ExecutableElement staticMember) {
+    // prepare name
     String name = staticMember.name;
     if (name == null) {
       return false;
     }
+    // try to find member
     ExecutableElement inheritedMember = _inheritanceManager.lookupInheritance(_enclosingClass, name);
     if (inheritedMember == null) {
       return false;
     }
+    // OK, also static
     if (inheritedMember.isStatic) {
       return false;
     }
+    // report problem
     _errorReporter.reportError4(CompileTimeErrorCode.DUPLICATE_DEFINITION_INHERITANCE, staticMember.nameOffset, name.length, [name, inheritedMember.enclosingElement.displayName]);
     return true;
   }
@@ -16657,14 +19200,17 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticTypeWarningCode#EXPECTED_ONE_LIST_TYPE_ARGUMENTS
    */
   bool checkForExpectedOneListTypeArgument(ListLiteral node) {
+    // prepare type arguments
     TypeArgumentList typeArguments = node.typeArguments;
     if (typeArguments == null) {
       return false;
     }
+    // check number of type arguments
     int num = typeArguments.arguments.length;
     if (num == 1) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(StaticTypeWarningCode.EXPECTED_ONE_LIST_TYPE_ARGUMENTS, typeArguments, [num]);
     return true;
   }
@@ -16677,16 +19223,19 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#EXPORT_DUPLICATED_LIBRARY_NAME
    */
   bool checkForExportDuplicateLibraryName(ExportDirective node) {
+    // prepare import element
     Element nodeElement = node.element;
     if (nodeElement is! ExportElement) {
       return false;
     }
     ExportElement nodeExportElement = nodeElement as ExportElement;
+    // prepare exported library
     LibraryElement nodeLibrary = nodeExportElement.exportedLibrary;
     if (nodeLibrary == null) {
       return false;
     }
     String name = nodeLibrary.name;
+    // check if there is other exported library with the same name
     LibraryElement prevLibrary = _nameToExportElement[name];
     if (prevLibrary != null) {
       if (prevLibrary != nodeLibrary) {
@@ -16699,6 +19248,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     } else {
       _nameToExportElement[name] = nodeLibrary;
     }
+    // OK
     return false;
   }
 
@@ -16714,11 +19264,13 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (_isInSystemLibrary) {
       return false;
     }
+    // prepare export element
     Element element = node.element;
     if (element is! ExportElement) {
       return false;
     }
     ExportElement exportElement = element as ExportElement;
+    // should be private
     DartSdk sdk = _currentLibrary.context.sourceFactory.dartSdk;
     String uri = exportElement.uri;
     SdkLibrary sdkLibrary = sdk.getSdkLibrary(uri);
@@ -16728,6 +19280,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (!sdkLibrary.isInternal) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(CompileTimeErrorCode.EXPORT_INTERNAL_LIBRARY, node, [node.uri]);
     return true;
   }
@@ -16739,11 +19292,11 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @return `true` if and only if an error code is generated on the passed node
    * @see CompileTimeErrorCode#EXTENDS_DISALLOWED_CLASS
    */
-  bool checkForExtendsDisallowedClass(ExtendsClause extendsClause) {
-    if (extendsClause == null) {
+  bool checkForExtendsDisallowedClass(ExtendsClause node) {
+    if (node == null) {
       return false;
     }
-    return checkForExtendsOrImplementsDisallowedClass(extendsClause.superclass, CompileTimeErrorCode.EXTENDS_DISALLOWED_CLASS);
+    return checkForExtendsOrImplementsDisallowedClass(node.superclass, CompileTimeErrorCode.EXTENDS_DISALLOWED_CLASS);
   }
 
   /**
@@ -16764,16 +19317,23 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     Type2 superType = typeName.type;
     for (InterfaceType disallowedType in _DISALLOWED_TYPES_TO_EXTEND_OR_IMPLEMENT) {
       if (superType != null && superType == disallowedType) {
+        // if the violating type happens to be 'num', we need to rule out the case where the
+        // enclosing class is 'int' or 'double'
         if (superType == _typeProvider.numType) {
-          ASTNode grandParent = typeName.parent.parent;
+          AstNode grandParent = typeName.parent.parent;
+          // Note: this is a corner case that won't happen often, so adding a field currentClass
+          // (see currentFunction) to ErrorVerifier isn't worth if for this case, but if the field
+          // currentClass is added, then this message should become a todo to not lookup the
+          // grandparent node
           if (grandParent is ClassDeclaration) {
-            ClassElement classElement = (grandParent as ClassDeclaration).element;
+            ClassElement classElement = grandParent.element;
             Type2 classType = classElement.type;
             if (classType != null && (classType == _typeProvider.intType || classType == _typeProvider.doubleType)) {
               return false;
             }
           }
         }
+        // otherwise, report the error
         _errorReporter.reportError2(errorCode, typeName, [disallowedType.displayName]);
         return true;
       }
@@ -16791,16 +19351,20 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#FIELD_INITIALIZER_NOT_ASSIGNABLE
    */
   bool checkForFieldInitializerNotAssignable(ConstructorFieldInitializer node) {
-    Element fieldNameElement = node.fieldName.staticElement;
-    if (fieldNameElement is! FieldElement) {
+    // prepare field element
+    Element staticElement = node.fieldName.staticElement;
+    if (staticElement is! FieldElement) {
       return false;
     }
-    FieldElement fieldElement = fieldNameElement as FieldElement;
+    FieldElement fieldElement = staticElement as FieldElement;
+    // prepare field type
     Type2 fieldType = fieldElement.type;
+    // prepare expression type
     Expression expression = node.expression;
     if (expression == null) {
       return false;
     }
+    // test the static type of the expression
     Type2 staticType = getStaticType(expression);
     if (staticType == null) {
       return false;
@@ -16808,6 +19372,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (staticType.isAssignableTo(fieldType)) {
       return false;
     }
+    // report problem
     if (_isEnclosingConstructorConst) {
       _errorReporter.reportError2(CompileTimeErrorCode.CONST_FIELD_INITIALIZER_NOT_ASSIGNABLE, expression, [staticType.displayName, fieldType.displayName]);
     } else {
@@ -16824,55 +19389,31 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#FIELD_INITIALIZER_OUTSIDE_CONSTRUCTOR
    */
   bool checkForFieldInitializingFormalRedirectingConstructor(FieldFormalParameter node) {
-    ConstructorDeclaration constructor = node.getAncestor(ConstructorDeclaration);
+    ConstructorDeclaration constructor = node.getAncestor((node) => node is ConstructorDeclaration);
     if (constructor == null) {
       _errorReporter.reportError2(CompileTimeErrorCode.FIELD_INITIALIZER_OUTSIDE_CONSTRUCTOR, node, []);
       return true;
     }
+    // constructor cannot be a factory
     if (constructor.factoryKeyword != null) {
       _errorReporter.reportError2(CompileTimeErrorCode.FIELD_INITIALIZER_FACTORY_CONSTRUCTOR, node, []);
       return true;
     }
+    // constructor cannot have a redirection
     for (ConstructorInitializer initializer in constructor.initializers) {
       if (initializer is RedirectingConstructorInvocation) {
         _errorReporter.reportError2(CompileTimeErrorCode.FIELD_INITIALIZER_REDIRECTING_CONSTRUCTOR, node, []);
         return true;
       }
     }
+    // OK
     return false;
-  }
-
-  /**
-   * This verifies that final fields that are declared, without any constructors in the enclosing
-   * class, are initialized. Cases in which there is at least one constructor are handled at the end
-   * of [checkForAllFinalInitializedErrorCodes].
-   *
-   * @param node the class declaration to test
-   * @return `true` if and only if an error code is generated on the passed node
-   * @see CompileTimeErrorCode#CONST_NOT_INITIALIZED
-   * @see StaticWarningCode#FINAL_NOT_INITIALIZED
-   */
-  bool checkForFinalNotInitialized(ClassDeclaration node) {
-    NodeList<ClassMember> classMembers = node.members;
-    for (ClassMember classMember in classMembers) {
-      if (classMember is ConstructorDeclaration) {
-        return false;
-      }
-    }
-    bool foundError = false;
-    for (ClassMember classMember in classMembers) {
-      if (classMember is FieldDeclaration) {
-        FieldDeclaration field = classMember as FieldDeclaration;
-        foundError = javaBooleanOr(foundError, checkForFinalNotInitialized2(field.fields));
-      }
-    }
-    return foundError;
   }
 
   /**
    * This verifies that the passed variable declaration list has only initialized variables if the
    * list is final or const. This method is called by
-   * [checkForFinalNotInitialized],
+   * [checkForFinalNotInitializedInClass],
    * [visitTopLevelVariableDeclaration] and
    * [visitVariableDeclarationStatement].
    *
@@ -16881,7 +19422,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#CONST_NOT_INITIALIZED
    * @see StaticWarningCode#FINAL_NOT_INITIALIZED
    */
-  bool checkForFinalNotInitialized2(VariableDeclarationList node) {
+  bool checkForFinalNotInitialized(VariableDeclarationList node) {
     if (_isInNativeClass) {
       return false;
     }
@@ -16903,6 +19444,33 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   /**
+   * This verifies that final fields that are declared, without any constructors in the enclosing
+   * class, are initialized. Cases in which there is at least one constructor are handled at the end
+   * of [checkForAllFinalInitializedErrorCodes].
+   *
+   * @param node the class declaration to test
+   * @return `true` if and only if an error code is generated on the passed node
+   * @see CompileTimeErrorCode#CONST_NOT_INITIALIZED
+   * @see StaticWarningCode#FINAL_NOT_INITIALIZED
+   */
+  bool checkForFinalNotInitializedInClass(ClassDeclaration node) {
+    NodeList<ClassMember> classMembers = node.members;
+    for (ClassMember classMember in classMembers) {
+      if (classMember is ConstructorDeclaration) {
+        return false;
+      }
+    }
+    bool foundError = false;
+    for (ClassMember classMember in classMembers) {
+      if (classMember is FieldDeclaration) {
+        FieldDeclaration field = classMember;
+        foundError = javaBooleanOr(foundError, checkForFinalNotInitialized(field.fields));
+      }
+    }
+    return foundError;
+  }
+
+  /**
    * This verifies that the passed implements clause does not implement classes such as 'num' or
    * 'String'.
    *
@@ -16910,12 +19478,12 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @return `true` if and only if an error code is generated on the passed node
    * @see CompileTimeErrorCode#IMPLEMENTS_DISALLOWED_CLASS
    */
-  bool checkForImplementsDisallowedClass(ImplementsClause implementsClause) {
-    if (implementsClause == null) {
+  bool checkForImplementsDisallowedClass(ImplementsClause node) {
+    if (node == null) {
       return false;
     }
     bool foundError = false;
-    for (TypeName type in implementsClause.interfaces) {
+    for (TypeName type in node.interfaces) {
       foundError = javaBooleanOr(foundError, checkForExtendsOrImplementsDisallowedClass(type, CompileTimeErrorCode.IMPLEMENTS_DISALLOWED_CLASS));
     }
     return foundError;
@@ -16934,40 +19502,47 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (!_isInConstructorInitializer && !_isInStaticMethod && !_isInInstanceVariableInitializer && !_isInStaticVariableDeclaration) {
       return false;
     }
+    // prepare element
     Element element = node.staticElement;
     if (!(element is MethodElement || element is PropertyAccessorElement)) {
       return false;
     }
+    // static element
     ExecutableElement executableElement = element as ExecutableElement;
     if (executableElement.isStatic) {
       return false;
     }
+    // not a class member
     Element enclosingElement = element.enclosingElement;
     if (enclosingElement is! ClassElement) {
       return false;
     }
-    ASTNode parent = node.parent;
+    // comment
+    AstNode parent = node.parent;
     if (parent is CommentReference) {
       return false;
     }
+    // qualified method invocation
     if (parent is MethodInvocation) {
-      MethodInvocation invocation = parent as MethodInvocation;
+      MethodInvocation invocation = parent;
       if (identical(invocation.methodName, node) && invocation.realTarget != null) {
         return false;
       }
     }
+    // qualified property access
     if (parent is PropertyAccess) {
-      PropertyAccess access = parent as PropertyAccess;
+      PropertyAccess access = parent;
       if (identical(access.propertyName, node) && access.realTarget != null) {
         return false;
       }
     }
     if (parent is PrefixedIdentifier) {
-      PrefixedIdentifier prefixed = parent as PrefixedIdentifier;
+      PrefixedIdentifier prefixed = parent;
       if (identical(prefixed.identifier, node)) {
         return false;
       }
     }
+    // report problem
     if (_isInStaticMethod) {
       _errorReporter.reportError2(CompileTimeErrorCode.INSTANCE_MEMBER_ACCESS_FROM_STATIC, node, []);
     } else {
@@ -16984,15 +19559,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#IMPORT_DUPLICATED_LIBRARY_NAME
    */
   bool checkForImportDuplicateLibraryName(ImportDirective node) {
+    // prepare import element
     ImportElement nodeImportElement = node.element;
     if (nodeImportElement == null) {
       return false;
     }
+    // prepare imported library
     LibraryElement nodeLibrary = nodeImportElement.importedLibrary;
     if (nodeLibrary == null) {
       return false;
     }
     String name = nodeLibrary.name;
+    // check if there is other imported library with the same name
     LibraryElement prevLibrary = _nameToImportElement[name];
     if (prevLibrary != null) {
       if (prevLibrary != nodeLibrary) {
@@ -17005,6 +19583,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     } else {
       _nameToImportElement[name] = nodeLibrary;
     }
+    // OK
     return false;
   }
 
@@ -17020,10 +19599,12 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (_isInSystemLibrary) {
       return false;
     }
+    // prepare import element
     ImportElement importElement = node.element;
     if (importElement == null) {
       return false;
     }
+    // should be private
     DartSdk sdk = _currentLibrary.context.sourceFactory.dartSdk;
     String uri = importElement.uri;
     SdkLibrary sdkLibrary = sdk.getSdkLibrary(uri);
@@ -17033,6 +19614,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (!sdkLibrary.isInternal) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(CompileTimeErrorCode.IMPORT_INTERNAL_LIBRARY, node, [node.uri]);
     return true;
   }
@@ -17045,14 +19627,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#INCONSISTENT_CASE_EXPRESSION_TYPES
    */
   bool checkForInconsistentCaseExpressionTypes(SwitchStatement node) {
+    // TODO(jwren) Revisit this algorithm, should there up to n-1 errors?
     NodeList<SwitchMember> switchMembers = node.members;
     bool foundError = false;
     Type2 firstType = null;
     for (SwitchMember switchMember in switchMembers) {
       if (switchMember is SwitchCase) {
-        SwitchCase switchCase = switchMember as SwitchCase;
+        SwitchCase switchCase = switchMember;
         Expression expression = switchCase.expression;
         if (firstType == null) {
+          // TODO(brianwilkerson) This is failing with const variables whose declared type is
+          // dynamic. The problem is that we don't have any way to propagate type information for
+          // the variable.
           firstType = expression.bestType;
         } else {
           Type2 nType = expression.bestType;
@@ -17077,6 +19663,8 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticTypeWarningCode#INCONSISTENT_METHOD_INHERITANCE
    */
   bool checkForInconsistentMethodInheritance() {
+    // Ensure that the inheritance manager has a chance to generate all errors we may care about,
+    // note that we ensure that the interfaces data since there are no errors.
     _inheritanceManager.getMapOfMembersInheritedFromInterfaces(_enclosingClass);
     Set<AnalysisError> errors = _inheritanceManager.getErrors(_enclosingClass);
     if (errors == null || errors.isEmpty) {
@@ -17100,23 +19688,29 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticTypeWarningCode#INSTANCE_ACCESS_TO_STATIC_MEMBER
    */
   bool checkForInstanceAccessToStaticMember(ClassElement typeReference, SimpleIdentifier name) {
+    // OK, in comment
     if (_isInComment) {
       return false;
     }
+    // OK, target is a type
     if (typeReference != null) {
       return false;
     }
+    // prepare member Element
     Element element = name.staticElement;
     if (element is! ExecutableElement) {
       return false;
     }
     ExecutableElement executableElement = element as ExecutableElement;
+    // OK, top-level element
     if (executableElement.enclosingElement is! ClassElement) {
       return false;
     }
+    // OK, instance member
     if (!executableElement.isStatic) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(StaticTypeWarningCode.INSTANCE_ACCESS_TO_STATIC_MEMBER, name, [name.name]);
     return true;
   }
@@ -17138,7 +19732,47 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     Type2 staticParameterType = staticParameterElement == null ? null : staticParameterElement.type;
     ParameterElement propagatedParameterElement = argument.propagatedParameterElement;
     Type2 propagatedParameterType = propagatedParameterElement == null ? null : propagatedParameterElement.type;
-    return checkForArgumentTypeNotAssignable4(argument, staticParameterType, _typeProvider.intType, propagatedParameterType, _typeProvider.intType, StaticWarningCode.ARGUMENT_TYPE_NOT_ASSIGNABLE);
+    return checkForArgumentTypeNotAssignable(argument, staticParameterType, _typeProvider.intType, propagatedParameterType, _typeProvider.intType, StaticWarningCode.ARGUMENT_TYPE_NOT_ASSIGNABLE);
+  }
+
+  /**
+   * This verifies that the passed left hand side and right hand side represent a valid assignment.
+   *
+   * @param lhs the left hand side expression
+   * @param rhs the right hand side expression
+   * @return `true` if and only if an error code is generated on the passed node
+   * @see StaticTypeWarningCode#INVALID_ASSIGNMENT
+   */
+  bool checkForInvalidAssignment(Expression lhs, Expression rhs) {
+    if (lhs == null || rhs == null) {
+      return false;
+    }
+    VariableElement leftElement = getVariableElement(lhs);
+    Type2 leftType = (leftElement == null) ? getStaticType(lhs) : leftElement.type;
+    Type2 staticRightType = getStaticType(rhs);
+    bool isStaticAssignable = staticRightType.isAssignableTo(leftType);
+    if (!isStaticAssignable) {
+      String leftName = leftType.displayName;
+      String rightName = staticRightType.displayName;
+      if (leftName == rightName) {
+        leftName = getExtendedDisplayName(leftType);
+        rightName = getExtendedDisplayName(staticRightType);
+      }
+      _errorReporter.reportError2(StaticTypeWarningCode.INVALID_ASSIGNMENT, rhs, [rightName, leftName]);
+      return true;
+    }
+    // TODO(brianwilkerson) Define a hint corresponding to the warning and report it if appropriate.
+    //    Type propagatedRightType = rhs.getPropagatedType();
+    //    boolean isPropagatedAssignable = propagatedRightType.isAssignableTo(leftType);
+    //    if (!isStaticAssignable && !isPropagatedAssignable) {
+    //      errorReporter.reportError(
+    //          StaticTypeWarningCode.INVALID_ASSIGNMENT,
+    //          rhs,
+    //          staticRightType.getDisplayName(),
+    //          leftType.getDisplayName());
+    //      return true;
+    //    }
+    return false;
   }
 
   /**
@@ -17149,7 +19783,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @return `true` if and only if an error code is generated on the passed node
    * @see StaticTypeWarningCode#INVALID_ASSIGNMENT
    */
-  bool checkForInvalidAssignment(AssignmentExpression node) {
+  bool checkForInvalidCompoundAssignment(AssignmentExpression node) {
     Expression lhs = node.leftHandSide;
     if (lhs == null) {
       return false;
@@ -17165,33 +19799,37 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       return false;
     }
     if (!rightType.isAssignableTo(leftType)) {
-      _errorReporter.reportError2(StaticTypeWarningCode.INVALID_ASSIGNMENT, node.rightHandSide, [rightType.displayName, leftType.displayName]);
+      String leftName = leftType.displayName;
+      String rightName = rightType.displayName;
+      if (leftName == rightName) {
+        leftName = getExtendedDisplayName(leftType);
+        rightName = getExtendedDisplayName(rightType);
+      }
+      _errorReporter.reportError2(StaticTypeWarningCode.INVALID_ASSIGNMENT, node.rightHandSide, [rightName, leftName]);
       return true;
     }
     return false;
   }
 
   /**
-   * This verifies that the passed left hand side and right hand side represent a valid assignment.
+   * Check the given initializer to ensure that the field being initialized is a valid field.
    *
-   * @param lhs the left hand side expression
-   * @param rhs the right hand side expression
-   * @return `true` if and only if an error code is generated on the passed node
-   * @see StaticTypeWarningCode#INVALID_ASSIGNMENT
+   * @param node the field initializer being checked
    */
-  bool checkForInvalidAssignment2(Expression lhs, Expression rhs) {
-    if (lhs == null || rhs == null) {
-      return false;
+  void checkForInvalidField(ConstructorFieldInitializer node) {
+    SimpleIdentifier fieldName = node.fieldName;
+    Element staticElement = fieldName.staticElement;
+    if (staticElement is FieldElement) {
+      FieldElement fieldElement = staticElement;
+      if (fieldElement.isSynthetic) {
+        _errorReporter.reportError2(CompileTimeErrorCode.INITIALIZER_FOR_NON_EXISTANT_FIELD, node, [fieldName]);
+      } else if (fieldElement.isStatic) {
+        _errorReporter.reportError2(CompileTimeErrorCode.INITIALIZER_FOR_STATIC_FIELD, node, [fieldName]);
+      }
+    } else {
+      _errorReporter.reportError2(CompileTimeErrorCode.INITIALIZER_FOR_NON_EXISTANT_FIELD, node, [fieldName]);
+      return;
     }
-    VariableElement leftElement = getVariableElement(lhs);
-    Type2 leftType = (leftElement == null) ? getStaticType(lhs) : leftElement.type;
-    Type2 staticRightType = getStaticType(rhs);
-    bool isStaticAssignable = staticRightType.isAssignableTo(leftType);
-    if (!isStaticAssignable) {
-      _errorReporter.reportError2(StaticTypeWarningCode.INVALID_ASSIGNMENT, rhs, [staticRightType.displayName, leftType.displayName]);
-      return true;
-    }
-    return false;
   }
 
   /**
@@ -17240,6 +19878,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#LIST_ELEMENT_TYPE_NOT_ASSIGNABLE
    */
   bool checkForListElementTypeNotAssignable(ListLiteral node) {
+    // Prepare list element type.
     TypeArgumentList typeArgumentList = node.typeArguments;
     if (typeArgumentList == null) {
       return false;
@@ -17249,15 +19888,17 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       return false;
     }
     Type2 listElementType = typeArguments[0].type;
+    // Prepare problem to report.
     ErrorCode errorCode;
     if (node.constKeyword != null) {
       errorCode = CompileTimeErrorCode.LIST_ELEMENT_TYPE_NOT_ASSIGNABLE;
     } else {
       errorCode = StaticWarningCode.LIST_ELEMENT_TYPE_NOT_ASSIGNABLE;
     }
+    // Check every list element.
     bool hasProblems = false;
     for (Expression element in node.elements) {
-      hasProblems = javaBooleanOr(hasProblems, checkForArgumentTypeNotAssignable3(element, listElementType, null, errorCode));
+      hasProblems = javaBooleanOr(hasProblems, checkForArgumentTypeNotAssignableWithExpectedTypes(element, listElementType, null, errorCode));
     }
     return hasProblems;
   }
@@ -17274,6 +19915,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#MAP_VALUE_TYPE_NOT_ASSIGNABLE
    */
   bool checkForMapTypeNotAssignable(MapLiteral node) {
+    // Prepare maps key/value types.
     TypeArgumentList typeArgumentList = node.typeArguments;
     if (typeArgumentList == null) {
       return false;
@@ -17284,6 +19926,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     }
     Type2 keyType = typeArguments[0].type;
     Type2 valueType = typeArguments[1].type;
+    // Prepare problem to report.
     ErrorCode keyErrorCode;
     ErrorCode valueErrorCode;
     if (node.constKeyword != null) {
@@ -17293,13 +19936,14 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       keyErrorCode = StaticWarningCode.MAP_KEY_TYPE_NOT_ASSIGNABLE;
       valueErrorCode = StaticWarningCode.MAP_VALUE_TYPE_NOT_ASSIGNABLE;
     }
+    // Check every map entry.
     bool hasProblems = false;
     NodeList<MapLiteralEntry> entries = node.entries;
     for (MapLiteralEntry entry in entries) {
       Expression key = entry.key;
       Expression value = entry.value;
-      hasProblems = javaBooleanOr(hasProblems, checkForArgumentTypeNotAssignable3(key, keyType, null, keyErrorCode));
-      hasProblems = javaBooleanOr(hasProblems, checkForArgumentTypeNotAssignable3(value, valueType, null, valueErrorCode));
+      hasProblems = javaBooleanOr(hasProblems, checkForArgumentTypeNotAssignableWithExpectedTypes(key, keyType, null, keyErrorCode));
+      hasProblems = javaBooleanOr(hasProblems, checkForArgumentTypeNotAssignableWithExpectedTypes(value, valueType, null, valueErrorCode));
     }
     return hasProblems;
   }
@@ -17320,12 +19964,15 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       return false;
     }
     bool problemReported = false;
+    // check accessors
     for (PropertyAccessorElement accessor in _enclosingClass.accessors) {
       if (className == accessor.name) {
         _errorReporter.reportError4(CompileTimeErrorCode.MEMBER_WITH_CLASS_NAME, accessor.nameOffset, className.length, []);
         problemReported = true;
       }
     }
+    // don't check methods, they would be constructors
+    // done
     return problemReported;
   }
 
@@ -17350,30 +19997,39 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       counterpartAccessor = propertyAccessorElement.correspondingSetter;
     } else {
       counterpartAccessor = propertyAccessorElement.correspondingGetter;
+      // If the setter and getter are in the same enclosing element, return, this prevents having
+      // MISMATCHED_GETTER_AND_SETTER_TYPES reported twice.
       if (counterpartAccessor != null && identical(counterpartAccessor.enclosingElement, propertyAccessorElement.enclosingElement)) {
         return false;
       }
     }
     if (counterpartAccessor == null) {
+      // If the accessor is declared in a class, check the superclasses.
       if (_enclosingClass != null) {
+        // Figure out the correct identifier to lookup in the inheritance graph, if 'x', then 'x=',
+        // or if 'x=', then 'x'.
         String lookupIdentifier = propertyAccessorElement.name;
-        if (lookupIdentifier.endsWith("=")) {
+        if (StringUtilities.endsWithChar(lookupIdentifier, 0x3D)) {
           lookupIdentifier = lookupIdentifier.substring(0, lookupIdentifier.length - 1);
         } else {
           lookupIdentifier += "=";
         }
+        // lookup with the identifier.
         ExecutableElement elementFromInheritance = _inheritanceManager.lookupInheritance(_enclosingClass, lookupIdentifier);
+        // Verify that we found something, and that it is an accessor
         if (elementFromInheritance != null && elementFromInheritance is PropertyAccessorElement) {
           enclosingClassForCounterpart = elementFromInheritance.enclosingElement as ClassElement;
-          counterpartAccessor = elementFromInheritance as PropertyAccessorElement;
+          counterpartAccessor = elementFromInheritance;
         }
       }
       if (counterpartAccessor == null) {
         return false;
       }
     }
+    // Default of null == no accessor or no type (dynamic)
     Type2 getterType = null;
     Type2 setterType = null;
+    // Get an existing counterpart accessor if any.
     if (propertyAccessorElement.isGetter) {
       getterType = getGetterType(propertyAccessorElement);
       setterType = getSetterType(counterpartAccessor);
@@ -17381,6 +20037,8 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       setterType = getSetterType(propertyAccessorElement);
       getterType = getGetterType(counterpartAccessor);
     }
+    // If either types are not assignable to each other, report an error (if the getter is null,
+    // it is dynamic which is assignable to everything).
     if (setterType != null && getterType != null && !getterType.isAssignableTo(setterType)) {
       if (enclosingClassForCounterpart == null) {
         _errorReporter.reportError2(StaticWarningCode.MISMATCHED_GETTER_AND_SETTER_TYPES, accessorDeclaration, [
@@ -17408,8 +20066,15 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#MIXED_RETURN_TYPES
    */
   bool checkForMixedReturns(BlockFunctionBody node) {
-    if (_returnWithCount > 0 && _returnWithoutCount > 0) {
-      _errorReporter.reportError2(StaticWarningCode.MIXED_RETURN_TYPES, node, []);
+    int withCount = _returnsWith.length;
+    int withoutCount = _returnsWithout.length;
+    if (withCount > 0 && withoutCount > 0) {
+      for (int i = 0; i < withCount; i++) {
+        _errorReporter.reportError5(StaticWarningCode.MIXED_RETURN_TYPES, _returnsWith[i].keyword, []);
+      }
+      for (int i = 0; i < withoutCount; i++) {
+        _errorReporter.reportError5(StaticWarningCode.MIXED_RETURN_TYPES, _returnsWithout[i].keyword, []);
+      }
       return true;
     }
     return false;
@@ -17495,7 +20160,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see ParserErrorCode#NATIVE_FUNCTION_BODY_IN_NON_SDK_CODE
    */
   bool checkForNativeFunctionBodyInNonSDKCode(NativeFunctionBody node) {
-    if (!_isInSystemLibrary) {
+    if (!_isInSystemLibrary && !_hasExtUri) {
       _errorReporter.reportError2(ParserErrorCode.NATIVE_FUNCTION_BODY_IN_NON_SDK_CODE, node, []);
       return true;
     }
@@ -17512,18 +20177,22 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#NEW_WITH_UNDEFINED_CONSTRUCTOR
    */
   bool checkForNewWithUndefinedConstructor(InstanceCreationExpression node) {
+    // OK if resolved
     if (node.staticElement != null) {
       return false;
     }
+    // prepare constructor name
     ConstructorName constructorName = node.constructorName;
     if (constructorName == null) {
       return false;
     }
+    // prepare class name
     TypeName type = constructorName.type;
     if (type == null) {
       return false;
     }
     Identifier className = type.name;
+    // report as named or default constructor absence
     SimpleIdentifier name = constructorName.name;
     if (name != null) {
       _errorReporter.reportError2(StaticWarningCode.NEW_WITH_UNDEFINED_CONSTRUCTOR, name, [className, name]);
@@ -17542,15 +20211,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#NO_DEFAULT_SUPER_CONSTRUCTOR_IMPLICIT
    */
   bool checkForNoDefaultSuperConstructorImplicit(ClassDeclaration node) {
+    // do nothing if there is explicit constructor
     List<ConstructorElement> constructors = _enclosingClass.constructors;
     if (!constructors[0].isSynthetic) {
       return false;
     }
+    // prepare super
     InterfaceType superType = _enclosingClass.supertype;
     if (superType == null) {
       return false;
     }
     ClassElement superElement = superType.element;
+    // try to find default generative super constructor
     ConstructorElement superUnnamedConstructor = superElement.unnamedConstructor;
     if (superUnnamedConstructor != null) {
       if (superUnnamedConstructor.isFactory) {
@@ -17561,6 +20233,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         return true;
       }
     }
+    // report problem
     _errorReporter.reportError2(CompileTimeErrorCode.NO_DEFAULT_SUPER_CONSTRUCTOR_IMPLICIT, node.name, [superType.displayName]);
     return true;
   }
@@ -17581,11 +20254,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (_enclosingClass.isAbstract) {
       return false;
     }
+    //
+    // Store in local sets the set of all method and accessor names
+    //
     List<MethodElement> methods = _enclosingClass.methods;
     List<PropertyAccessorElement> accessors = _enclosingClass.accessors;
     Set<String> methodsInEnclosingClass = new Set<String>();
     for (MethodElement method in methods) {
       String methodName = method.name;
+      // If the enclosing class declares the method noSuchMethod(), then return.
+      // From Spec:  It is a static warning if a concrete class does not have an implementation for
+      // a method in any of its superinterfaces unless it declares its own noSuchMethod
+      // method (7.10).
       if (methodName == ElementResolver.NO_SUCH_METHOD_METHOD_NAME) {
         return false;
       }
@@ -17596,6 +20276,9 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       accessorsInEnclosingClass.add(accessor.name);
     }
     Set<ExecutableElement> missingOverrides = new Set<ExecutableElement>();
+    //
+    // Loop through the set of all executable elements declared in the implicit interface.
+    //
     MemberMap membersInheritedFromInterfaces = _inheritanceManager.getMapOfMembersInheritedFromInterfaces(_enclosingClass);
     MemberMap membersInheritedFromSuperclasses = _inheritanceManager.getMapOfMembersInheritedFromClasses(_enclosingClass);
     for (int i = 0; i < membersInheritedFromInterfaces.size; i++) {
@@ -17604,24 +20287,44 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       if (memberName == null) {
         break;
       }
+      // If the element is not synthetic and can be determined to be defined in Object, skip it.
+      if (executableElt.enclosingElement != null && (executableElt.enclosingElement as ClassElement).type.isObject) {
+        continue;
+      }
+      // Reference the type of the enclosing class
+      InterfaceType enclosingType = _enclosingClass.type;
+      // Check to see if some element is in local enclosing class that matches the name of the
+      // required member.
+      if (isMemberInClassOrMixin(executableElt, _enclosingClass)) {
+        // We do not have to verify that this implementation of the found method matches the
+        // required function type: the set of StaticWarningCode.INVALID_METHOD_OVERRIDE_* warnings
+        // break out the different specific situations.
+        continue;
+      }
+      // First check to see if this element was declared in the superclass chain, in which case
+      // there is already a concrete implementation.
       ExecutableElement elt = membersInheritedFromSuperclasses.get(executableElt.name);
+      // Check to see if an element was found in the superclass chain with the correct name.
       if (elt != null) {
-        if (elt is MethodElement && !(elt as MethodElement).isAbstract) {
-          continue;
-        } else if (elt is PropertyAccessorElement && !(elt as PropertyAccessorElement).isAbstract) {
-          continue;
+        // Some element was found in the superclass chain that matches the name of the required
+        // member.
+        // If it is not abstract and it is the correct one (types match- the version of this method
+        // that we have has the correct number of parameters, etc), then this class has a valid
+        // implementation of this method, so skip it.
+        if ((elt is MethodElement && !elt.isAbstract) || (elt is PropertyAccessorElement && !elt.isAbstract)) {
+          // Since we are comparing two function types, we need to do the appropriate type
+          // substitutions first ().
+          FunctionType foundConcreteFT = _inheritanceManager.substituteTypeArgumentsInMemberFromInheritance(elt.type, executableElt.name, enclosingType);
+          FunctionType requiredMemberFT = _inheritanceManager.substituteTypeArgumentsInMemberFromInheritance(executableElt.type, executableElt.name, enclosingType);
+          if (foundConcreteFT.isSubtypeOf(requiredMemberFT)) {
+            continue;
+          }
         }
       }
-      if (executableElt is MethodElement) {
-        if (!methodsInEnclosingClass.contains(memberName) && !memberHasConcreteMethodImplementationInSuperclassChain(_enclosingClass, memberName, new List<ClassElement>())) {
-          missingOverrides.add(executableElt);
-        }
-      } else if (executableElt is PropertyAccessorElement) {
-        if (!accessorsInEnclosingClass.contains(memberName) && !memberHasConcreteAccessorImplementationInSuperclassChain(_enclosingClass, memberName, new List<ClassElement>())) {
-          missingOverrides.add(executableElt);
-        }
-      }
+      // The not qualifying concrete executable element was found, add it to the list.
+      missingOverrides.add(executableElt);
     }
+    // Now that we have the set of missing overrides, generate a warning on this class
     int missingOverridesSize = missingOverrides.length;
     if (missingOverridesSize == 0) {
       return false;
@@ -17629,7 +20332,12 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     List<ExecutableElement> missingOverridesArray = new List.from(missingOverrides);
     List<String> stringMembersArrayListSet = new List<String>();
     for (int i = 0; i < missingOverridesArray.length; i++) {
-      String newStrMember = "${missingOverridesArray[i].enclosingElement.displayName}.${missingOverridesArray[i].displayName}";
+      String newStrMember;
+      if (missingOverridesArray[i].enclosingElement != null) {
+        newStrMember = "${missingOverridesArray[i].enclosingElement.displayName}.${missingOverridesArray[i].displayName}";
+      } else {
+        newStrMember = missingOverridesArray[i].displayName;
+      }
       if (!stringMembersArrayListSet.contains(newStrMember)) {
         stringMembersArrayListSet.add(newStrMember);
       }
@@ -17697,7 +20405,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         return true;
       }
     } else if (type is FunctionType) {
-      FunctionType functionType = type as FunctionType;
+      FunctionType functionType = type;
       if (functionType.typeArguments.length == 0 && !functionType.returnType.isAssignableTo(_boolType)) {
         _errorReporter.reportError2(StaticTypeWarningCode.NON_BOOL_EXPRESSION, expression, []);
         return true;
@@ -17724,30 +20432,33 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
 
   /**
    * This verifies the passed map literal either:
-   *
    * * has `const modifier`
    * * has explicit type arguments
    * * is not start of the statement
-   *
    *
    * @param node the map literal to evaluate
    * @return `true` if and only if an error code is generated on the passed node
    * @see CompileTimeErrorCode#NON_CONST_MAP_AS_EXPRESSION_STATEMENT
    */
   bool checkForNonConstMapAsExpressionStatement(MapLiteral node) {
+    // "const"
     if (node.constKeyword != null) {
       return false;
     }
+    // has type arguments
     if (node.typeArguments != null) {
       return false;
     }
-    Statement statement = node.getAncestor(ExpressionStatement);
+    // prepare statement
+    Statement statement = node.getAncestor((node) => node is ExpressionStatement);
     if (statement == null) {
       return false;
     }
+    // OK, statement does not start with map
     if (statement.beginToken != node.beginToken) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(CompileTimeErrorCode.NON_CONST_MAP_AS_EXPRESSION_STATEMENT, node, []);
     return true;
   }
@@ -17761,10 +20472,12 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#NON_VOID_RETURN_FOR_OPERATOR
    */
   bool checkForNonVoidReturnTypeForOperator(MethodDeclaration node) {
+    // check that []= operator
     SimpleIdentifier name = node.name;
     if (name.name != "[]=") {
       return false;
     }
+    // check return type
     TypeName typeName = node.returnType;
     if (typeName != null) {
       Type2 type = typeName.type;
@@ -17772,6 +20485,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         _errorReporter.reportError2(StaticWarningCode.NON_VOID_RETURN_FOR_OPERATOR, typeName, []);
       }
     }
+    // no warning
     return false;
   }
 
@@ -17826,13 +20540,16 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#PRIVATE_OPTIONAL_PARAMETER
    */
   bool checkForPrivateOptionalParameter(FormalParameter node) {
+    // should be named parameter
     if (node.kind != ParameterKind.NAMED) {
       return false;
     }
+    // name should start with '_'
     SimpleIdentifier name = node.identifier;
-    if (name.isSynthetic || !name.name.startsWith("_")) {
+    if (name.isSynthetic || !StringUtilities.startsWithChar(name.name, 0x5F)) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(CompileTimeErrorCode.PRIVATE_OPTIONAL_PARAMETER, node, []);
     return true;
   }
@@ -17846,19 +20563,24 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#RECURSIVE_CONSTRUCTOR_REDIRECT
    */
   bool checkForRecursiveConstructorRedirect(ConstructorDeclaration node) {
+    // we check generative constructor here
     if (node.factoryKeyword != null) {
       return false;
     }
+    // try to find redirecting constructor invocation and analyzer it for recursion
     for (ConstructorInitializer initializer in node.initializers) {
       if (initializer is RedirectingConstructorInvocation) {
+        // OK if no cycle
         ConstructorElement element = node.element;
         if (!hasRedirectingFactoryConstructorCycle(element)) {
           return false;
         }
+        // report error
         _errorReporter.reportError2(CompileTimeErrorCode.RECURSIVE_CONSTRUCTOR_REDIRECT, initializer, []);
         return true;
       }
     }
+    // OK, no redirecting constructor invocation
     return false;
   }
 
@@ -17871,14 +20593,17 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#RECURSIVE_FACTORY_REDIRECT
    */
   bool checkForRecursiveFactoryRedirect(ConstructorDeclaration node) {
+    // prepare redirected constructor
     ConstructorName redirectedConstructorNode = node.redirectedConstructor;
     if (redirectedConstructorNode == null) {
       return false;
     }
+    // OK if no cycle
     ConstructorElement element = node.element;
     if (!hasRedirectingFactoryConstructorCycle(element)) {
       return false;
     }
+    // report error
     _errorReporter.reportError2(CompileTimeErrorCode.RECURSIVE_FACTORY_REDIRECT, redirectedConstructorNode, []);
     return true;
   }
@@ -17896,56 +20621,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (classElt == null) {
       return false;
     }
-    return checkForRecursiveInterfaceInheritance2(classElt, new List<ClassElement>());
-  }
-
-  /**
-   * This checks the class declaration is not a superinterface to itself.
-   *
-   * @param classElt the class element to test
-   * @param path a list containing the potentially cyclic implements path
-   * @return `true` if and only if an error code is generated on the passed element
-   * @see CompileTimeErrorCode#RECURSIVE_INTERFACE_INHERITANCE
-   * @see CompileTimeErrorCode#RECURSIVE_INTERFACE_INHERITANCE_BASE_CASE_EXTENDS
-   * @see CompileTimeErrorCode#RECURSIVE_INTERFACE_INHERITANCE_BASE_CASE_IMPLEMENTS
-   */
-  bool checkForRecursiveInterfaceInheritance2(ClassElement classElt, List<ClassElement> path) {
-    int size = path.length;
-    if (size > 0 && _enclosingClass == classElt) {
-      String enclosingClassName = _enclosingClass.displayName;
-      if (size > 1) {
-        String separator = ", ";
-        JavaStringBuilder builder = new JavaStringBuilder();
-        for (int i = 0; i < size; i++) {
-          builder.append(path[i].displayName);
-          builder.append(separator);
-        }
-        builder.append(classElt.displayName);
-        _errorReporter.reportError4(CompileTimeErrorCode.RECURSIVE_INTERFACE_INHERITANCE, _enclosingClass.nameOffset, enclosingClassName.length, [enclosingClassName, builder.toString()]);
-        return true;
-      } else {
-        InterfaceType supertype = classElt.supertype;
-        ErrorCode errorCode = (supertype != null && _enclosingClass == supertype.element ? CompileTimeErrorCode.RECURSIVE_INTERFACE_INHERITANCE_BASE_CASE_EXTENDS : CompileTimeErrorCode.RECURSIVE_INTERFACE_INHERITANCE_BASE_CASE_IMPLEMENTS) as ErrorCode;
-        _errorReporter.reportError4(errorCode, _enclosingClass.nameOffset, enclosingClassName.length, [enclosingClassName]);
-        return true;
-      }
-    }
-    if (path.indexOf(classElt) > 0) {
-      return false;
-    }
-    path.add(classElt);
-    InterfaceType supertype = classElt.supertype;
-    if (supertype != null && checkForRecursiveInterfaceInheritance2(supertype.element, path)) {
-      return true;
-    }
-    List<InterfaceType> interfaceTypes = classElt.interfaces;
-    for (InterfaceType interfaceType in interfaceTypes) {
-      if (checkForRecursiveInterfaceInheritance2(interfaceType.element, path)) {
-        return true;
-      }
-    }
-    path.removeAt(path.length - 1);
-    return false;
+    return safeCheckForRecursiveInterfaceInheritance(classElt, new List<ClassElement>());
   }
 
   /**
@@ -17961,15 +20637,19 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    */
   bool checkForRedirectingConstructorErrorCodes(ConstructorDeclaration node) {
     bool errorReported = false;
+    //
+    // Check for default values in the parameters
+    //
     ConstructorName redirectedConstructor = node.redirectedConstructor;
     if (redirectedConstructor != null) {
       for (FormalParameter parameter in node.parameters.parameters) {
-        if (parameter is DefaultFormalParameter && (parameter as DefaultFormalParameter).defaultValue != null) {
+        if (parameter is DefaultFormalParameter && parameter.defaultValue != null) {
           _errorReporter.reportError2(CompileTimeErrorCode.DEFAULT_VALUE_IN_REDIRECTING_FACTORY_CONSTRUCTOR, parameter.identifier, []);
           errorReported = true;
         }
       }
     }
+    // check if there are redirected invocations
     int numRedirections = 0;
     for (ConstructorInitializer initializer in node.initializers) {
       if (initializer is RedirectingConstructorInvocation) {
@@ -17980,6 +20660,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         numRedirections++;
       }
     }
+    // check for other initializers
     if (numRedirections > 0) {
       for (ConstructorInitializer initializer in node.initializers) {
         if (initializer is SuperConstructorInvocation) {
@@ -17992,6 +20673,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         }
       }
     }
+    // done
     return errorReported;
   }
 
@@ -18004,24 +20686,30 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#REDIRECT_TO_NON_CONST_CONSTRUCTOR
    */
   bool checkForRedirectToNonConstConstructor(ConstructorDeclaration node) {
+    // prepare redirected constructor
     ConstructorName redirectedConstructorNode = node.redirectedConstructor;
     if (redirectedConstructorNode == null) {
       return false;
     }
+    // prepare element
     ConstructorElement element = node.element;
     if (element == null) {
       return false;
     }
+    // OK, it is not 'const'
     if (!element.isConst) {
       return false;
     }
+    // prepare redirected constructor
     ConstructorElement redirectedConstructor = element.redirectedConstructor;
     if (redirectedConstructor == null) {
       return false;
     }
+    // OK, it is also 'const'
     if (redirectedConstructor.isConst) {
       return false;
     }
+    // report error
     _errorReporter.reportError2(CompileTimeErrorCode.REDIRECT_TO_NON_CONST_CONSTRUCTOR, redirectedConstructorNode, []);
     return true;
   }
@@ -18050,13 +20738,16 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#RETURN_IN_GENERATIVE_CONSTRUCTOR
    */
   bool checkForReturnInGenerativeConstructor(ConstructorDeclaration node) {
+    // ignore factory
     if (node.factoryKeyword != null) {
       return false;
     }
+    // block body (with possible return statement) is checked elsewhere
     FunctionBody body = node.body;
     if (body is! ExpressionFunctionBody) {
       return false;
     }
+    // report error
     _errorReporter.reportError2(CompileTimeErrorCode.RETURN_IN_GENERATIVE_CONSTRUCTOR, body, []);
     return true;
   }
@@ -18108,17 +20799,21 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#STATIC_ACCESS_TO_INSTANCE_MEMBER
    */
   bool checkForStaticAccessToInstanceMember(ClassElement typeReference, SimpleIdentifier name) {
+    // OK, target is not a type
     if (typeReference == null) {
       return false;
     }
+    // prepare member Element
     Element element = name.staticElement;
     if (element is! ExecutableElement) {
       return false;
     }
     ExecutableElement memberElement = element as ExecutableElement;
+    // OK, static
     if (memberElement.isStatic) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(StaticWarningCode.STATIC_ACCESS_TO_INSTANCE_MEMBER, name, [name.name]);
     return true;
   }
@@ -18132,22 +20827,27 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#SWITCH_EXPRESSION_NOT_ASSIGNABLE
    */
   bool checkForSwitchExpressionNotAssignable(SwitchStatement node) {
+    // prepare 'switch' expression type
     Expression expression = node.expression;
     Type2 expressionType = getStaticType(expression);
     if (expressionType == null) {
       return false;
     }
+    // compare with type of the first 'case'
     NodeList<SwitchMember> members = node.members;
     for (SwitchMember switchMember in members) {
       if (switchMember is! SwitchCase) {
         continue;
       }
       SwitchCase switchCase = switchMember as SwitchCase;
+      // prepare 'case' type
       Expression caseExpression = switchCase.expression;
       Type2 caseType = getStaticType(caseExpression);
+      // check types
       if (expressionType.isAssignableTo(caseType)) {
         return false;
       }
+      // report problem
       _errorReporter.reportError2(StaticWarningCode.SWITCH_EXPRESSION_NOT_ASSIGNABLE, expression, [expressionType, caseType]);
       return true;
     }
@@ -18196,17 +20896,21 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (node.typeArguments == null) {
       return false;
     }
+    // prepare Type
     Type2 type = node.type;
     if (type == null) {
       return false;
     }
+    // prepare ClassElement
     Element element = type.element;
     if (element is! ClassElement) {
       return false;
     }
     ClassElement classElement = element as ClassElement;
+    // prepare type parameters
     List<Type2> typeParameters = classElement.type.typeArguments;
     List<TypeParameterElement> boundingElts = classElement.typeParameters;
+    // iterate over each bounded type parameter and corresponding argument
     NodeList<TypeName> typeNameArgList = node.typeArguments.arguments;
     List<Type2> typeArguments = (type as InterfaceType).typeArguments;
     int loopThroughIndex = Math.min(typeNameArgList.length, boundingElts.length);
@@ -18260,13 +20964,16 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    */
   bool checkForTypeParameterSupertypeOfItsBound(TypeParameter node) {
     TypeParameterElement element = node.element;
+    // prepare bound
     Type2 bound = element.bound;
     if (bound == null) {
       return false;
     }
+    // OK, type parameter is not supertype of its bound
     if (!bound.isMoreSpecificThan(element.type)) {
       return false;
     }
+    // report problem
     _errorReporter.reportError2(StaticTypeWarningCode.TYPE_PARAMETER_SUPERTYPE_OF_ITS_BOUND, node, [element.displayName]);
     return true;
   }
@@ -18283,14 +20990,24 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see StaticWarningCode#NO_DEFAULT_SUPER_CONSTRUCTOR_EXPLICIT
    */
   bool checkForUndefinedConstructorInInitializerImplicit(ConstructorDeclaration node) {
+    //
+    // Ignore if the constructor is not generative.
+    //
     if (node.factoryKeyword != null) {
       return false;
     }
+    //
+    // Ignore if the constructor has either an implicit super constructor invocation or a
+    // redirecting constructor invocation.
+    //
     for (ConstructorInitializer constructorInitializer in node.initializers) {
       if (constructorInitializer is SuperConstructorInvocation || constructorInitializer is RedirectingConstructorInvocation) {
         return false;
       }
     }
+    //
+    // Check to see whether the superclass has a non-factory unnamed constructor.
+    //
     if (_enclosingClass == null) {
       return false;
     }
@@ -18339,7 +21056,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (enclosingElement is! ClassElement) {
       return false;
     }
-    if ((element is MethodElement && !(element as MethodElement).isStatic) || (element is PropertyAccessorElement && !(element as PropertyAccessorElement).isStatic)) {
+    if ((element is MethodElement && !element.isStatic) || (element is PropertyAccessorElement && !element.isStatic)) {
       return false;
     }
     if (identical(enclosingElement, _enclosingClass)) {
@@ -18347,6 +21064,36 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     }
     _errorReporter.reportError2(StaticTypeWarningCode.UNQUALIFIED_REFERENCE_TO_NON_LOCAL_STATIC_MEMBER, name, [name.name]);
     return true;
+  }
+
+  void checkForValidField(FieldFormalParameter node) {
+    ParameterElement element = node.element;
+    if (element is FieldFormalParameterElement) {
+      FieldElement fieldElement = element.field;
+      if (fieldElement == null || fieldElement.isSynthetic) {
+        _errorReporter.reportError2(CompileTimeErrorCode.INITIALIZING_FORMAL_FOR_NON_EXISTANT_FIELD, node, [node.identifier.name]);
+      } else {
+        ParameterElement parameterElement = node.element;
+        if (parameterElement is FieldFormalParameterElementImpl) {
+          FieldFormalParameterElementImpl fieldFormal = parameterElement;
+          Type2 declaredType = fieldFormal.type;
+          Type2 fieldType = fieldElement.type;
+          if (fieldElement.isSynthetic) {
+            _errorReporter.reportError2(CompileTimeErrorCode.INITIALIZING_FORMAL_FOR_NON_EXISTANT_FIELD, node, [node.identifier.name]);
+          } else if (fieldElement.isStatic) {
+            _errorReporter.reportError2(CompileTimeErrorCode.INITIALIZING_FORMAL_FOR_STATIC_FIELD, node, [node.identifier.name]);
+          } else if (declaredType != null && fieldType != null && !declaredType.isAssignableTo(fieldType)) {
+            _errorReporter.reportError2(StaticWarningCode.FIELD_INITIALIZING_FORMAL_NOT_ASSIGNABLE, node, [declaredType.displayName, fieldType.displayName]);
+          }
+        } else {
+          if (fieldElement.isSynthetic) {
+            _errorReporter.reportError2(CompileTimeErrorCode.INITIALIZING_FORMAL_FOR_NON_EXISTANT_FIELD, node, [node.identifier.name]);
+          } else if (fieldElement.isStatic) {
+            _errorReporter.reportError2(CompileTimeErrorCode.INITIALIZING_FORMAL_FOR_STATIC_FIELD, node, [node.identifier.name]);
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -18360,16 +21107,19 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#WRONG_NUMBER_OF_PARAMETERS_FOR_OPERATOR
    */
   bool checkForWrongNumberOfParametersForOperator(MethodDeclaration node) {
+    // prepare number of parameters
     FormalParameterList parameterList = node.parameters;
     if (parameterList == null) {
       return false;
     }
     int numParameters = parameterList.parameters.length;
+    // prepare operator name
     SimpleIdentifier nameNode = node.name;
     if (nameNode == null) {
       return false;
     }
     String name = nameNode.name;
+    // check for exact number of parameters
     int expected = -1;
     if ("[]=" == name) {
       expected = 2;
@@ -18382,10 +21132,12 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
       _errorReporter.reportError2(CompileTimeErrorCode.WRONG_NUMBER_OF_PARAMETERS_FOR_OPERATOR, nameNode, [name, expected, numParameters]);
       return true;
     }
+    // check for operator "-"
     if ("-" == name && numParameters > 1) {
       _errorReporter.reportError2(CompileTimeErrorCode.WRONG_NUMBER_OF_PARAMETERS_FOR_OPERATOR_MINUS, nameNode, [numParameters]);
       return true;
     }
+    // OK
     return false;
   }
 
@@ -18448,14 +21200,17 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @see CompileTimeErrorCode#IMPLEMENTS_SUPER_CLASS
    */
   bool checkImplementsSuperClass(ClassDeclaration node) {
+    // prepare super type
     InterfaceType superType = _enclosingClass.supertype;
     if (superType == null) {
       return false;
     }
+    // prepare interfaces
     ImplementsClause implementsClause = node.implementsClause;
     if (implementsClause == null) {
       return false;
     }
+    // check interfaces
     bool hasProblem = false;
     for (TypeName interfaceNode in implementsClause.interfaces) {
       if (interfaceNode.type == superType) {
@@ -18463,7 +21218,26 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
         _errorReporter.reportError2(CompileTimeErrorCode.IMPLEMENTS_SUPER_CLASS, interfaceNode, [superType.displayName]);
       }
     }
+    // done
     return hasProblem;
+  }
+
+  /**
+   * Return a display name for the given type that includes the path to the compilation unit in
+   * which the type is defined.
+   *
+   * @param type the type for which an extended display name is to be returned
+   * @return a display name that can help distiguish between two types with the same name
+   */
+  String getExtendedDisplayName(Type2 type) {
+    Element element = type.element;
+    if (element != null) {
+      Source source = element.source;
+      if (source != null) {
+        return "${type.displayName} (${source.fullName})";
+      }
+    }
+    return type.displayName;
   }
 
   /**
@@ -18488,7 +21262,9 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    * @return The type of the given setter.
    */
   Type2 getSetterType(PropertyAccessorElement propertyAccessorElement) {
+    // Get the parameters for MethodDeclaration or FunctionDeclaration
     List<ParameterElement> setterParameters = propertyAccessorElement.parameters;
+    // If there are no setter parameters, return no type.
     if (setterParameters.length == 0) {
       return null;
     }
@@ -18504,6 +21280,7 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   Type2 getStaticType(Expression expression) {
     Type2 type = expression.staticType;
     if (type == null) {
+      // TODO(brianwilkerson) This should never happen.
       return _dynamicType;
     }
     return type;
@@ -18518,9 +21295,9 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    */
   VariableElement getVariableElement(Expression expression) {
     if (expression is Identifier) {
-      Element element = (expression as Identifier).staticElement;
+      Element element = expression.staticElement;
       if (element is VariableElement) {
-        return element as VariableElement;
+        return element;
       }
     }
     return null;
@@ -18556,10 +21333,13 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     bool firstIteration = true;
     while (true) {
       Element current;
+      // get next element
       while (true) {
+        // may be no more elements to check
         if (toCheck.isEmpty) {
           return false;
         }
+        // try to get next element
         current = toCheck.removeAt(toCheck.length - 1);
         if (target == current) {
           if (firstIteration) {
@@ -18573,7 +21353,8 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
           break;
         }
       }
-      current.accept(new GeneralizingElementVisitor_14(target, toCheck));
+      // check current element
+      current.accept(new GeneralizingElementVisitor_ErrorVerifier_hasTypedefSelfReference(target, toCheck));
       checked.add(current);
     }
   }
@@ -18583,18 +21364,22 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
    *         <i>int</i> or <i>String</i>.
    */
   bool implementsEqualsWhenNotAllowed(Type2 type) {
+    // ignore int or String
     if (type == null || type == _typeProvider.intType || type == _typeProvider.stringType) {
       return false;
     }
+    // prepare ClassElement
     Element element = type.element;
     if (element is! ClassElement) {
       return false;
     }
     ClassElement classElement = element as ClassElement;
+    // lookup for ==
     MethodElement method = classElement.lookUpMethod("==", _currentLibrary);
     if (method == null || method.enclosingElement.type.isObject) {
       return false;
     }
+    // there is == that we don't like
     return true;
   }
 
@@ -18604,18 +21389,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     } else if (type is FunctionType || type.isDartCoreFunction) {
       return true;
     } else if (type is InterfaceType) {
-      MethodElement callMethod = (type as InterfaceType).lookUpMethod(ElementResolver.CALL_METHOD_NAME, _currentLibrary);
+      MethodElement callMethod = type.lookUpMethod(ElementResolver.CALL_METHOD_NAME, _currentLibrary);
       return callMethod != null;
     }
     return false;
   }
 
   /**
-   * @return `true` if the given [ASTNode] is the part of constant constructor
+   * @return `true` if the given [AstNode] is the part of constant constructor
    *         invocation.
    */
-  bool isInConstConstructorInvocation(ASTNode node) {
-    InstanceCreationExpression creation = node.getAncestor(InstanceCreationExpression);
+  bool isInConstConstructorInvocation(AstNode node) {
+    InstanceCreationExpression creation = node.getAncestor((node) => node is InstanceCreationExpression);
     if (creation == null) {
       return false;
     }
@@ -18623,11 +21408,61 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
   }
 
   /**
+   * Return `true` iff the passed [ClassElement] has a method, getter or setter that
+   * matches the name of the passed [ExecutableElement] in either the class itself, or one of
+   * its' mixins.
+   *
+   * By "match", only the name of the member is tested to match, it does not have to equal or be a
+   * subtype of the passed executable element, this is due to the specific use where this method is
+   * used in [checkForNonAbstractClassInheritsAbstractMember].
+   *
+   * @param executableElt the executable to search for in the passed class element
+   * @param classElt the class method to search through the members of
+   * @return `true` iff the passed member is found in the passed class element
+   */
+  bool isMemberInClassOrMixin(ExecutableElement executableElt, ClassElement classElt) {
+    ExecutableElement foundElt;
+    String executableName = executableElt.name;
+    if (executableElt is MethodElement) {
+      foundElt = classElt.getMethod(executableName);
+      if (foundElt != null) {
+        return true;
+      }
+      List<InterfaceType> mixins = classElt.mixins;
+      for (int i = 0; i < mixins.length && foundElt == null; i++) {
+        foundElt = mixins[i].getMethod(executableName);
+      }
+      if (foundElt != null) {
+        return true;
+      }
+    } else if (executableElt is PropertyAccessorElement) {
+      foundElt = classElt.getGetter(executableElt.name);
+      if (foundElt == null) {
+        foundElt = classElt.getSetter(executableName);
+      }
+      if (foundElt != null) {
+        return true;
+      }
+      List<InterfaceType> mixins = classElt.mixins;
+      for (int i = 0; i < mixins.length && foundElt == null; i++) {
+        foundElt = mixins[i].getGetter(executableName);
+        if (foundElt == null) {
+          foundElt = mixins[i].getSetter(executableName);
+        }
+      }
+      if (foundElt != null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * @param node the 'this' expression to analyze
    * @return `true` if the given 'this' expression is in the valid context
    */
   bool isThisInValidContext(ThisExpression node) {
-    for (ASTNode n = node; n != null; n = n.parent) {
+    for (AstNode n = node; n != null; n = n.parent) {
       if (n is CompilationUnit) {
         return false;
       }
@@ -18658,18 +21493,18 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     if (node.inDeclarationContext()) {
       return true;
     }
-    ASTNode parent = node.parent;
+    AstNode parent = node.parent;
     if (parent is ConstructorName || parent is MethodInvocation || parent is PropertyAccess || parent is SuperConstructorInvocation) {
       return true;
     }
-    if (parent is PrefixedIdentifier && identical((parent as PrefixedIdentifier).identifier, node)) {
+    if (parent is PrefixedIdentifier && identical(parent.identifier, node)) {
       return true;
     }
-    if (parent is Annotation && identical((parent as Annotation).constructorName, node)) {
+    if (parent is Annotation && identical(parent.constructorName, node)) {
       return true;
     }
     if (parent is CommentReference) {
-      CommentReference commentReference = parent as CommentReference;
+      CommentReference commentReference = parent;
       if (commentReference.newKeyword != null) {
         return true;
       }
@@ -18677,85 +21512,60 @@ class ErrorVerifier extends RecursiveASTVisitor<Object> {
     return false;
   }
 
-  /**
-   * Return `true` iff the passed [ClassElement] has a concrete implementation of the
-   * passed accessor name in the superclass chain.
-   */
-  bool memberHasConcreteAccessorImplementationInSuperclassChain(ClassElement classElement, String accessorName, List<ClassElement> superclassChain) {
-    if (superclassChain.contains(classElement)) {
-      return false;
-    } else {
-      superclassChain.add(classElement);
-    }
-    for (PropertyAccessorElement accessor in classElement.accessors) {
-      if (accessor.name == accessorName) {
-        if (!accessor.isAbstract) {
-          return true;
-        }
-      }
-    }
-    for (InterfaceType mixinType in classElement.mixins) {
-      if (mixinType != null) {
-        ClassElement mixinElement = mixinType.element;
-        if (mixinElement != null) {
-          for (PropertyAccessorElement accessor in mixinElement.accessors) {
-            if (accessor.name == accessorName) {
-              if (!accessor.isAbstract) {
-                return true;
-              }
-            }
-          }
-        }
-      }
-    }
-    InterfaceType superType = classElement.supertype;
-    if (superType != null) {
-      ClassElement superClassElt = superType.element;
-      if (superClassElt != null) {
-        return memberHasConcreteAccessorImplementationInSuperclassChain(superClassElt, accessorName, superclassChain);
-      }
-    }
-    return false;
-  }
+  bool isUserDefinedObject(EvaluationResultImpl result) => result == null || (result is ValidResult && result.isUserDefinedObject);
 
   /**
-   * Return `true` iff the passed [ClassElement] has a concrete implementation of the
-   * passed method name in the superclass chain.
+   * This checks the class declaration is not a superinterface to itself.
+   *
+   * @param classElt the class element to test
+   * @param path a list containing the potentially cyclic implements path
+   * @return `true` if and only if an error code is generated on the passed element
+   * @see CompileTimeErrorCode#RECURSIVE_INTERFACE_INHERITANCE
+   * @see CompileTimeErrorCode#RECURSIVE_INTERFACE_INHERITANCE_BASE_CASE_EXTENDS
+   * @see CompileTimeErrorCode#RECURSIVE_INTERFACE_INHERITANCE_BASE_CASE_IMPLEMENTS
    */
-  bool memberHasConcreteMethodImplementationInSuperclassChain(ClassElement classElement, String methodName, List<ClassElement> superclassChain) {
-    if (superclassChain.contains(classElement)) {
+  bool safeCheckForRecursiveInterfaceInheritance(ClassElement classElt, List<ClassElement> path) {
+    // Detect error condition.
+    int size = path.length;
+    // If this is not the base case (size > 0), and the enclosing class is the passed class
+    // element then an error an error.
+    if (size > 0 && _enclosingClass == classElt) {
+      String enclosingClassName = _enclosingClass.displayName;
+      if (size > 1) {
+        // Construct a string showing the cyclic implements path: "A, B, C, D, A"
+        String separator = ", ";
+        JavaStringBuilder builder = new JavaStringBuilder();
+        for (int i = 0; i < size; i++) {
+          builder.append(path[i].displayName);
+          builder.append(separator);
+        }
+        builder.append(classElt.displayName);
+        _errorReporter.reportError4(CompileTimeErrorCode.RECURSIVE_INTERFACE_INHERITANCE, _enclosingClass.nameOffset, enclosingClassName.length, [enclosingClassName, builder.toString()]);
+        return true;
+      } else {
+        // RECURSIVE_INTERFACE_INHERITANCE_BASE_CASE_IMPLEMENTS or RECURSIVE_INTERFACE_INHERITANCE_BASE_CASE_EXTENDS
+        InterfaceType supertype = classElt.supertype;
+        ErrorCode errorCode = (supertype != null && _enclosingClass == supertype.element ? CompileTimeErrorCode.RECURSIVE_INTERFACE_INHERITANCE_BASE_CASE_EXTENDS : CompileTimeErrorCode.RECURSIVE_INTERFACE_INHERITANCE_BASE_CASE_IMPLEMENTS);
+        _errorReporter.reportError4(errorCode, _enclosingClass.nameOffset, enclosingClassName.length, [enclosingClassName]);
+        return true;
+      }
+    }
+    if (path.indexOf(classElt) > 0) {
       return false;
-    } else {
-      superclassChain.add(classElement);
     }
-    for (MethodElement method in classElement.methods) {
-      if (method.name == methodName) {
-        if (!method.isAbstract) {
-          return true;
-        }
+    path.add(classElt);
+    // n-case
+    InterfaceType supertype = classElt.supertype;
+    if (supertype != null && safeCheckForRecursiveInterfaceInheritance(supertype.element, path)) {
+      return true;
+    }
+    List<InterfaceType> interfaceTypes = classElt.interfaces;
+    for (InterfaceType interfaceType in interfaceTypes) {
+      if (safeCheckForRecursiveInterfaceInheritance(interfaceType.element, path)) {
+        return true;
       }
     }
-    for (InterfaceType mixinType in classElement.mixins) {
-      if (mixinType != null) {
-        ClassElement mixinElement = mixinType.element;
-        if (mixinElement != null) {
-          for (MethodElement method in mixinElement.methods) {
-            if (method.name == methodName) {
-              if (!method.isAbstract) {
-                return true;
-              }
-            }
-          }
-        }
-      }
-    }
-    InterfaceType superType = classElement.supertype;
-    if (superType != null) {
-      ClassElement superClassElt = superType.element;
-      if (superClassElt != null) {
-        return memberHasConcreteMethodImplementationInSuperclassChain(superClassElt, methodName, superclassChain);
-      }
-    }
+    path.removeAt(path.length - 1);
     return false;
   }
 }
@@ -18783,12 +21593,12 @@ class INIT_STATE extends Enum<INIT_STATE> {
   INIT_STATE(String name, int ordinal) : super(name, ordinal);
 }
 
-class GeneralizingElementVisitor_14 extends GeneralizingElementVisitor<Object> {
+class GeneralizingElementVisitor_ErrorVerifier_hasTypedefSelfReference extends GeneralizingElementVisitor<Object> {
   Element target;
 
   List<Element> toCheck;
 
-  GeneralizingElementVisitor_14(this.target, this.toCheck) : super();
+  GeneralizingElementVisitor_ErrorVerifier_hasTypedefSelfReference(this.target, this.toCheck) : super();
 
   bool _inClass = false;
 
@@ -18838,12 +21648,15 @@ class GeneralizingElementVisitor_14 extends GeneralizingElementVisitor<Object> {
       return;
     }
     Element element = type.element;
+    // it is OK to reference target from class
     if (_inClass && target == element) {
       return;
     }
+    // schedule for checking
     toCheck.add(element);
+    // type arguments
     if (type is InterfaceType) {
-      InterfaceType interfaceType = type as InterfaceType;
+      InterfaceType interfaceType = type;
       for (Type2 typeArgument in interfaceType.typeArguments) {
         addTypeToCheck(typeArgument);
       }
@@ -18856,8 +21669,6 @@ class GeneralizingElementVisitor_14 extends GeneralizingElementVisitor<Object> {
  * resolver. The convention for this class is for the name of the error code to indicate the problem
  * that caused the error to be generated and for the error message to explain what is wrong and,
  * when appropriate, how the problem can be corrected.
- *
- * @coverage dart.engine.resolver
  */
 class ResolverErrorCode extends Enum<ResolverErrorCode> implements ErrorCode {
   static final ResolverErrorCode BREAK_LABEL_ON_SWITCH_MEMBER = new ResolverErrorCode.con1('BREAK_LABEL_ON_SWITCH_MEMBER', 0, ErrorType.COMPILE_TIME_ERROR, "Break label resolves to case or default statement");

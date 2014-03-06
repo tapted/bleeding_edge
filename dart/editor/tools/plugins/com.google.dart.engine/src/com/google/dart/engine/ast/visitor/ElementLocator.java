@@ -13,12 +13,13 @@
  */
 package com.google.dart.engine.ast.visitor;
 
-import com.google.dart.engine.ast.ASTNode;
 import com.google.dart.engine.ast.AssignmentExpression;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.BinaryExpression;
 import com.google.dart.engine.ast.ClassDeclaration;
 import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.ast.ConstructorDeclaration;
+import com.google.dart.engine.ast.ConstructorName;
 import com.google.dart.engine.ast.FunctionDeclaration;
 import com.google.dart.engine.ast.Identifier;
 import com.google.dart.engine.ast.ImportDirective;
@@ -34,15 +35,17 @@ import com.google.dart.engine.ast.PrefixExpression;
 import com.google.dart.engine.ast.PrefixedIdentifier;
 import com.google.dart.engine.ast.SimpleIdentifier;
 import com.google.dart.engine.ast.StringLiteral;
+import com.google.dart.engine.ast.TypeName;
 import com.google.dart.engine.ast.UriBasedDirective;
 import com.google.dart.engine.ast.VariableDeclaration;
 import com.google.dart.engine.element.ClassElement;
 import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.LibraryElement;
+import com.google.dart.engine.internal.builder.AngularCompilationUnitBuilder;
 
 /**
  * Instances of the class {@code ElementLocator} locate the {@link Element Dart model element}
- * associated with a given {@link ASTNode AST node}.
+ * associated with a given {@link AstNode AST node}.
  * 
  * @coverage dart.engine.ast
  */
@@ -50,7 +53,7 @@ public class ElementLocator {
   /**
    * Visitor that maps nodes to elements.
    */
-  private static final class ElementMapper extends GeneralizingASTVisitor<Element> {
+  private static final class ElementMapper extends GeneralizingAstVisitor<Element> {
     @Override
     public Element visitAssignmentExpression(AssignmentExpression node) {
       return node.getBestElement();
@@ -83,7 +86,26 @@ public class ElementLocator {
 
     @Override
     public Element visitIdentifier(Identifier node) {
-      ASTNode parent = node.getParent();
+      AstNode parent = node.getParent();
+      // Type name in InstanceCreationExpression
+      {
+        AstNode typeNameCandidate = parent;
+        // new prefix.node[.constructorName]()
+        if (typeNameCandidate instanceof PrefixedIdentifier) {
+          PrefixedIdentifier prefixedIdentifier = (PrefixedIdentifier) typeNameCandidate;
+          if (prefixedIdentifier.getIdentifier() == node) {
+            typeNameCandidate = prefixedIdentifier.getParent();
+          }
+        }
+        // new typeName[.constructorName]()
+        if (typeNameCandidate instanceof TypeName) {
+          TypeName typeName = (TypeName) typeNameCandidate;
+          if (typeName.getParent() instanceof ConstructorName) {
+            ConstructorName constructorName = (ConstructorName) typeName.getParent();
+            return constructorName.getStaticElement();
+          }
+        }
+      }
       // Extra work to map Constructor Declarations to their associated Constructor Elements
       if (parent instanceof ConstructorDeclaration) {
         ConstructorDeclaration decl = (ConstructorDeclaration) parent;
@@ -100,7 +122,7 @@ public class ElementLocator {
         }
       }
       if (parent instanceof LibraryIdentifier) {
-        ASTNode grandParent = ((LibraryIdentifier) parent).getParent();
+        AstNode grandParent = ((LibraryIdentifier) parent).getParent();
         if (grandParent instanceof PartOfDirective) {
           Element element = ((PartOfDirective) grandParent).getElement();
           if (element instanceof LibraryElement) {
@@ -162,7 +184,7 @@ public class ElementLocator {
 
     @Override
     public Element visitStringLiteral(StringLiteral node) {
-      ASTNode parent = node.getParent();
+      AstNode parent = node.getParent();
       if (parent instanceof UriBasedDirective) {
         return ((UriBasedDirective) parent).getUriElement();
       }
@@ -176,19 +198,46 @@ public class ElementLocator {
   }
 
   /**
-   * Locate the {@link Element Dart model element} associated with the given {@link ASTNode AST
+   * Locate the {@link Element Dart model element} associated with the given {@link AstNode AST
    * node}.
    * 
    * @param node the node (not {@code null})
    * @return the associated element, or {@code null} if none is found
    */
-  public static Element locate(ASTNode node) {
+  public static Element locate(AstNode node) {
     ElementMapper mapper = new ElementMapper();
     return node.accept(mapper);
   }
 
   /**
-   * Clients should use {@link #locate(ASTNode)}.
+   * Locate the {@link Element Dart model element} associated with the given {@link AstNode AST
+   * node} and offset.
+   * 
+   * @param node the node (not {@code null})
+   * @param offset the offset relative to source
+   * @return the associated element, or {@code null} if none is found
+   */
+  public static Element locateWithOffset(AstNode node, int offset) {
+    // try to get Element from node
+    {
+      Element nodeElement = locate(node);
+      if (nodeElement != null) {
+        return nodeElement;
+      }
+    }
+    // try to get Angular specific Element
+    {
+      Element element = AngularCompilationUnitBuilder.getElement(node, offset);
+      if (element != null) {
+        return element;
+      }
+    }
+    // no Element
+    return null;
+  }
+
+  /**
+   * Clients should use {@link #locate(AstNode)} or {@link #locateWithOffset(AstNode, int)}.
    */
   private ElementLocator() {
   }

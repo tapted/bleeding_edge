@@ -5,7 +5,7 @@
 \usepackage{hyperref}
 \newcommand{\code}[1]{{\sf #1}}
 \title{Dart Programming Language  Specification \\
-{\large Version 1.0}}
+{\large Version 1.2}}
 \author{The Dart Team}
 \begin{document}
 \maketitle
@@ -199,7 +199,7 @@ Now consider the opposite scenario. We start with a version of \code{S} that con
 
 These considerations become even more important if one introduces constructs such as nested classes, which might be considered in future versions of the language.
 
-Good tooling should of course endeavor to inform programmers of such situations (discretely). For example, an identifier that is both inherited and lexically visible could be highlighted (via underlining or colorization). Better yet, tight integration of source control with language aware tools would detect such changes when they occur. 
+Good tooling should of course endeavor to inform programmers of such situations (discreetly). For example, an identifier that is both inherited and lexically visible could be highlighted (via underlining or colorization). Better yet, tight integration of source control with language aware tools would detect such changes when they occur. 
  
 }
 
@@ -209,7 +209,9 @@ Good tooling should of course endeavor to inform programmers of such situations 
 \subsection{Privacy}
 \label{privacy}
 
-Dart supports two levels of privacy: {\em public} and {\em private}. A declaration is {\em private} iff its name begins with an underscore (the \_ character) otherwise it is {\em public.} 
+Dart supports two levels of privacy: {\em public} and {\em private}.  A declaration is {\em private} iff its name is private, otherwise it is {\em public.}  A  name $q$ is private iff any one of the identifiers that comprise $q$ is private,  otherwise it is {\em public.}  An identifier is private iff it
+begins with an underscore (the \_ character) otherwise it is {\em public.} 
+
 A declaration $m$ is {\em accessible to library $L$}  if $m$ is declared in $L$ or if $m$ is public.
 
 \commentary{
@@ -218,9 +220,8 @@ This means private declarations may only be accessed within the library in which
 
 Privacy applies only to declarations within a library, not to library declarations themselves. 
 
-\rationale{
-Libraries do not reference each other by name and so the idea of a private library is meaningless.
-Thus, if the name of a library begins with an underscore, it has no special significance.
+\rationale{Libraries do not reference each other by name and so the idea of a private library is meaningless.
+Thus, if the name of a library begins with an underscore, it has no effect on the accessibility of the library or its members.
 }
 
 \rationale{Privacy is, at this point, a static notion tied to a particular piece of code (a library). It is designed to support software engineering concerns rather than security concerns. Untrusted code should always run in an another isolate.  It is possible that libraries will become first class objects and privacy will be a dynamic notion tied to a library instance.
@@ -1563,7 +1564,7 @@ If two members override each other, it is a static warning if the overriding mem
   \item  If possible the interface gets a member named $m$ that has the minimum number of required parameters among all the members in the superinterfaces, the maximal number of    positionals, and the superset of named parameters.  The types of these are all \DYNAMIC{}. If this is impossible then no member $m$ appears in the interface.
   \end{itemize}  (\ref{interfaceInheritanceAndOverriding})
 \item  Rule \ref{typeSigAssignable} applies to interfaces as well as classes  (\ref{interfaceInheritanceAndOverriding}).
-\item  It is a static warning if a concrete class does not have an implementation for a  method in any of its superinterfaces  unless it declares  its own \cd{noSuchMethod} method (\ref{superinterfaces}) or is annotated with \cd{@proxy}.
+\item  It is a static warning if a concrete class does not have an implementation for a  method in any of its superinterfaces  unless it declares  its own \cd{noSuchMethod} method (\ref{superinterfaces}). 
 \item The identifier of a named constructor cannot be the same as the name of a member declared (as opposed to inherited) in the same class (\ref{constructors}).
 \end{enumerate}
 }
@@ -1593,7 +1594,7 @@ One might argue that it is harmless to repeat a type in the superinterface list,
 
 It is a compile-time error if the interface of a class $C$ is a superinterface of itself.
 
-Let $C$ be a concrete class that does not declare its own \code{noSuchMethod()} method and is not annotated with a metadata declaration of the form \cd{@proxy}, where \cd{proxy} is declared in \cd{dart:core}.
+Let $C$ be a concrete class that does not declare its own \code{noSuchMethod()} method.
 It is a static warning if the implicit interface of  $C$ includes an instance member $m$ of type $F$ and $C$ does not declare or inherit a corresponding instance member $m$ of type $F'$ such that $F' <: F$. 
 
 \commentary{A class does not inherit members from its superinterfaces. However, its implicit interface does.
@@ -1604,8 +1605,12 @@ It is a static warning if the implicit interface of  $C$ includes an instance me
 We choose to issue these warnings only for concrete classes; an abstract class might legitimately be designed with the expectation that concrete subclasses will implement part of  the interface.
 We also disable these warnings if a \code{noSuchMethod()} declaration is present. In such cases, the supported interface is going to be implemented via \code{noSuchMethod()} and no actual declarations of the implemented interface's members are needed. This allows proxy classes for specific types to be implemented without provoking type warnings.
 
-In addition, it may be useful to suppress these warnings if \code{noSuchMethod} is inherited, However, this may suppress meaningful warnings and so we choose not to do so by default. Instead, a special annotation is defined in \cd{dart:core} for this purpose.
+In addition, it may be useful to suppress these warnings if \code{noSuchMethod} is inherited, However, this may suppress meaningful warnings and so we choose not to do so. If one does want to suppress the warnings in a subclass, one can define a simple implementation of \code{noSuchMethod} in the subclass:
 }
+
+\begin{dartCode}
+noSuchMethod(inv) =$>$ \SUPER.noSuchMethod(inv);
+\end{dartCode}
 
 It is a static warning if the implicit interface of  a class $C$ includes an instance member $m$ of type $F$ and $C$ declares or inherits a corresponding instance member $m$ of type $F'$ if  $F'$ is not a subtype of $F$. 
 
@@ -1663,7 +1668,7 @@ Let $J$ be an interface and $K$ be a library. We define $inherited(J, K)$  to be
 \item $m$ is accessible to $K$ and 
 \item $A$ is a direct superinterface of $J$ and either 
   \begin{itemize}
-  \item $m$ is a member of  $A$  or
+  \item $A$ declares a member $m$  or
   \item $m$ is a member of $inherited(A, K)$.
   \end{itemize}
 \item $m$ is not overridden by $J$.
@@ -1677,7 +1682,7 @@ Furthermore, we define $overrides(J, K)$  to be the set of members $m^\prime$ su
 \item $m^\prime$ is accessible to $K$.  
 \item $A$ is a direct superinterface of $J$ and either
   \begin{itemize}
-  \item $m^\prime$ is a member of $A$ or 
+  \item $A$ declares a member $m^\prime$ or 
   \item $m^\prime$ is a member of $inherited(A, K)$.
   \end{itemize}
 \end{itemize}
@@ -1942,7 +1947,7 @@ It is important that no runtime overhead be incurred by the introduction of meta
 It is possible to associate metadata with constructs that may not be accessible via reflection, such as local variables (though it is conceivable that in the future, richer reflective libraries might provide access to these as well).  This is not as useless as it might seem. As noted above, the data can be retrieved statically if source code is available.
 }
 
-Metadata can appear before a library, class, typedef, type parameter, constructor, factory, function, field, parameter, or variable declaration and before an import or export directive.
+Metadata can appear before a library, part header, class, typedef, type parameter, constructor, factory, function, field, parameter, or variable declaration and before an import, export or part directive.
 
 The constant expression given in an annotation  is type checked and evaluated in the scope surrounding the declaration being annotated.  
 
@@ -3077,7 +3082,7 @@ If there exists a lexically visible declaration named $id$, let $f_{id}$ be the 
  If $f_{id}$ is a local function, a library function, a library or static getter or a variable then $i$ is interpreted as a function expression invocation (\ref{functionExpressionInvocation}).
  \item
 Otherwise, if $f_{id}$ is a static method of the enclosing class $C$, $i$ is equivalent to $C.id(a_1, \ldots , a_n, x_{n+1}: a_{n+1}, \ldots , x_{n+k}: a_{n+k})$.
-\item Otherwise, $f_{id}$ is necessarily an instance method or getter of the enclosing class C, and i is equivalent to the ordinary method invocation $\THIS{}.id(a_1, \ldots , a_n, x_{n+1}: a_{n+1}, \ldots , x_{n+k}: a_{n+k})$.
+\item Otherwise, $f_{id}$ is considered equivalent to the ordinary method invocation $\THIS{}.id(a_1, \ldots , a_n, x_{n+1}: a_{n+1}, \ldots , x_{n+k}: a_{n+k})$.
 \end{itemize}
 
 %Otherwise, if there is an accessible (\ref{privacy}) static method named $id$ declared in a superclass $S$ of the immediately enclosing class $C$ then i is equivalent to the static method invocation $S.id(a_1, \ldots, a_n, x_{n+1}: a_{n+1}, \ldots, x_{n+k}: a_{n+k})$.  
@@ -3110,7 +3115,7 @@ Otherwise:
 A function expression invocation $e_f(a_1, \ldots , a_n, x_{n+1}: a_{n+1}, \ldots , x_{n+k}: a_{n+k})$ is equivalent to $e_f.call(a_1, \ldots , a_n, x_{n+1}: a_{n+1}, \ldots , x_{n+k}: a_{n+k})$.
 
 \commentary{
-The implication of this definition, and the other definitions involving the method \code{call()}, is that user defined types can be used as function values provided they define a \code{call()} method. The method \code{call()} is special in this regard. The signature of the \code{call()} method determines the signature used when using the object via the built-in invocation syntax.
+The implication of this definition, and the other definitions involving the method \code{call()}, is that user defined types can be used as function values provided they define a \CALL{} method. The method \CALL{} is special in this regard. The signature of the \CALL{} method determines the signature used when using the object via the built-in invocation syntax.
 }
 
 It is a static warning if the static type $F$ of $e_f$ may not be assigned to a function type.  If $F$ is not a function type, the static type of $i$ is \DYNAMIC{}. Otherwise 
@@ -3174,7 +3179,7 @@ Then the method \code{noSuchMethod()} is looked up in $o$ and invoked with argum
 
 \commentary{Notice that the wording carefully avoids re-evaluating the receiver $o$ and the arguments $a_i$. }
 
-Let $T$ be the  static type of $o$. It is a static type warning if $T$ does not have an accessible  (\ref{privacy}) instance member named $m$.   If $T.m$ exists, it  is a static type warning if the type $F$ of $T.m$ may not be assigned to a function type. If $T.m$ does not exist, or if $F$ is not a function type, the static type of $i$ is \DYNAMIC{}; otherwise the static type of $i$ is the declared return type of  $F$.  
+Let $T$ be the  static type of $o$. It is a static type warning if $T$ does not have an accessible  (\ref{privacy}) instance member named $m$ unless $T$ or a superinterface of $T$ is annotated with an annotation denoting a constant identical to the constant \code{@proxy} defined in \code{dart:core}.   If $T.m$ exists, it  is a static type warning if the type $F$ of $T.m$ may not be assigned to a function type. If $T.m$ does not exist, or if $F$ is not a function type, the static type of $i$ is \DYNAMIC{}; otherwise the static type of $i$ is the declared return type of  $F$.  
 %\item Let $T_i$ be the static type of $a_i, i \in 1 .. n+k$. It is a static warning if $F$ is not a supertype of  $(T_1, \ldots, T_n, [T_{n+1}$ $x_{n+1}, \ldots, T_{n+k}$ $x_{n+k}]) \to \bot$.
 %\end{itemize}
 
@@ -3270,7 +3275,7 @@ Then the method \code{noSuchMethod()} is looked up in $S$ and invoked on \THIS{}
 
 It is a compile-time error if a super method invocation occurs in a top-level function or variable initializer, in an instance variable initializer or initializer list, in class \code{Object}, in a factory constructor or in a static method or variable initializer.
 
-It is a static type warning if $S$ does not have an accessible (\ref{privacy}) instance member named $m$. If $S.m$ exists, it  is a static type warning if the type $F$ of $S.m$ may not be assigned to a function type. If $S.m$ does not exist, or if $F$ is not a function type, the static type of $i$ is \DYNAMIC{}; otherwise the static type of $i$ is the declared return type of  $F$.  
+It is a static type warning if $S$ does not have an accessible (\ref{privacy}) instance member named $m$ unless $S$ or a superinterface of $S$ is annotated with an annotation denoting a constant identical to the constant \code{@proxy} defined in \code{dart:core}. If $S.m$ exists, it  is a static type warning if the type $F$ of $S.m$ may not be assigned to a function type. If $S.m$ does not exist, or if $F$ is not a function type, the static type of $i$ is \DYNAMIC{}; otherwise the static type of $i$ is the declared return type of  $F$.  
 %\item Let $T_i$ be the static type of $a_i, i \in 1 .. n+k$. It is a static warning if $F$ is not a supertype of  $(T_1, \ldots, t_n, [T_{n+1}$ $x_{n+1}, \ldots, T_{n+k}$ $x_{n+k}]) \to \bot$.
 %\end{itemize}
 
@@ -3317,7 +3322,7 @@ If the getter lookup has failed, then a new instance $im$  of the predefined cla
 \end{itemize}
 Then the method \code{noSuchMethod()} is looked up in $o$ and invoked  with argument $im$, and the result of this invocation is the result of evaluating $i$.
 
-Let $T$ be the  static type of $e$. It is a static type warning if $T$ does not have a getter named $m$. The static type of $i$ is the declared return type of $T.m$, if $T.m$ exists; otherwise the static type of $i$  is  \DYNAMIC{}. 
+Let $T$ be the  static type of $e$. It is a static type warning if $T$ does not have a getter named $m$ unless $T$ or a superinterface of $T$ is annotated with an annotation denoting a constant identical to the constant \code{@proxy} defined in \code{dart:core}. The static type of $i$ is the declared return type of $T.m$, if $T.m$ exists; otherwise the static type of $i$  is  \DYNAMIC{}. 
 
 Evaluation of a getter invocation $i$ of the form $C.m$ proceeds as follows:
 
@@ -3367,21 +3372,24 @@ An assignment changes the value associated with a mutable variable or property.
 Evaluation of an assignment $a$ of the form $v$ \code{=} $e$ proceeds as follows:
 
 
-If there is neither a local variable declaration with name $v$ nor a setter declaration with name $v=$ in the lexical scope enclosing $a$, then:
-\begin{itemize}
- \item If  $a$ occurs inside a top level or static function (be it function, method, getter,  or setter) or variable initializer, evaluation of $a$ causes $e$ to be evaluated, after which a \code{NoSuchMethodError} is thrown. 
- \item Otherwise, the assignment is equivalent to the assignment \code{ \THIS{}.$v$ = $e$}. 
- \end{itemize}
+%If there is neither a local variable declaration with name $v$ nor a setter declaration with name $v=$ in the lexical scope enclosing $a$, then:
+%\begin{itemize}
+% \item If  $a$ occurs inside a top level or static function (be it function, method, getter,  or setter) or variable initializer, evaluation of $a$ causes $e$ to be evaluated, after which a \code{NoSuchMethodError} is thrown. 
+% \item Otherwise, the assignment is equivalent to the assignment \code{ \THIS{}.$v$ = $e$}. 
+% \end{itemize}
  
- Otherwise,  let $d$ be the innermost declaration whose name is $v$, if it exists.
+%Otherwise,  
 
-If $d$ is the declaration of a local variable, the expression $e$ is evaluated to an object $o$. Then, the variable $v$ is bound to $o$. 
-% unless $v$ is \FINAL{}, in which case a \code{NoSuchMethodError} is thrown (even if there is a noSuchMethod). 
-The value of the assignment expression is $o$.  
+Let $d$ be the innermost declaration whose name is $v$ or $v=$, if it exists.
 
-If $d$ is the declaration of a library variable, the expression $e$ is evaluated to an object $o$. Then the setter $v=$ is invoked with its formal parameter bound to $o$. The value of the assignment expression is $o$.  
+If $d$ is the declaration of a local variable, the expression $e$ is evaluated to an object $o$. Then, the variable $v$ is bound to $o$ unless $v$ is \FINAL{} or \CONST{}, in which case a dynamic error occurs.
+If no error occurs, the value of the assignment expression is $o$.  
 
-Otherwise, if $d$ is the declaration of a static variable in class $C$, then the assignment is equivalent to the assignment \code{$C.v$ = $e$}.
+If $d$ is the declaration of a library variable, top level getter or top level setter, the expression $e$ is evaluated to an object $o$. Then the setter $v=$ is invoked with its formal parameter bound to $o$. The value of the assignment expression is $o$.  
+
+Otherwise, if $d$ is the declaration of a static variable, static getter or static setter in class $C$, then the assignment is equivalent to the assignment \code{$C.v$ = $e$}.
+
+Otherwise, If  $a$ occurs inside a top level or static function (be it function, method, getter,  or setter) or variable initializer, evaluation of $a$ causes $e$ to be evaluated, after which a \code{NoSuchMethodError} is thrown. 
 
 Otherwise, the assignment is equivalent to the assignment \code{ \THIS{}.$v$ = $e$}. 
 
@@ -3423,7 +3431,7 @@ Then the method \code{noSuchMethod()} is looked up in $o_1$ and invoked  with ar
 
 In checked mode, it is a dynamic type error if $o_2$ is not \NULL{} and the interface of the class of $o_2$ is not a subtype of the actual type of $e_1.v$.
 
-Let $T$ be the static type of $e_1$. It is a static type warning if $T$ does not have an accessible instance setter named $v=$. It is a static type warning if the static type of $e_2$ may not be assigned to $T$.   The static type of the expression $e_1v$ \code{=} $e_2$ is the static type of $e_2$.
+Let $T$ be the static type of $e_1$. It is a static type warning if $T$ does not have an accessible instance setter named $v=$ unless $T$ or a superinterface of $T$ is annotated with an annotation denoting a constant identical to the constant \code{@proxy} defined in \code{dart:core}. It is a static type warning if the static type of $e_2$ may not be assigned to $T$.   The static type of the expression $e_1v$ \code{=} $e_2$ is the static type of $e_2$.
 
 Evaluation of an assignment of the form $e_1[e_2]$ \code{=} $e_3$ is equivalent to the evaluation of the expression \code{(a, i, e)\{a.[]=(i, e); \RETURN{} e; \} ($e_1, e_2, e_3$)}.  The static type of the expression $e_1[e_2]$ \code{=} $e_3$ is the static type of $e_3$.
 
@@ -3714,22 +3722,29 @@ Unary expressions invoke unary operators on objects.
 \begin{grammar}
 {\bf unaryExpression:}prefixOperator unaryExpression;
       postfixExpression;
-      prefixOperator \SUPER{};
+      (minusOperator $|$ tildeOperator) \SUPER{};
       incrementOperator assignableExpression
     .
  
- {\bf prefixOperator:}`-';
-      unaryOperator
+ {\bf prefixOperator:}minusOperator;
+      negationOperator;
+      tildeOperator
     .
        
-    {\bf unaryOperator:}`!' ;
-      `\~{}'
+       
+  {\bf minusOperator:}`-';  .
+
+
+    {\bf negationOperator:}`!' ;
+      .
+      
+    {\bf tildeOperator:}  `\~{}'
     .
     
     
 \end{grammar}
 
-A {\em unary expression} is either aa postfix expression  (\ref{postfixExpressions}), an invocation of a prefix operator on an expression or an invocation of a unary operator on either \SUPER{} or an expression $e$.
+A {\em unary expression} is either a postfix expression  (\ref{postfixExpressions}), an invocation of a prefix operator on an expression or an invocation of a unary operator on either \SUPER{} or an expression $e$.
 
 The expression $!e$ is equivalent to the expression $e? \FALSE{} :\TRUE{}$. 
 
@@ -3915,12 +3930,15 @@ Built-in identifiers are identifiers that are used as keywords in Dart, but are 
 
 Evaluation of an identifier expression $e$ of the form $id$ proceeds as follows:
 
-Let $d$ be the innermost declaration in the enclosing lexical scope whose name is $id$.  If no such declaration exists in the lexical scope, let $d$ be the declaration of the inherited member named $id$ if it exists. 
+
+Let $d$ be the innermost declaration in the enclosing lexical scope whose name is $id$ or $id=$.  If no such declaration exists in the lexical scope, let $d$ be the declaration of the inherited member named $id$ if it exists. 
 %If no such member exists, let $d$ be the declaration of the static member name $id$ declared in a superclass of the current class, if it exists.
 
 \begin{itemize}
 \item If $d$ is a class or type alias $T$, the value of $e$ is an instance of class \code{Type} reifying $T$.
-\item If $d$ is a type parameter $T$, then the value of $e$ is the value of the actual type argument corresponding to $T$ that was  passed to the generative constructor that created the current binding of \THIS{}. \commentary{ We are assured that \THIS{} is well defined, because if we were in a static member the reference to $T$ would be a compile-time error (\ref{generics}.)}
+\item If $d$ is a type parameter $T$, then the value of $e$ is the value of the actual type argument corresponding to $T$ that was  passed to the generative constructor that created the current binding of \THIS{}. If, however, $e$ occurs inside a static member, a compile-time error occurs.
+
+%\commentary{ We are assured that \THIS{} is well defined, because if we were in a static member the reference to $T$ is a compile-time error (\ref{generics}.)}
 %\item If $d$ is a library variable then:
 %  \begin{itemize}
 %  \item If $d$ is of one of the forms \code{\VAR{} $v$ = $e_i$;} , \code{$T$ $v$ = $e_i$;} , \code{\FINAL{} $v$ = $e_i$;}  or \code{\FINAL{} $T$ $v$ = $e_i$;} and no value has yet been stored into $v$ then the initializer expression $e_i$ is evaluated. If, during the evaluation of $e_i$, the getter for $v$ is referenced, a \code{CyclicInitializationError} is thrown. If the evaluation succeeded yielding an object $o$, let $r = o$, otherwise let $r = \NULL{}$. In any case, $r$ is stored into $v$. The value of $e$ is $r$. 
@@ -3931,8 +3949,8 @@ Let $d$ be the innermost declaration in the enclosing lexical scope whose name i
 \item If $d$ is a local variable or formal parameter then $e$ evaluates to the current binding of $id$. 
 %\item If $d$ is a library variable, local variable, or formal parameter, then $e$ evaluates to the current binding of $id$. \commentary{This case also applies if d is a library or local function declaration, as these are equivalent to function-valued variable declarations.}
 \item If $d$ is a static method, top-level function or local function then $e$ evaluates to the function defined by $d$.
-\item If $d$ is the declaration of a static variable or static getter declared in class $C$, then $e$ is equivalent to the getter invocation (\ref{getterInvocation}) $C.id$. 
-\item If $d$ is the declaration of a library variable or top-level getter, then $e$ is equivalent to the getter invocation $id$. 
+\item If $d$ is the declaration of a static variable, static getter or static setter declared in class $C$, then $e$ is equivalent to the getter invocation (\ref{getterInvocation}) $C.id$. 
+\item If $d$ is the declaration of a library variable, top-level getter or top-level setter, then $e$ is equivalent to the getter invocation $id$. 
 \item Otherwise, if $e$ occurs inside a top level or static function (be it function, method, getter,  or setter) or variable initializer, evaluation of $e$ causes a\code{NoSuchMethod} to be thrown.
 \item Otherwise, $e$ is equivalent to the property extraction (\ref{propertyExtraction}) \THIS{}.$id$.
 % This implies that referring to an undefined static getter by simple name is an error, whereas doing so by qualified name is only a warning. Same with assignments.  Revise?
@@ -3944,12 +3962,18 @@ The static type of $e$ is determined as follows:
 \item If $d$ is a class, type alias or type parameter the static type of $e$ is \code{Type}.
 \item If $d$ is a local variable or formal parameter the static type of $e$ is the type of the variable $id$, unless $id$ is known to have some type $T$, in which case the static type of $e$ is $T$, provided that $T$ is more specific than any other type $S$ such that $v$ is known to have type $S$. 
 \item If $d$ is a static method, top-level function or local function the static type of $e$ the function type defined by $d$.
-\item If $d$ is the declaration of a static variable or static getter declared in class $C$, the static type of $e$ the static type of the getter invocation (\ref{getterInvocation}) $C.id$. 
+\item If $d$ is the declaration of a static variable or static getter declared in class $C$, the static type of $e$ the static type of the getter invocation (\ref{getterInvocation}) $C.id$.
 \item If $d$ is the declaration of a library variable or top-level getter, the static type of $e$  is the static type of the getter invocation $id$. 
 \item Otherwise, if $e$ occurs inside a top level or static function (be it function, method, getter,  or setter) or variable initializer, the static type of $e$ is \DYNAMIC{}.
 \item Otherwise, the static type of $e$ is the type of the property extraction (\ref{propertyExtraction}) \THIS{}.$id$.
 \end{itemize}
 
+ \commentary{Note that if one declares a setter, we bind to the corresponding getter even if it does not exist.}
+ 
+ \rationale{
+ This prevents situations where one uses uncorrelated setters and getters. The intent is to prevent errors when a  getter in a surrounding scope is used accidentally.
+ }
+ 
 It is a static warning if an identifier expression $id$ occurs inside a top level or static function (be it function, method, getter, or setter) or variable initializer and there is no declaration $d$ with name $id$ in the lexical scope enclosing the expression.
 
 \subsection{ Type Test}
@@ -4301,16 +4325,20 @@ Instead, each iteration has its own distinct variable.  The first iteration uses
 \subsubsection{For-in}
 \label{for-in}
 
-A for statement of the form \code{ \FOR{} ($varOrType?$ id \IN{} $e$) $s$} is equivalent to the following code: 
+A for statement of the form \code{ \FOR{} ($finalConstVarOrType?$ id \IN{} $e$) $s$} is equivalent to the following code: 
 
 \begin{dartCode}
 var n0 = $e$.iterator;
 \WHILE{} (n0.moveNext()) \{
-   $varOrType?$ id = n0.current;
+   $finalConstVarOrType?$ id = n0.current;
    $s$ 
 \}
 \end{dartCode}
 where \code{n0} is an identifier that does not occur anywhere in the program.
+
+\commentary{
+Note that in fact, using a  \CONST{} variable would give rise to a compile time error since \cd{n0.current} is not a constant expression.  
+}
  
 \subsection{While}
 \label{while}
@@ -4589,8 +4617,14 @@ This means, for example, that any inlining of functions done as an optimization 
 Nothing is said about how any native function calls may be represented in the trace.
  }
  
+\commentary{
+Note that we say nothing about the identity of the stack trace, or what notion of equality is defined for stack traces.
+}
  
- For each such function activation, the active stack trace includes the name of the function, the bindings of all its formal parameters, local variables and \THIS{}, and the position at which the function was executing.
+% Sadly, the info below cannot be computed efficiently. It would need to be computed at the throw point, since at latte points it might be destroyed. Native code in calling frames executes relative to the stack pointer, which therefore needs to be reset as each frame is unwound.  This means that the
+% OS kernel can dispose of this stack memory - it is not reliably preserved. And such code must execute if only to test if the exception should be caught or sent onward.
+
+% For each such function activation, the active stack trace includes the name of the function, the bindings of all its formal parameters, local variables and \THIS{}, and the position at which the function was executing.
  
  % Is this controversial? We were thinking of viewing the trace as a List<Invocation>,
  % but that won't capture the receiver or the locals. More generally, we need a standard interface that describes these traces, so one can type the stack trace variable in the catch.
@@ -4809,7 +4843,7 @@ It is a dynamic type error if $o$ is not of type \code{bool} or of type \code{Fu
 
 A Dart program consists of one or more libraries, and may be built out of one or more {\em compilation units}. A compilation unit may be a library or a part (\ref{parts}). 
 
-A library consists of (a possibly empty) set of imports, asset of exports,  and a set of top-level declarations. A top-level declaration is either a class (\ref{classes}), a type alias declaration (\ref{typedef}), a function (\ref{functions}) or a variable declaration (\ref{variables}). The members of a library $L$ are those top level declarations given within a $L$.
+A library consists of (a possibly empty) set of imports, a set of exports,  and a set of top-level declarations. A top-level declaration is either a class (\ref{classes}), a type alias declaration (\ref{typedef}), a function (\ref{functions}) or a variable declaration (\ref{variables}). The members of a library $L$ are those top level declarations given within $L$.
 
  \begin{grammar}
 {\bf topLevelDefinition:}classDefinition;
@@ -5031,7 +5065,7 @@ A library $L$ exports a namespace (\ref{scoping}), meaning that the declarations
  
  An export specifies a URI $x$ where the declaration of an exported library is to be found.  It is a compile-time error if  the specified URI does not refer to a library declaration.  
 
-We say that a name {\em is exported by a library} (or equivalently, that a library {\em exports a name}) if the name is in the library`s exported namespace. We say that a declaration {\em is exported by a library} (or equivalently, that a library {\em exports a declaration}) if the declaration is in the library`s exported namespace.
+We say that a name {\em is exported by a library} (or equivalently, that a library {\em exports a name}) if the name is in the library's exported namespace. We say that a declaration {\em is exported by a library} (or equivalently, that a library {\em exports a declaration}) if the declaration is in the library`s exported namespace.
 
 A library always exports all names and all declarations in its public namespace. In addition, a library may choose to re-export additional libraries via {\em export directives}, often referred to simply as {\em exports}.
 
@@ -5071,7 +5105,7 @@ See the discussion in section \ref{imports} for the reasoning behind this rule.
 
 We say that $L$ {\em re-exports library } $B$, and also that $L$ {\em re-exports namespace } $NS_n$. When no confusion can arise, we may simply state that $L$ {\em re-exports }$B$, or that $L$ {\em re-exports }$NS_n$.
 
-It is a compile-time error if a name $N$ is re-exported by a library $L$ and $N$ is  introduced into the export namespace of $L$ by more than one export, unless each all exports refer to same declaration for the name $N$.  It is a static warning to export two different libraries with the same name.
+It is a compile-time error if a name $N$ is re-exported by a library $L$ and $N$ is  introduced into the export namespace of $L$ by more than one export, unless all  exports refer to same declaration for the name $N$.  It is a static warning to export two different libraries with the same name.
 
 
 
@@ -5483,7 +5517,7 @@ A function type $T$ may be assigned to a function type $S$, written  $T \Longlef
 
 % ensure that Object  and dynamic may be assign dot a function type
 A function is always an instance of some class that implements the class \code{Function} and implements a \CALL{} method with the same signature as the function. All function types are subtypes of \code{Function}.
-If a type $I$ includes an instance method named \CALL{}, and the type of \CALL{} is the function type $F$, then $I$ is considered to be a subtype of $F$.  It is a static warning if a concrete class implements \cd{Function} and does not have a concrete method named \CALL{}.
+If a type $I$ includes an instance method named \CALL{}, and the type of \CALL{} is the function type $F$, then $I$ is considered to be a subtype of $F$.  It is a static warning if a concrete class implements \cd{Function} and does not have a concrete method named \CALL{} unless that class declares its own implementation of \cd{noSuchMethod()}.
 
 
 
@@ -5763,7 +5797,7 @@ Operator precedence is given implicitly by the grammar.
 \hline
 Description &  Operator & Associativity & Precedence \\ 
 \hline
-Unary postfix &  ., ?id, e++, e--, e1[e2], e1() , () & None & 15 \\
+Unary postfix &  ., e++, e--, e1[e2], e1() , () & None & 15 \\
 \hline
 Unary prefix & -e, !e, \~{}e, ++e, --e & None & 14\\
 \hline

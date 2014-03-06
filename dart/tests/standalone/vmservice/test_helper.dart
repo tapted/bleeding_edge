@@ -186,7 +186,7 @@ class IsolateListTester {
     Expect.equals(n, isolateList['members'].length, 'Isolate count not $n');
   }
 
-  void checkIsolateIdExists(int id) {
+  void checkIsolateIdExists(String id) {
     var exists = false;
     isolateList['members'].forEach((isolate) {
       if (isolate['id'] == id) {
@@ -196,30 +196,8 @@ class IsolateListTester {
     Expect.isTrue(exists, 'No isolate with id: $id');
   }
 
-  int checkIsolateNameContains(String name) {
-    var exists = false;
-    int id;
-    isolateList['members'].forEach((isolate) {
-      if (isolate['name'].contains(name)) {
-        exists = true;
-        id = isolate['id'];
-      }
-    });
-    Expect.isTrue(exists, 'No isolate with name: $name');
-    return id;
-  }
-
-  void checkIsolateNamePrefix(int id, String name) {
-    var exists = false;
-    isolateList['members'].forEach((isolate) {
-      if (isolate['id'] == id) {
-        exists = true;
-        Expect.isTrue(isolate['name'].startsWith(name),
-                      'Isolate $id does not have name prefix: $name'
-                      ' (was ${isolate['name']})');
-      }
-    });
-    Expect.isTrue(exists, 'No isolate with id: $id');
+  String getIsolateId(int index) {
+    return isolateList['members'][index]['id'];
   }
 }
 
@@ -241,7 +219,7 @@ class ClassTableHelper {
     return false;
   }
 
-  int classId(String user_name) {
+  String classId(String user_name) {
     List members = classTable['members'];
     for (var i = 0; i < members.length; i++) {
       Map klass = members[i];
@@ -249,13 +227,13 @@ class ClassTableHelper {
         return klass['id'];
       }
     }
-    return -1;
+    return null;
   }
 }
 
 class FieldRequestHelper extends VmServiceRequestHelper {
   FieldRequestHelper(port, isolate_id, field_id) :
-      super('http://127.0.0.1:$port/isolates/$isolate_id/objects/$field_id');
+      super('http://127.0.0.1:$port/$isolate_id/$field_id');
   Map field;
   onRequestCompleted(Map reply) {
     Expect.equals('Field', reply['type']);
@@ -267,9 +245,9 @@ class FieldRequestHelper extends VmServiceRequestHelper {
 class ClassFieldRequestHelper extends VmServiceRequestHelper {
   final List<String> fieldNames;
   int port_;
-  int isolate_id_;
+  String isolate_id_;
   ClassFieldRequestHelper(port, isolate_id, class_id, this.fieldNames) :
-      super('http://127.0.0.1:$port/isolates/$isolate_id/classes/$class_id') {
+      super('http://127.0.0.1:$port/$isolate_id/$class_id') {
     port_ = port;
     isolate_id_ = isolate_id;
   }

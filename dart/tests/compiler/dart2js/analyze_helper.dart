@@ -4,7 +4,6 @@
 
 library analyze_helper;
 
-import "package:expect/expect.dart";
 import 'dart:async';
 import 'dart:io';
 import '../../../sdk/lib/_internal/compiler/compiler.dart' as api;
@@ -13,6 +12,7 @@ import '../../../sdk/lib/_internal/compiler/implementation/dart2jslib.dart'
     hide Compiler;
 import '../../../sdk/lib/_internal/compiler/implementation/filenames.dart';
 import '../../../sdk/lib/_internal/compiler/implementation/source_file_provider.dart';
+import '../../../sdk/lib/_internal/compiler/implementation/util/uri_extras.dart';
 
 /**
  * Map of whitelisted warnings and errors.
@@ -30,6 +30,7 @@ class CollectingDiagnosticHandler extends FormattingDiagnosticHandler {
   bool hasWarnings = false;
   bool hasHint = false;
   bool hasErrors = false;
+  bool lastWasWhitelisted = false;
 
   Map<String, Map<String, int>> whiteListMap
       = new Map<String, Map<String, int>>();
@@ -46,12 +47,10 @@ class CollectingDiagnosticHandler extends FormattingDiagnosticHandler {
     });
   }
 
-  void checkResults() {
-    Expect.isFalse(hasWarnings);
-    Expect.isFalse(hasHint);
-    Expect.isFalse(hasErrors);
-    Expect.isTrue(checkWhiteListUse());
+  bool checkResults() {
+    bool validWhiteListUse = checkWhiteListUse();
     reportWhiteListUse();
+    return !hasWarnings && !hasHint && !hasErrors && validWhiteListUse;
   }
 
   bool checkWhiteListUse() {
@@ -101,6 +100,7 @@ class CollectingDiagnosticHandler extends FormattingDiagnosticHandler {
     if (kind == api.Diagnostic.WARNING) {
       if (checkWhiteList(uri, message)) {
         // Suppress whitelisted warnings.
+        lastWasWhitelisted = true;
         return;
       }
       hasWarnings = true;
@@ -108,6 +108,7 @@ class CollectingDiagnosticHandler extends FormattingDiagnosticHandler {
     if (kind == api.Diagnostic.HINT) {
       if (checkWhiteList(uri, message)) {
         // Suppress whitelisted hints.
+        lastWasWhitelisted = true;
         return;
       }
       hasHint = true;
@@ -115,10 +116,15 @@ class CollectingDiagnosticHandler extends FormattingDiagnosticHandler {
     if (kind == api.Diagnostic.ERROR) {
       if (checkWhiteList(uri, message)) {
         // Suppress whitelisted errors.
+        lastWasWhitelisted = true;
         return;
       }
       hasErrors = true;
     }
+    if (kind == api.Diagnostic.INFO && lastWasWhitelisted) {
+      return;
+    }
+    lastWasWhitelisted = false;
     super.diagnosticHandler(uri, begin, end, message, kind);
   }
 }
@@ -126,6 +132,19 @@ class CollectingDiagnosticHandler extends FormattingDiagnosticHandler {
 Future analyze(List<Uri> uriList,
                Map<String, List<String>> whiteList,
                {bool analyzeAll: true}) {
+  String testFileName =
+      relativize(Uri.base, Platform.script, Platform.isWindows);
+
+  print("""
+
+
+=== 
+=== NOTE: If this test fails, update [WHITE_LIST] in $testFileName
+===
+
+
+""");
+
   var libraryRoot = currentDirectory.resolve('sdk/');
   var provider = new CompilerSourceFileProvider();
   var handler = new CollectingDiagnosticHandler(whiteList, provider);
@@ -138,14 +157,27 @@ Future analyze(List<Uri> uriList,
       libraryRoot, libraryRoot,
       options,
       {});
+  String MESSAGE = """
+
+
+=== 
+=== ERROR: Unexpected result of analysis.
+=== 
+=== Please update [WHITE_LIST] in $testFileName
+=== 
+""";
+
+  void onCompletion(_) {
+    bool result = handler.checkResults();
+    if (!result) {
+      print(MESSAGE);
+      exit(1);
+    }
+  }
   if (analyzeAll) {
     compiler.librariesToAnalyzeWhenRun = uriList;
-    return compiler.run(null).then((_) {
-      handler.checkResults();
-    });
+    return compiler.run(null).then(onCompletion);
   } else {
-    return compiler.run(uriList.single).then((_) {
-      handler.checkResults();
-    });
+    return compiler.run(uriList.single).then(onCompletion);
   }
 }

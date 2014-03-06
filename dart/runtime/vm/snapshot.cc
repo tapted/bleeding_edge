@@ -117,7 +117,7 @@ const Snapshot* Snapshot::SetupFromBuffer(const void* raw_memory) {
   ASSERT(raw_memory != NULL);
   ASSERT(kHeaderSize == sizeof(Snapshot));
   ASSERT(kLengthIndex == length_offset());
-  ASSERT((kSnapshotFlagIndex * sizeof(int32_t)) == kind_offset());
+  ASSERT((kSnapshotFlagIndex * sizeof(int64_t)) == kind_offset());
   ASSERT((kHeapObjectTag & kInlined));
   // The kWatchedBit and kMarkBit are only set during GC operations. This
   // allows the two low bits in the header to be used for snapshotting.
@@ -148,18 +148,18 @@ SnapshotReader::SnapshotReader(const uint8_t* buffer,
     : BaseReader(buffer, size),
       kind_(kind),
       isolate_(isolate),
-      cls_(Class::Handle()),
-      obj_(Object::Handle()),
-      array_(Array::Handle()),
-      field_(Field::Handle()),
-      str_(String::Handle()),
-      library_(Library::Handle()),
-      type_(AbstractType::Handle()),
-      type_arguments_(AbstractTypeArguments::Handle()),
-      tokens_(Array::Handle()),
-      stream_(TokenStream::Handle()),
-      data_(ExternalTypedData::Handle()),
-      error_(UnhandledException::Handle()),
+      cls_(Class::Handle(isolate)),
+      obj_(Object::Handle(isolate)),
+      array_(Array::Handle(isolate)),
+      field_(Field::Handle(isolate)),
+      str_(String::Handle(isolate)),
+      library_(Library::Handle(isolate)),
+      type_(AbstractType::Handle(isolate)),
+      type_arguments_(TypeArguments::Handle(isolate)),
+      tokens_(Array::Handle(isolate)),
+      stream_(TokenStream::Handle(isolate)),
+      data_(ExternalTypedData::Handle(isolate)),
+      error_(UnhandledException::Handle(isolate)),
       backward_references_((kind == Snapshot::kFull) ?
                            kNumInitialReferencesInFullSnapshot :
                            kNumInitialReferences) {
@@ -167,12 +167,10 @@ SnapshotReader::SnapshotReader(const uint8_t* buffer,
 
 
 RawObject* SnapshotReader::ReadObject() {
-  // Setup for long jump in case there is an exception while reading.
-  LongJump* base = isolate()->long_jump_base();
-  LongJump jump;
-  isolate()->set_long_jump_base(&jump);
   const Instance& null_object = Instance::Handle();
   *ErrorHandle() = UnhandledException::New(null_object, null_object);
+  // Setup for long jump in case there is an exception while reading.
+  LongJumpScope jump;
   if (setjmp(*jump.Set()) == 0) {
     Object& obj = Object::Handle(ReadObjectImpl());
     for (intptr_t i = 0; i < backward_references_.length(); i++) {
@@ -181,13 +179,11 @@ RawObject* SnapshotReader::ReadObject() {
         backward_references_[i]->set_state(kIsDeserialized);
       }
     }
-    isolate()->set_long_jump_base(base);
     return obj.raw();
   } else {
     // An error occurred while reading, return the error object.
     const Error& err = Error::Handle(isolate()->object_store()->sticky_error());
     isolate()->object_store()->clear_sticky_error();
-    isolate()->set_long_jump_base(base);
     return err.raw();
   }
 }
@@ -384,6 +380,11 @@ void SnapshotReader::ReadFullSnapshot() {
     }
   }
 
+  // Validate the class table.
+#if defined(DEBUG)
+  isolate->ValidateClassTable();
+#endif
+
   // Setup native resolver for bootstrap impl.
   Bootstrap::SetupNativeResolver();
 }
@@ -476,9 +477,19 @@ RawClass* SnapshotReader::NewClass(intptr_t class_id) {
   Instance fake;
   obj->ptr()->handle_vtable_ = fake.vtable();
   cls_ = obj;
-  cls_.set_id(kIllegalCid);
-  isolate()->RegisterClass(cls_);
+  cls_.set_id(class_id);
+  isolate()->RegisterClassAt(class_id, cls_);
   return cls_.raw();
+}
+
+
+RawInstance* SnapshotReader::NewInstance() {
+  ASSERT(kind_ == Snapshot::kFull);
+  ASSERT(isolate()->no_gc_scope_depth() != 0);
+  cls_ = object_store()->object_class();
+  RawInstance* obj = reinterpret_cast<RawInstance*>(
+      AllocateUninitialized(cls_, Instance::InstanceSize()));
+  return obj;
 }
 
 
@@ -642,6 +653,18 @@ RawInt32x4* SnapshotReader::NewInt32x4(uint32_t v0, uint32_t v1, uint32_t v2,
 }
 
 
+RawFloat64x2* SnapshotReader::NewFloat64x2(double v0, double v1) {
+  ASSERT(kind_ == Snapshot::kFull);
+  ASSERT(isolate()->no_gc_scope_depth() != 0);
+  cls_ = object_store()->float64x2_class();
+  RawFloat64x2* obj = reinterpret_cast<RawFloat64x2*>(
+      AllocateUninitialized(cls_, Float64x2::InstanceSize()));
+  obj->ptr()->value_[0] = v0;
+  obj->ptr()->value_[1] = v1;
+  return obj;
+}
+
+
 RawApiError* SnapshotReader::NewApiError() {
   ALLOC_NEW_OBJECT(ApiError, Object::api_error_class());
 }
@@ -705,6 +728,19 @@ RawObject* SnapshotReader::AllocateUninitialized(const Class& cls,
     ErrorHandle()->set_exception(exception);
     Isolate::Current()->long_jump_base()->Jump(1, *ErrorHandle());
   }
+#if defined(DEBUG)
+  // Zap the uninitialized memory area.
+  uword current = address;
+  uword end = address + size;
+  while (current < end) {
+    *reinterpret_cast<intptr_t*>(current) = kZapUninitializedWord;
+    current += kWordSize;
+  }
+#endif  // defined(DBEUG)
+  // Make sure to initialize the last word, as this can be left untouched in
+  // case the object deserialized has an alignment tail.
+  *reinterpret_cast<RawObject**>(address + size - kWordSize) = Object::null();
+
   RawObject* raw_obj = reinterpret_cast<RawObject*>(address + kHeapObjectTag);
   uword tags = 0;
   intptr_t index = cls.id();
@@ -727,6 +763,9 @@ RawObject* SnapshotReader::ReadVMIsolateObject(intptr_t header_value) {
   }
   if (object_id == kEmptyArrayObject) {
     return Object::empty_array().raw();
+  }
+  if (object_id == kZeroArrayObject) {
+    return Object::zero_array().raw();
   }
   if (object_id == kDynamicType) {
     return Object::dynamic_type();
@@ -927,6 +966,12 @@ void SnapshotWriter::HandleVMIsolateObject(RawObject* rawobj) {
     return;
   }
 
+  // Check if it is a singleton zero array object.
+  if (rawobj == Object::zero_array().raw()) {
+    WriteVMIsolateObject(kZeroArrayObject);
+    return;
+  }
+
   // Check if it is a singleton dyanmic Type object.
   if (rawobj == Object::dynamic_type()) {
     WriteVMIsolateObject(kDynamicType);
@@ -963,6 +1008,7 @@ void SnapshotWriter::HandleVMIsolateObject(RawObject* rawobj) {
       return;
     }
   }
+
 
   // Check it is a predefined symbol in the VM isolate.
   id = Symbols::LookupVMSymbol(rawobj);
@@ -1080,11 +1126,15 @@ void FullSnapshotWriter::WriteFullSnapshot() {
   ASSERT(object_store != NULL);
   ASSERT(ClassFinalizer::AllClassesFinalized());
 
+  // Ensure the class table is valid.
+#if defined(DEBUG)
+  isolate->ValidateClassTable();
+#endif
+
+
   // Setup for long jump in case there is an exception while writing
   // the snapshot.
-  LongJump* base = isolate->long_jump_base();
-  LongJump jump;
-  isolate->set_long_jump_base(&jump);
+  LongJumpScope jump;
   if (setjmp(*jump.Set()) == 0) {
     NoGCScope no_gc;
 
@@ -1101,10 +1151,7 @@ void FullSnapshotWriter::WriteFullSnapshot() {
 
     FillHeader(kind());
     UnmarkAll();
-
-    isolate->set_long_jump_base(base);
   } else {
-    isolate->set_long_jump_base(base);
     ThrowException(exception_type(), exception_msg());
   }
 }
@@ -1343,7 +1390,7 @@ void SnapshotWriter::ArrayWriteTo(intptr_t object_id,
                                   intptr_t array_kind,
                                   intptr_t tags,
                                   RawSmi* length,
-                                  RawAbstractTypeArguments* type_arguments,
+                                  RawTypeArguments* type_arguments,
                                   RawObject* data[]) {
   intptr_t len = Smi::Value(length);
 
@@ -1475,9 +1522,7 @@ void ScriptSnapshotWriter::WriteScriptSnapshot(const Library& lib) {
 
   // Setup for long jump in case there is an exception while writing
   // the snapshot.
-  LongJump* base = isolate->long_jump_base();
-  LongJump jump;
-  isolate->set_long_jump_base(&jump);
+  LongJumpScope jump;
   if (setjmp(*jump.Set()) == 0) {
     // Write out the library object.
     NoGCScope no_gc;
@@ -1485,9 +1530,7 @@ void ScriptSnapshotWriter::WriteScriptSnapshot(const Library& lib) {
     WriteObject(lib.raw());
     FillHeader(kind());
     UnmarkAll();
-    isolate->set_long_jump_base(base);
   } else {
-    isolate->set_long_jump_base(base);
     ThrowException(exception_type(), exception_msg());
   }
 }
@@ -1512,16 +1555,12 @@ void MessageWriter::WriteMessage(const Object& obj) {
 
   // Setup for long jump in case there is an exception while writing
   // the message.
-  LongJump* base = isolate->long_jump_base();
-  LongJump jump;
-  isolate->set_long_jump_base(&jump);
+  LongJumpScope jump;
   if (setjmp(*jump.Set()) == 0) {
     NoGCScope no_gc;
     WriteObject(obj.raw());
     UnmarkAll();
-    isolate->set_long_jump_base(base);
   } else {
-    isolate->set_long_jump_base(base);
     ThrowException(exception_type(), exception_msg());
   }
 }

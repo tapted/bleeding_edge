@@ -44,11 +44,13 @@ void DisassembleToJSONStream::ConsumeInstruction(char* hex_buffer,
                                                  intptr_t human_size,
                                                  uword pc) {
   uint8_t* pc_ptr = reinterpret_cast<uint8_t*>(pc);
-  JSONObject jsobj(&jsarr_);
-  jsobj.AddProperty("type", "DisassembledInstruction");
-  jsobj.AddPropertyF("pc", "%p", pc_ptr);
-  jsobj.AddProperty("hex", hex_buffer);
-  jsobj.AddProperty("human", human_buffer);
+  // Instructions are represented as three consecutive values in a JSON array.
+  // All three are strings. The first is the address of the instruction,
+  // the second is the hex string of the code, and the final is a human
+  // readable string.
+  jsarr_.AddValueF("%p", pc_ptr);
+  jsarr_.AddValue(hex_buffer);
+  jsarr_.AddValue(human_buffer);
 }
 
 
@@ -67,10 +69,40 @@ void DisassembleToJSONStream::Print(const char* format, ...) {
       p[i] = ' ';
     }
   }
-  JSONObject jsobj(&jsarr_);
-  jsobj.AddProperty("type", "DisassembledInstructionComment");
-  jsobj.AddProperty("comment", p);
+  // Instructions are represented as three consecutive values in a JSON array.
+  // All three are strings. Comments only use the third slot. See above comment
+  // for more information.
+  jsarr_.AddValue("");
+  jsarr_.AddValue("");
+  jsarr_.AddValue(p);
   free(p);
+}
+
+
+class FindAddrVisitor : public FindObjectVisitor {
+   public:
+    explicit FindAddrVisitor(uword addr)
+        : FindObjectVisitor(Isolate::Current()), addr_(addr) { }
+    virtual ~FindAddrVisitor() { }
+
+    virtual uword filter_addr() const { return addr_; }
+
+    // Check if object matches find condition.
+    virtual bool FindObject(RawObject* obj) const {
+      return obj == reinterpret_cast<RawObject*>(addr_);
+    }
+
+   private:
+    const uword addr_;
+
+    DISALLOW_COPY_AND_ASSIGN(FindAddrVisitor);
+};
+
+
+bool Disassembler::CanFindOldObject(uword addr) {
+  FindAddrVisitor visitor(addr);
+  NoGCScope no_gc;
+  return Isolate::Current()->heap()->FindOldObject(&visitor) != Object::null();
 }
 
 }  // namespace dart

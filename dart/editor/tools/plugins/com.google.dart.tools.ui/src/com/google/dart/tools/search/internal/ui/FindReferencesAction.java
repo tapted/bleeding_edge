@@ -16,7 +16,7 @@ package com.google.dart.tools.search.internal.ui;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import com.google.dart.engine.ast.ASTNode;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.SimpleIdentifier;
 import com.google.dart.engine.element.ClassElement;
 import com.google.dart.engine.element.ClassMemberElement;
@@ -50,8 +50,13 @@ import static com.google.dart.tools.search.internal.ui.FindDeclarationsAction.is
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IProject;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.swt.widgets.Event;
+import org.eclipse.ui.IEditorInput;
+import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IFileEditorInput;
 import org.eclipse.ui.IWorkbenchSite;
 import org.eclipse.ui.PlatformUI;
 
@@ -77,6 +82,11 @@ public class FindReferencesAction extends AbstractDartSelectionAction {
         }
 
         @Override
+        protected IProject getCurrentProject() {
+          return findCurrentProject();
+        }
+
+        @Override
         protected String getQueryElementName() {
           return name;
         }
@@ -99,6 +109,24 @@ public class FindReferencesAction extends AbstractDartSelectionAction {
   }
 
   /**
+   * Finds the "current" project. That is the project of the active editor.
+   */
+  static IProject findCurrentProject() {
+    IEditorPart editor = DartToolsPlugin.getActiveEditor();
+    if (editor != null) {
+      IEditorInput input = editor.getEditorInput();
+      if (input instanceof IFileEditorInput) {
+        IFileEditorInput fileInput = (IFileEditorInput) input;
+        IFile file = fileInput.getFile();
+        if (file != null) {
+          return file.getProject();
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
    * @return {@code true} if given {@link DartSelection} looks valid.
    */
   private static boolean isValidSelection(DartSelection selection) {
@@ -108,7 +136,7 @@ public class FindReferencesAction extends AbstractDartSelectionAction {
       return true;
     }
     // interesting elements
-    ASTNode node = getSelectionNode(selection);
+    AstNode node = getSelectionNode(selection);
     return isInterestingElement(node, element);
   }
 
@@ -135,7 +163,7 @@ public class FindReferencesAction extends AbstractDartSelectionAction {
   protected void doRun(DartSelection selection, Event event,
       UIInstrumentationBuilder instrumentation) {
     Element element = ActionUtil.getActionElement(selection);
-    ASTNode node = getSelectionNode(selection);
+    AstNode node = getSelectionNode(selection);
     doSearch(element, node);
   }
 
@@ -158,7 +186,7 @@ public class FindReferencesAction extends AbstractDartSelectionAction {
   /**
    * Asks {@link SearchView} to execute query and display results.
    */
-  private void doSearch(Element element, ASTNode node) {
+  private void doSearch(Element element, AstNode node) {
     // tweak
     element = DartElementUtil.getVariableIfSyntheticAccessor(element);
     if (element instanceof ImportElement) {
@@ -177,8 +205,18 @@ public class FindReferencesAction extends AbstractDartSelectionAction {
       SearchView view = (SearchView) DartToolsPlugin.getActivePage().showView(SearchView.ID);
       view.showPage(new SearchMatchPage(view, "Searching for references...") {
         @Override
+        protected void beforeRefresh() {
+          super.beforeRefresh();
+        }
+
+        @Override
         protected boolean canUseFilterPotential() {
           return searchElement != null;
+        }
+
+        @Override
+        protected IProject getCurrentProject() {
+          return findCurrentProject();
         }
 
         @Override
@@ -211,9 +249,10 @@ public class FindReferencesAction extends AbstractDartSelectionAction {
           List<SearchMatch> allMatches = Lists.newArrayList();
           if (searchElement != null) {
             allMatches.addAll(findVariableElementDeclaration());
-            allMatches.addAll(findElementReferences());
+            allMatches.addAll(findElementReferences(searchEngine, searchElement));
           }
           addUniqueNameReferences(allMatches, findNameReferences());
+          allMatches = HierarchyUtils.getAccessibleMatches(searchElement, allMatches);
           allMatches = FindDeclarationsAction.getUniqueMatches(allMatches);
           return allMatches;
         }
@@ -236,55 +275,6 @@ public class FindReferencesAction extends AbstractDartSelectionAction {
           }
         }
 
-        private List<SearchMatch> findElementReferences() {
-          Element[] refElements;
-          if (searchElement instanceof MethodElement || searchElement instanceof FieldElement) {
-            // field or method
-            ClassMemberElement member = (ClassMemberElement) searchElement;
-            Set<ClassMemberElement> hierarchyMembers = HierarchyUtils.getHierarchyMembers(
-                searchEngine,
-                member);
-            refElements = hierarchyMembers.toArray(new ClassMemberElement[hierarchyMembers.size()]);
-          } else if (searchElement.getEnclosingElement() instanceof ClassElement
-              && searchElement instanceof PropertyAccessorElement) {
-            // class property accessor
-            PropertyAccessorElement accessor = (PropertyAccessorElement) searchElement;
-            ClassMemberElement property = (ClassMemberElement) accessor.getVariable();
-            Set<ClassMemberElement> hierarchyMembers = HierarchyUtils.getHierarchyMembers(
-                searchEngine,
-                property);
-            Set<PropertyAccessorElement> hierarchyAccessors = Sets.newHashSet();
-            for (ClassMemberElement hierarchyMember : hierarchyMembers) {
-              if (hierarchyMember instanceof FieldElement) {
-                FieldElement hierarchyField = (FieldElement) hierarchyMember;
-                if (accessor.isGetter()) {
-                  hierarchyAccessors.add(hierarchyField.getGetter());
-                } else if (accessor.isSetter()) {
-                  hierarchyAccessors.add(hierarchyField.getSetter());
-                }
-              }
-            }
-            refElements = hierarchyAccessors.toArray(new PropertyAccessorElement[hierarchyAccessors.size()]);
-          } else {
-            // some other element
-            refElements = new Element[] {searchElement};
-          }
-          // find references to "refElements"
-          List<SearchMatch> references = Lists.newArrayList();
-          for (Element refElement : refElements) {
-            references.addAll(searchEngine.searchReferences(refElement, null, new SearchFilter() {
-              @Override
-              public boolean passes(SearchMatch match) {
-                if (match.getKind() == MatchKind.CONSTRUCTOR_DECLARATION) {
-                  return false;
-                }
-                return true;
-              }
-            }));
-          }
-          return references;
-        }
-
         private List<SearchMatch> findNameReferences() {
           if (searchElement != null) {
             // only class members may have potential references
@@ -302,8 +292,7 @@ public class FindReferencesAction extends AbstractDartSelectionAction {
           return searchEngine.searchQualifiedMemberReferences(searchName, null, new SearchFilter() {
             @Override
             public boolean passes(SearchMatch match) {
-              return match.getKind() == MatchKind.NAME_REFERENCE_RESOLVED
-                  || match.getKind() == MatchKind.NAME_REFERENCE_UNRESOLVED;
+              return match.getKind() == MatchKind.NAME_REFERENCE_UNRESOLVED;
             }
           });
         }
@@ -327,5 +316,58 @@ public class FindReferencesAction extends AbstractDartSelectionAction {
     } catch (Throwable e) {
       ExceptionHandler.handle(e, getText(), "Exception during search.");
     }
+  }
+
+  private List<SearchMatch> findElementReferences(SearchEngine searchEngine, Element searchElement) {
+    Element[] refElements;
+    if (searchElement instanceof MethodElement || searchElement instanceof FieldElement) {
+      // field or method
+      ClassMemberElement member = (ClassMemberElement) searchElement;
+      Set<ClassMemberElement> hierarchyMembers = HierarchyUtils.getHierarchyMembers(
+          searchEngine,
+          member);
+      refElements = hierarchyMembers.toArray(new ClassMemberElement[hierarchyMembers.size()]);
+    } else if (searchElement.getEnclosingElement() instanceof ClassElement
+        && searchElement instanceof PropertyAccessorElement) {
+      // class property accessor
+      PropertyAccessorElement accessor = (PropertyAccessorElement) searchElement;
+      ClassMemberElement property = (ClassMemberElement) accessor.getVariable();
+      Set<ClassMemberElement> hierarchyMembers = HierarchyUtils.getHierarchyMembers(
+          searchEngine,
+          property);
+      Set<PropertyAccessorElement> hierarchyAccessors = Sets.newHashSet();
+      for (ClassMemberElement hierarchyMember : hierarchyMembers) {
+        if (hierarchyMember instanceof FieldElement) {
+          FieldElement hierarchyField = (FieldElement) hierarchyMember;
+          if (accessor.isGetter()) {
+            hierarchyAccessors.add(hierarchyField.getGetter());
+          } else if (accessor.isSetter()) {
+            hierarchyAccessors.add(hierarchyField.getSetter());
+          }
+        }
+      }
+      refElements = hierarchyAccessors.toArray(new PropertyAccessorElement[hierarchyAccessors.size()]);
+    } else {
+      // some other element
+      refElements = new Element[] {searchElement};
+    }
+    // find references to "refElements"
+    List<SearchMatch> references = Lists.newArrayList();
+    for (Element refElement : refElements) {
+      references.addAll(searchEngine.searchReferences(refElement, null, new SearchFilter() {
+        @Override
+        public boolean passes(SearchMatch match) {
+          MatchKind kind = match.getKind();
+          if (kind == MatchKind.CONSTRUCTOR_DECLARATION) {
+            return false;
+          }
+          if (kind == MatchKind.ANGULAR_CLOSING_TAG_REFERENCE) {
+            return false;
+          }
+          return true;
+        }
+      }));
+    }
+    return references;
   }
 }

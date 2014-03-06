@@ -38,21 +38,26 @@ class FileHandle {
 
 
 File::~File() {
-  // Close the file (unless it's a standard stream).
-  if (handle_->fd() > STDERR_FILENO) {
-    Close();
-  }
+  Close();
   delete handle_;
 }
 
 
 void File::Close() {
   ASSERT(handle_->fd() >= 0);
-  int err = TEMP_FAILURE_RETRY_BLOCK_SIGNALS(close(handle_->fd()));
-  if (err != 0) {
-    const int kBufferSize = 1024;
-    char error_buf[kBufferSize];
-    Log::PrintErr("%s\n", strerror_r(errno, error_buf, kBufferSize));
+  if (handle_->fd() == STDOUT_FILENO) {
+    // If stdout, redirect fd to /dev/null.
+    int null_fd = TEMP_FAILURE_RETRY(open("/dev/null", O_WRONLY));
+    ASSERT(null_fd >= 0);
+    VOID_TEMP_FAILURE_RETRY(dup2(null_fd, handle_->fd()));
+    VOID_TEMP_FAILURE_RETRY(close(null_fd));
+  } else {
+    int err = TEMP_FAILURE_RETRY_BLOCK_SIGNALS(close(handle_->fd()));
+    if (err != 0) {
+      const int kBufferSize = 1024;
+      char error_buf[kBufferSize];
+      Log::PrintErr("%s\n", strerror_r(errno, error_buf, kBufferSize));
+    }
   }
   handle_->set_fd(kClosedFd);
 }
@@ -77,19 +82,19 @@ int64_t File::Write(const void* buffer, int64_t num_bytes) {
 }
 
 
-off64_t File::Position() {
+int64_t File::Position() {
   ASSERT(handle_->fd() >= 0);
   return lseek64(handle_->fd(), 0, SEEK_CUR);
 }
 
 
-bool File::SetPosition(off64_t position) {
+bool File::SetPosition(int64_t position) {
   ASSERT(handle_->fd() >= 0);
   return lseek64(handle_->fd(), position, SEEK_SET) >= 0;
 }
 
 
-bool File::Truncate(off64_t length) {
+bool File::Truncate(int64_t length) {
   ASSERT(handle_->fd() >= 0);
   return TEMP_FAILURE_RETRY_BLOCK_SIGNALS(
       ftruncate64(handle_->fd(), length) != -1);
@@ -102,7 +107,7 @@ bool File::Flush() {
 }
 
 
-off64_t File::Length() {
+int64_t File::Length() {
   ASSERT(handle_->fd() >= 0);
   struct stat64 st;
   if (TEMP_FAILURE_RETRY_BLOCK_SIGNALS(fstat64(handle_->fd(), &st)) == 0) {
@@ -135,7 +140,7 @@ File* File::Open(const char* name, FileOpenMode mode) {
     return NULL;
   }
   if (((mode & kWrite) != 0) && ((mode & kTruncate) == 0)) {
-    off64_t position = lseek64(fd, 0, SEEK_END);
+    int64_t position = lseek64(fd, 0, SEEK_END);
     if (position < 0) {
       return NULL;
     }
@@ -243,8 +248,8 @@ bool File::Copy(const char* old_path, const char* new_path) {
       VOID_TEMP_FAILURE_RETRY_BLOCK_SIGNALS(close(old_fd));
       return false;
     }
-    off64_t offset = 0;
-    int result = 1;
+    int64_t offset = 0;
+    intptr_t result = 1;
     while (result > 0) {
       // Loop to ensure we copy everything, and not only up to 2GB.
       result = TEMP_FAILURE_RETRY_BLOCK_SIGNALS(
@@ -284,7 +289,7 @@ bool File::Copy(const char* old_path, const char* new_path) {
 }
 
 
-off64_t File::LengthFromPath(const char* name) {
+int64_t File::LengthFromPath(const char* name) {
   struct stat64 st;
   if (TEMP_FAILURE_RETRY_BLOCK_SIGNALS(stat64(name, &st)) == 0) {
     return st.st_size;

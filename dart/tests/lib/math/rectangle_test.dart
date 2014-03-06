@@ -128,4 +128,54 @@ main() {
     var c = new Rectangle(1, 0, 2, 3);
     expect(a.hashCode == c.hashCode, isFalse);
   });
+
+  {  // Edge cases for boundingBox/intersection
+    edgeTest(a, l) {
+      test('edge case $a/$l', () {
+        var r = new Rectangle(a, a, l, l);
+        expect(r.boundingBox(r), r);
+        expect(r.intersection(r), r);
+      });
+    }
+
+    var bignum1 = 0x20000000000000 + 0.0;
+    var bignum2 = 0x20000000000002 + 0.0;
+    var bignum3 = 0x20000000000004 + 0.0;
+    edgeTest(1.0, bignum1);
+    edgeTest(1.0, bignum2);
+    edgeTest(1.0, bignum3);
+    edgeTest(bignum1, 1.0);
+    edgeTest(bignum2, 1.0);
+    edgeTest(bignum3, 1.0);
+  }
+
+  test("equality with different widths", () {
+    var bignum = 0x80000000000008 + 0.0;
+    var r1 = new Rectangle(bignum, bignum, 1.0, 1.0);
+    var r2 = new Rectangle(bignum, bignum, 2.0, 2.0);
+    expect(r1, r2);
+    expect(r1.hashCode, r2.hashCode);
+    expect(r1.right, r2.right);
+    expect(r1.bottom, r2.bottom);
+    expect(r1.width, 1.0);
+    expect(r2.width, 2.0);
+  });
+
+  test('negative lengths', () {
+    // Constructor allows negative lengths, but clamps them to zero.
+    expect(new Rectangle(4, 4, -2, -2), new Rectangle(4, 4, 0, 0));
+    expect(new MutableRectangle(4, 4, -2, -2), new Rectangle(4, 4, 0, 0));
+
+    // Setters clamp negative lengths to zero.
+    var r = new MutableRectangle(0, 0, 1, 1);
+    r.width = -1;
+    r.height = -1;
+    expect(r, new Rectangle(0, 0, 0, 0));
+
+    // Test that doubles are clamped to double zero.
+    r = new Rectangle(1.5, 1.5, -2.5, -2.5);
+    expect(identical(r.width, 0.0), isTrue);
+    expect(identical(r.height, 0.0), isTrue);
+  });
 }
+

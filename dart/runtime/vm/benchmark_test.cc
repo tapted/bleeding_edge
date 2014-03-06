@@ -134,7 +134,11 @@ static void UseDartApi(Dart_NativeArguments args) {
 }
 
 
-static Dart_NativeFunction bm_uda_lookup(Dart_Handle name, int argument_count) {
+static Dart_NativeFunction bm_uda_lookup(Dart_Handle name,
+                                         int argument_count,
+                                         bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   const char* cstr = NULL;
   Dart_Handle result = Dart_StringToCString(name, &cstr);
   EXPECT_VALID(result);
@@ -265,7 +269,10 @@ static void func(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction NativeResolver(Dart_Handle name,
-                                          int arg_count) {
+                                          int arg_count,
+                                          bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return &func;
 }
 
@@ -335,7 +342,10 @@ static void StackFrame_accessFrame(Dart_NativeArguments args) {
 
 
 static Dart_NativeFunction StackFrameNativeResolver(Dart_Handle name,
-                                                    int arg_count) {
+                                                    int arg_count,
+                                                    bool* auto_setup_scope) {
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = false;
   return &StackFrame_accessFrame;
 }
 
@@ -404,7 +414,7 @@ BENCHMARK(CoreSnapshotSize) {
       "import 'dart:async';\n"
       "import 'dart:core';\n"
       "import 'dart:collection';\n"
-      "import 'dart:_collection-dev';\n"
+      "import 'dart:_internal';\n"
       "import 'dart:math';\n"
       "import 'dart:isolate';\n"
       "import 'dart:mirrors';\n"
@@ -430,7 +440,7 @@ BENCHMARK(StandaloneSnapshotSize) {
       "import 'dart:async';\n"
       "import 'dart:core';\n"
       "import 'dart:collection';\n"
-      "import 'dart:_collection-dev';\n"
+      "import 'dart:_internal';\n"
       "import 'dart:convert';\n"
       "import 'dart:math';\n"
       "import 'dart:isolate';\n"
@@ -467,6 +477,26 @@ BENCHMARK(CreateMirrorSystem) {
   Timer timer(true, "currentMirrorSystem() benchmark");
   timer.Start();
   Dart_Invoke(lib, NewString("benchmark"), 0, NULL);
+  timer.Stop();
+  int64_t elapsed_time = timer.TotalElapsedTime();
+  benchmark->set_score(elapsed_time);
+}
+
+
+BENCHMARK(EnterExitIsolate) {
+  const char* kScriptChars =
+      "import 'dart:core';\n"
+      "\n";
+  const intptr_t kLoopCount = 1000000;
+  TestCase::LoadTestScript(kScriptChars, NULL);
+  Api::CheckIsolateState(Isolate::Current());
+  Dart_Isolate isolate = Dart_CurrentIsolate();
+  Timer timer(true, "Enter and Exit isolate");
+  timer.Start();
+  for (intptr_t i = 0; i < kLoopCount; i++) {
+    Dart_ExitIsolate();
+    Dart_EnterIsolate(isolate);
+  }
   timer.Stop();
   int64_t elapsed_time = timer.TotalElapsedTime();
   benchmark->set_score(elapsed_time);

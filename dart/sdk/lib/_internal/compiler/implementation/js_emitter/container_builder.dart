@@ -15,6 +15,9 @@ class ContainerBuilder extends CodeEmitterHelper {
   /// instance methods.
   final Map<String, Element> methodClosures = <String, Element>{};
 
+  bool needsSuperGetter(FunctionElement element) =>
+    compiler.codegenWorld.methodsNeedingSuperGetter.contains(element);
+
   /**
    * Generate stubs to handle invocation of methods with optional
    * arguments.
@@ -119,8 +122,21 @@ class ContainerBuilder extends CodeEmitterHelper {
           parametersBuffer, argumentsBuffer,
           indexOfLastOptionalArgumentInParameters);
     } else if (member.isInstanceMember()) {
-      body = [js.return_(
-          js('this')[namer.getNameOfInstanceMember(member)](argumentsBuffer))];
+      if (needsSuperGetter(member)) {
+        ClassElement superClass = member.getEnclosingClass();
+        String methodName = namer.getNameOfInstanceMember(member);
+        // When redirecting, we must ensure that we don't end up in a subclass.
+        // We thus can't just invoke `this.foo$1.call(filledInArguments)`.
+        // Instead we need to call the statically resolved target.
+        //   `<class>.prototype.bar$1.call(this, argument0, ...)`.
+        body = [js.return_(
+            backend.namer.elementAccess(superClass)['prototype'][methodName]
+            ["call"](["this"]..addAll(argumentsBuffer)))];
+      } else {
+        body = [js.return_(
+            js('this')
+            [namer.getNameOfInstanceMember(member)](argumentsBuffer))];
+      }
     } else {
       body = [js.return_(namer.elementAccess(member)(argumentsBuffer))];
     }
@@ -166,6 +182,13 @@ class ContainerBuilder extends CodeEmitterHelper {
     // (3) foo$3$d(a, b, d) => foo$4$c$d(a, b, null, d);
     // (4) No stub generated, call is direct.
     // (5) No stub generated, call is direct.
+    //
+    // We need to pay attention if this stub is for a function that has been
+    // invoked from a subclass. Then we cannot just redirect, since that
+    // would invoke the methods of the subclass. We have to compile to:
+    // (1) foo$2(a, b) => MyClass.foo$4$c$d.call(this, a, b, null, null)
+    // (2) foo$3$c(a, b, c) => MyClass.foo$4$c$d(this, a, b, c, null);
+    // (3) foo$3$d(a, b, d) => MyClass.foo$4$c$d(this, a, b, null, d);
 
     Set<Selector> selectors = member.isInstanceMember()
         ? compiler.codegenWorld.invokedNames[member.name]
@@ -233,19 +256,23 @@ class ContainerBuilder extends CodeEmitterHelper {
     // If the method is intercepted, the stub gets the
     // receiver explicitely and we need to pass it to the getter call.
     bool isInterceptedMethod = backend.isInterceptedMethod(member);
+    bool isInterceptorClass =
+        backend.isInterceptorClass(member.getEnclosingClass());
 
     const String receiverArgumentName = r'$receiver';
 
     jsAst.Expression buildGetter() {
+      jsAst.Expression receiver =
+          js(isInterceptorClass ? receiverArgumentName : 'this');
       if (member.isGetter()) {
         String getterName = namer.getterName(member);
-        return js('this')[getterName](
-            isInterceptedMethod
-                ? <jsAst.Expression>[js(receiverArgumentName)]
-                : <jsAst.Expression>[]);
+        if (isInterceptedMethod) {
+          return js('this')[getterName](<jsAst.Expression>[receiver]);
+        }
+        return receiver[getterName](<jsAst.Expression>[]);
       } else {
         String fieldName = namer.instanceFieldPropertyName(member);
-        return js('this')[fieldName];
+        return receiver[fieldName];
       }
     }
 
@@ -338,6 +365,7 @@ class ContainerBuilder extends CodeEmitterHelper {
       } else {
         // Careful with operators.
         canTearOff = compiler.codegenWorld.hasInvokedGetter(member, compiler);
+        assert(!needsSuperGetter(member) || canTearOff);
         tearOffName = namer.getterName(member);
       }
     } else {
@@ -391,6 +419,8 @@ class ContainerBuilder extends CodeEmitterHelper {
     // P.   Unmangled name (if reflectable).
     // P+1. First metadata (if reflectable).
     // ...
+    // TODO(ahe): Consider one of the parameter counts can be replaced by the
+    // length property of the JavaScript function object.
 
     List expressions = [];
 
@@ -411,9 +441,7 @@ class ContainerBuilder extends CodeEmitterHelper {
 
     expressions.add(code);
 
-    // TODO(ahe): Remove comments from output.
-    List tearOffInfo =
-        [new jsAst.LiteralString('$callSelectorString /* tearOffInfo */')];
+    List tearOffInfo = [new jsAst.LiteralString(callSelectorString)];
 
     if (needsStubs || canTearOff) {
       addParameterStubs(member, (Selector selector, jsAst.Fun function) {
@@ -421,18 +449,8 @@ class ContainerBuilder extends CodeEmitterHelper {
         if (member.isInstanceMember()) {
           Set invokedSelectors =
               compiler.codegenWorld.invokedNames[member.name];
-          if (invokedSelectors != null && invokedSelectors.contains(selector)) {
             expressions.add(js.string(namer.invocationName(selector)));
-          } else {
-            // Don't add a stub for calling this as a regular instance method,
-            // we only need the "call" stub for implicit closures of this
-            // method.
-            expressions.add("null");
-          }
         } else {
-          // Static methods don't need "named" stubs as the default arguments
-          // are inlined at call sites. But static methods might need "call"
-          // stubs for implicit closures.
           expressions.add("null");
           // TOOD(ahe): Since we know when reading static data versus instance
           // data, we can eliminate this element.
@@ -445,8 +463,7 @@ class ContainerBuilder extends CodeEmitterHelper {
             callSelectors.contains(callSelector)) {
           callSelectorString = '"${namer.invocationName(callSelector)}"';
         }
-        tearOffInfo.add(
-            new jsAst.LiteralString('$callSelectorString /* tearOffInfo */'));
+        tearOffInfo.add(new jsAst.LiteralString(callSelectorString));
       }, canTearOff);
     }
 
@@ -481,8 +498,15 @@ class ContainerBuilder extends CodeEmitterHelper {
         ..addAll(task.metadataEmitter.reifyDefaultArguments(member));
 
     if (canBeReflected || canBeApplied) {
-      parameters.orderedForEachParameter((Element parameter) {
+      parameters.forEachParameter((Element parameter) {
         expressions.add(task.metadataEmitter.reifyName(parameter.name));
+        List<MetadataAnnotation> annotations = parameter.metadata.toList();
+        Iterable<int> metadataIndices = annotations.map((MetadataAnnotation a) {
+          compiler.constantHandler.addCompileTimeConstantForEmission(a.value);
+          return task.metadataEmitter.reifyMetadata(a);
+        });
+        expressions.add(metadataIndices.isNotEmpty ? metadataIndices.toList()
+                                                   : js('[]'));
       });
     }
     if (canBeReflected) {
@@ -491,8 +515,7 @@ class ContainerBuilder extends CodeEmitterHelper {
         String reflectionNameString = task.getReflectionName(member, name);
         reflectionName =
             new jsAst.LiteralString(
-                '"new ${Elements.reconstructConstructorName(member)}"'
-                ' /* $reflectionNameString */');
+                '"new ${Elements.reconstructConstructorName(member)}"');
       } else {
         reflectionName = js.string(member.name);
       }

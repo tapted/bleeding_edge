@@ -22,6 +22,22 @@ class RawICData;
 class RawObject;
 class String;
 
+
+// Stack-allocated class to create a scope where the specified region
+// [address, addresss + size] has write access enabled. This is used
+// when patching generated code. Access is reset to read-execute in
+// the destructor of this scope.
+class WritableInstructionsScope : public ValueObject {
+ public:
+  WritableInstructionsScope(uword address, intptr_t size);
+  ~WritableInstructionsScope();
+
+ private:
+  const uword address_;
+  const intptr_t size_;
+};
+
+
 class CodePatcher : public AllStatic {
  public:
   // Dart static calls have a distinct, machine-dependent code pattern.
@@ -41,6 +57,9 @@ class CodePatcher : public AllStatic {
 
   // Restore entry point with original code (i.e., before patching).
   static void RestoreEntry(const Code& code);
+
+  // Has the entry been patched?
+  static bool IsEntryPatched(const Code& code);
 
   // Returns true if the code can be patched with a jump at beginning (checks
   // that there are no conflicts with object pointers). Used in ASSERTs.
@@ -73,6 +92,9 @@ class CodePatcher : public AllStatic {
   static void InsertCallAt(uword start, uword target);
 
   static RawObject* GetEdgeCounterAt(uword pc, const Code& code);
+
+  static int32_t GetPoolOffsetAt(uword return_address);
+  static void SetPoolOffsetAt(uword return_address, int32_t offset);
 };
 
 }  // namespace dart

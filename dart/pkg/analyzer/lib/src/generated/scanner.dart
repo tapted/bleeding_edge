@@ -1,3 +1,7 @@
+// Copyright (c) 2014, the Dart project authors.  Please see the AUTHORS file
+// for details. All rights reserved. Use of this source code is governed by a
+// BSD-style license that can be found in the LICENSE file.
+
 // This code was auto-generated, is not intended to be edited, and is subject to
 // significant change. Please see the README file for more information.
 
@@ -14,8 +18,6 @@ import 'utilities_collection.dart' show TokenMap;
 /**
  * Instances of the abstract class `KeywordState` represent a state in a state machine used to
  * scan keywords.
- *
- * @coverage dart.engine.parser
  */
 class KeywordState {
   /**
@@ -136,8 +138,6 @@ class KeywordState {
 /**
  * The enumeration `ScannerErrorCode` defines the error codes used for errors detected by the
  * scanner.
- *
- * @coverage dart.engine.parser
  */
 class ScannerErrorCode extends Enum<ScannerErrorCode> implements ErrorCode {
   static final ScannerErrorCode ILLEGAL_CHARACTER = new ScannerErrorCode.con1('ILLEGAL_CHARACTER', 0, "Illegal character %x");
@@ -213,7 +213,7 @@ class SubSequenceReader extends CharSequenceReader {
    * @param offsetDelta the offset from the beginning of the file to the beginning of the source
    *          being scanned
    */
-  SubSequenceReader(CharSequence sequence, int offsetDelta) : super(sequence) {
+  SubSequenceReader(String sequence, int offsetDelta) : super(sequence) {
     this._offsetDelta = offsetDelta;
   }
 
@@ -229,8 +229,6 @@ class SubSequenceReader extends CharSequenceReader {
 /**
  * Instances of the class `TokenWithComment` represent a string token that is preceded by
  * comments.
- *
- * @coverage dart.engine.parser
  */
 class StringTokenWithComment extends StringToken {
   /**
@@ -266,8 +264,6 @@ class StringTokenWithComment extends StringToken {
 
 /**
  * The enumeration `Keyword` defines the keywords in the Dart programming language.
- *
- * @coverage dart.engine.parser
  */
 class Keyword extends Enum<Keyword> {
   static final Keyword ASSERT = new Keyword.con1('ASSERT', 0, "assert");
@@ -489,7 +485,7 @@ class CharSequenceReader implements CharacterReader {
   /**
    * The sequence from which characters will be read.
    */
-  CharSequence _sequence;
+  String _sequence;
 
   /**
    * The number of characters in the string.
@@ -506,9 +502,9 @@ class CharSequenceReader implements CharacterReader {
    *
    * @param sequence the sequence from which characters will be read
    */
-  CharSequenceReader(CharSequence sequence) {
+  CharSequenceReader(String sequence) {
     this._sequence = sequence;
-    this._stringLength = sequence.length();
+    this._stringLength = sequence.length;
     this._charOffset = -1;
   }
 
@@ -516,18 +512,18 @@ class CharSequenceReader implements CharacterReader {
     if (_charOffset + 1 >= _stringLength) {
       return -1;
     }
-    return _sequence.charAt(++_charOffset);
+    return _sequence.codeUnitAt(++_charOffset);
   }
 
   int get offset => _charOffset;
 
-  String getString(int start, int endDelta) => _sequence.subSequence(start, _charOffset + 1 + endDelta).toString();
+  String getString(int start, int endDelta) => _sequence.substring(start, _charOffset + 1 + endDelta).toString();
 
   int peek() {
-    if (_charOffset + 1 >= _sequence.length()) {
+    if (_charOffset + 1 >= _sequence.length) {
       return -1;
     }
-    return _sequence.charAt(_charOffset + 1);
+    return _sequence.codeUnitAt(_charOffset + 1);
   }
 
   void set offset(int offset) {
@@ -537,8 +533,6 @@ class CharSequenceReader implements CharacterReader {
 
 /**
  * Synthetic `StringToken` represent a token whose value is independent of it's type.
- *
- * @coverage dart.engine.parser
  */
 class SyntheticStringToken extends StringToken {
   /**
@@ -556,8 +550,6 @@ class SyntheticStringToken extends StringToken {
 /**
  * Instances of the class `IncrementalScanner` implement a scanner that scans a subset of a
  * string and inserts the resulting tokens into the middle of an existing token stream.
- *
- * @coverage dart.engine.parser
  */
 class IncrementalScanner extends Scanner {
   /**
@@ -646,12 +638,23 @@ class IncrementalScanner extends Scanner {
    * @param insertedLength the number of characters added to the modified source
    */
   Token rescan(Token originalStream, int index, int removedLength, int insertedLength) {
+    //
+    // Copy all of the tokens in the originalStream whose end is less than the replacement start.
+    // (If the replacement start is equal to the end of an existing token, then it means that the
+    // existing token might have been modified, so we need to rescan it.)
+    //
     while (originalStream.type != TokenType.EOF && originalStream.end < index) {
       originalStream = copyAndAdvance(originalStream, 0);
     }
     Token oldFirst = originalStream;
     Token oldLeftToken = originalStream.previous;
     _leftToken = tail;
+    //
+    // Skip tokens in the original stream until we find a token whose offset is greater than the end
+    // of the removed region. (If the end of the removed region is equal to the beginning of an
+    // existing token, then it means that the existing token might have been modified, so we need to
+    // rescan it.)
+    //
     int removedEnd = index + (removedLength == 0 ? 0 : removedLength - 1);
     while (originalStream.type != TokenType.EOF && originalStream.offset <= removedEnd) {
       originalStream = originalStream.next;
@@ -666,16 +669,33 @@ class IncrementalScanner extends Scanner {
       oldLast = originalStream.previous;
       oldRightToken = originalStream;
     }
+    //
+    // Compute the delta between the character index of characters after the modified region in the
+    // original source and the index of the corresponding character in the modified source.
+    //
     int delta = insertedLength - removedLength;
+    //
+    // Compute the range of characters that are known to need to be rescanned. If the index is
+    // within an existing token, then we need to start at the beginning of the token.
+    //
     int scanStart = Math.min(oldFirst.offset, index);
     int oldEnd = oldLast.end + delta - 1;
     int newEnd = index + insertedLength - 1;
     int scanEnd = Math.max(newEnd, oldEnd);
+    //
+    // Starting at the start of the scan region, scan tokens from the modifiedSource until the end
+    // of the just scanned token is greater than or equal to end of the scan region in the modified
+    // source. Include trailing characters of any token that was split as a result of inserted text,
+    // as in "ab" --> "a.b".
+    //
     _reader.offset = scanStart - 1;
     int next = _reader.advance();
     while (next != -1 && _reader.offset <= scanEnd) {
       next = bigSwitch(next);
     }
+    //
+    // Copy the remaining tokens in the original stream, but apply the delta to the token's offset.
+    //
     if (identical(originalStream.type, TokenType.EOF)) {
       copyAndAdvance(originalStream, delta);
       _rightToken = tail;
@@ -689,6 +709,12 @@ class IncrementalScanner extends Scanner {
       Token eof = copyAndAdvance(originalStream, delta);
       eof.setNextWithoutSettingPrevious(eof);
     }
+    //
+    // If the index is immediately after an existing token and the inserted characters did not
+    // change that original token, then adjust the leftToken to be the next token. For example, in
+    // "a; c;" --> "a;b c;", the leftToken was ";", but this code advances it to "b" since "b" is
+    // the first new token.
+    //
     Token newFirst = _leftToken.next;
     while (newFirst != _rightToken && oldFirst != oldRightToken && newFirst.type != TokenType.EOF && equals3(oldFirst, newFirst)) {
       _tokenMap.put(oldFirst, newFirst);
@@ -706,6 +732,12 @@ class IncrementalScanner extends Scanner {
       newLast = newLast.previous;
     }
     _hasNonWhitespaceChange2 = _leftToken.next != _rightToken || oldLeftToken.next != oldRightToken;
+    //
+    // TODO(brianwilkerson) Begin tokens are not getting associated with the corresponding end
+    //     tokens (because the end tokens have not been copied when we're copying the begin tokens).
+    //     This could have implications for parsing.
+    // TODO(brianwilkerson) Update the lineInfo.
+    //
     return firstToken;
   }
 
@@ -743,8 +775,6 @@ class IncrementalScanner extends Scanner {
  * should be scanned as a single left-shift operator or as two left angle brackets. This scanner
  * does not have any context, so it always resolves such conflicts by scanning the longest possible
  * token.
- *
- * @coverage dart.engine.parser
  */
 class Scanner {
   /**
@@ -1085,9 +1115,11 @@ class Scanner {
   }
 
   void appendCommentToken(TokenType type, String value) {
+    // Ignore comment tokens if client specified that it doesn't need them.
     if (!_preserveComments) {
       return;
     }
+    // OK, remember comment tokens.
     if (_firstComment == null) {
       _firstComment = new StringToken(type, value, _tokenStart);
       _lastComment = _firstComment;
@@ -1124,6 +1156,7 @@ class Scanner {
       _firstComment = null;
       _lastComment = null;
     }
+    // The EOF token points to itself so that there is always infinite look-ahead.
     eofToken.setNext(eofToken);
     _tail = _tail.setNext(eofToken);
     if (_stackEnd >= 0) {
@@ -1201,6 +1234,10 @@ class Scanner {
       _hasUnmatchedGroups2 = true;
       _groupingStack.removeAt(_stackEnd--);
     }
+    //
+    // We should never get to this point because we wouldn't be inside a string interpolation
+    // expression unless we had previously found the start of the expression.
+    //
     return null;
   }
 
@@ -1237,6 +1274,7 @@ class Scanner {
   }
 
   int tokenizeAmpersand(int next) {
+    // && &= &
     next = _reader.advance();
     if (next == 0x26) {
       appendToken2(TokenType.AMPERSAND_AMPERSAND);
@@ -1251,6 +1289,7 @@ class Scanner {
   }
 
   int tokenizeBar(int next) {
+    // | || |=
     next = _reader.advance();
     if (next == 0x7C) {
       appendToken2(TokenType.BAR_BAR);
@@ -1280,6 +1319,7 @@ class Scanner {
   }
 
   int tokenizeEquals(int next) {
+    // = == =>
     next = _reader.advance();
     if (next == 0x3D) {
       appendToken2(TokenType.EQ_EQ);
@@ -1293,6 +1333,7 @@ class Scanner {
   }
 
   int tokenizeExclamation(int next) {
+    // ! !=
     next = _reader.advance();
     if (next == 0x3D) {
       appendToken2(TokenType.BANG_EQ);
@@ -1350,6 +1391,7 @@ class Scanner {
   }
 
   int tokenizeGreaterThan(int next) {
+    // > >= >> >>=
     next = _reader.advance();
     if (0x3D == next) {
       appendToken2(TokenType.GT_EQ);
@@ -1453,7 +1495,7 @@ class Scanner {
     KeywordState state = KeywordState.KEYWORD_STATE;
     int start = _reader.offset;
     while (state != null && 0x61 <= next && next <= 0x7A) {
-      state = state.next(next as int);
+      state = state.next(next);
       next = _reader.advance();
     }
     if (state == null || state.keyword() == null) {
@@ -1470,6 +1512,7 @@ class Scanner {
   }
 
   int tokenizeLessThan(int next) {
+    // < <= << <<=
     next = _reader.advance();
     if (0x3D == next) {
       appendToken2(TokenType.LT_EQ);
@@ -1483,6 +1526,7 @@ class Scanner {
   }
 
   int tokenizeMinus(int next) {
+    // - -- -=
     next = _reader.advance();
     if (next == 0x2D) {
       appendToken2(TokenType.MINUS_MINUS);
@@ -1647,6 +1691,7 @@ class Scanner {
   }
 
   int tokenizeOpenSquareBracket(int next) {
+    // [ []  []=
     next = _reader.advance();
     if (next == 0x5D) {
       return select(0x3D, TokenType.INDEX_EQ, TokenType.INDEX);
@@ -1659,6 +1704,7 @@ class Scanner {
   int tokenizePercent(int next) => select(0x3D, TokenType.PERCENT_EQ, TokenType.PERCENT);
 
   int tokenizePlus(int next) {
+    // + ++ +=
     next = _reader.advance();
     if (0x2B == next) {
       appendToken2(TokenType.PLUS_PLUS);
@@ -1746,8 +1792,10 @@ class Scanner {
     if (quoteChar == next) {
       next = _reader.advance();
       if (quoteChar == next) {
+        // Multiline string.
         return tokenizeMultiLineString(quoteChar, start, raw);
       } else {
+        // Empty string.
         appendStringToken(TokenType.STRING, _reader.getString(start, -1));
         return next;
       }
@@ -1770,6 +1818,7 @@ class Scanner {
   }
 
   int tokenizeTag(int next) {
+    // # or #!.*[\n\r]
     if (_reader.offset == 0) {
       if (_reader.peek() == 0x21) {
         do {
@@ -1784,6 +1833,7 @@ class Scanner {
   }
 
   int tokenizeTilde(int next) {
+    // ~ ~/ ~/=
     next = _reader.advance();
     if (next == 0x2F) {
       return select(0x3D, TokenType.TILDE_SLASH_EQ, TokenType.TILDE_SLASH);
@@ -1797,8 +1847,6 @@ class Scanner {
 /**
  * Instances of the class `StringToken` represent a token whose value is independent of it's
  * type.
- *
- * @coverage dart.engine.parser
  */
 class StringToken extends Token {
   /**
@@ -1827,8 +1875,6 @@ class StringToken extends Token {
 /**
  * Instances of the class `TokenWithComment` represent a normal token that is preceded by
  * comments.
- *
- * @coverage dart.engine.parser
  */
 class TokenWithComment extends Token {
   /**
@@ -1856,8 +1902,6 @@ class TokenWithComment extends Token {
 /**
  * Instances of the class `Token` represent a token that was scanned from the input. Each
  * token knows which token follows it, acting as the head of a linked list of tokens.
- *
- * @coverage dart.engine.parser
  */
 class Token {
   /**
@@ -2075,8 +2119,6 @@ abstract class CharacterReader {
 /**
  * Instances of the class `BeginTokenWithComment` represent a begin token that is preceded by
  * comments.
- *
- * @coverage dart.engine.parser
  */
 class BeginTokenWithComment extends BeginToken {
   /**
@@ -2112,8 +2154,6 @@ class BeginTokenWithComment extends BeginToken {
 
 /**
  * Instances of the class `KeywordToken` represent a keyword in the language.
- *
- * @coverage dart.engine.parser
  */
 class KeywordToken extends Token {
   /**
@@ -2139,8 +2179,6 @@ class KeywordToken extends Token {
 /**
  * Instances of the class `BeginToken` represent the opening half of a grouping pair of
  * tokens. This is used for curly brackets ('{'), parentheses ('('), and square brackets ('[').
- *
- * @coverage dart.engine.parser
  */
 class BeginToken extends Token {
   /**
@@ -2163,8 +2201,6 @@ class BeginToken extends Token {
 
 /**
  * The enumeration `TokenClass` represents classes (or groups) of tokens with a similar use.
- *
- * @coverage dart.engine.parser
  */
 class TokenClass extends Enum<TokenClass> {
   /**
@@ -2289,8 +2325,6 @@ class TokenClass extends Enum<TokenClass> {
 /**
  * Instances of the class `KeywordTokenWithComment` implement a keyword token that is preceded
  * by comments.
- *
- * @coverage dart.engine.parser
  */
 class KeywordTokenWithComment extends KeywordToken {
   /**
@@ -2327,8 +2361,6 @@ class KeywordTokenWithComment extends KeywordToken {
 /**
  * The enumeration `TokenType` defines the types of tokens that can be returned by the
  * scanner.
- *
- * @coverage dart.engine.parser
  */
 class TokenType extends Enum<TokenType> {
   /**

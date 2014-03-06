@@ -223,7 +223,8 @@ class TestOutcomeLogWriter extends EventListener {
 
   static final INTERESTED_CONFIGURATION_PARAMETERS =
       ['mode', 'arch', 'compiler', 'runtime', 'checked', 'host_checked',
-       'minified', 'csp', 'system', 'vm_options', 'use_sdk'];
+       'minified', 'csp', 'system', 'vm_options', 'use_sdk',
+       'use_repository_packages', 'use_public_packages', 'builder_tag'];
 
   IOSink _sink;
 
@@ -275,6 +276,32 @@ class TestOutcomeLogWriter extends EventListener {
   }
 }
 
+
+class UnexpectedCrashDumpArchiver extends EventListener {
+  void done(TestCase test) {
+    if (test.unexpectedOutput && test.result == Expectation.CRASH) {
+      var name = "core.dart.${test.lastCommandOutput.pid}";
+      var file = new File(name);
+      if (file.existsSync()) {
+        // Find the binary - we assume this is the first part of the command
+        var binName = test.lastCommandExecuted.toString().split(' ').first;
+        var binFile = new File(binName);
+        var binBaseName = new Path(binName).filename;
+        if (binFile.existsSync()) {
+          var tmpPath = new Path(Directory.systemTemp.path);
+          var dir = new Path(TestUtils.mkdirRecursive(tmpPath,
+              new Path('coredump_${test.lastCommandOutput.pid}')).path);
+          TestUtils.copyFile(new Path(name), dir.append(name));
+          TestUtils.copyFile(new Path(binName), dir.append(binBaseName));
+          print("\nCopied core dump and binary for unexpected crash to: "
+                "$dir");
+        }
+      }
+    }
+  }
+}
+
+
 class SummaryPrinter extends EventListener {
   void allTestsKnown() {
     if (SummaryReport.total > 0) {
@@ -282,6 +309,7 @@ class SummaryPrinter extends EventListener {
     }
   }
 }
+
 
 class TimingPrinter extends EventListener {
   final _command2testCases = new Map<Command, List<TestCase>>();
@@ -454,6 +482,7 @@ class LineProgressIndicator extends EventListener {
     print('Done ${test.configurationString} ${test.displayName}: $status');
   }
 }
+
 
 class TestFailurePrinter extends EventListener {
   bool _printSummary;

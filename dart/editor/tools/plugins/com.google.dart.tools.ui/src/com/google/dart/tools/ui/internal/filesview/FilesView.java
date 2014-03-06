@@ -37,6 +37,7 @@ import com.google.dart.tools.ui.actions.ShowInFinderAction;
 import com.google.dart.tools.ui.instrumentation.UIInstrumentation;
 import com.google.dart.tools.ui.instrumentation.UIInstrumentationBuilder;
 import com.google.dart.tools.ui.internal.actions.CollapseAllAction;
+import com.google.dart.tools.ui.internal.formatter.DartFormatter.FormatFileAction;
 import com.google.dart.tools.ui.internal.handlers.OpenFolderHandler;
 import com.google.dart.tools.ui.internal.projects.HideProjectAction;
 import com.google.dart.tools.ui.internal.projects.OpenNewApplicationWizardAction;
@@ -257,6 +258,8 @@ public class FilesView extends ViewPart implements ISetSelectionTarget {
 
   private CopyFilePathAction copyFilePathAction;
 
+  private FormatFileAction formatFileAction;
+
   private HideProjectAction hideContainerAction;
   private UndoRedoActionGroup undoRedoActionGroup;
   private RunPubAction pubUpdateAction;
@@ -278,7 +281,7 @@ public class FilesView extends ViewPart implements ISetSelectionTarget {
 
   private IPubUpdateListener pubUpdateListener = new PubUpdateListener();
 
-  private RefreshAction refreshAction;
+//  private RefreshAction refreshAction;
 
   private CopyAction copyAction;
 
@@ -303,6 +306,7 @@ public class FilesView extends ViewPart implements ISetSelectionTarget {
   public void createPartControl(Composite parent) {
     preferences = DartToolsPlugin.getDefault().getCombinedPreferenceStore();
     treeViewer = new TreeViewer(parent);
+    treeViewer.setUseHashlookup(true);
     resourceContentProvider = new ResourceContentProvider();
     treeViewer.setContentProvider(resourceContentProvider);
     resourceLabelProvider = ResourceLabelProvider.createInstance();
@@ -378,6 +382,9 @@ public class FilesView extends ViewPart implements ISetSelectionTarget {
     }
     if (propertyDialogAction != null) {
       treeViewer.removeSelectionChangedListener(propertyDialogAction);
+    }
+    if (formatFileAction != null) {
+      treeViewer.removeSelectionChangedListener(formatFileAction);
     }
 
     if (pubUpdateListener != null) {
@@ -528,7 +535,7 @@ public class FilesView extends ViewPart implements ISetSelectionTarget {
       }
 
       manager.add(new Separator());
-      manager.add(refreshAction);
+//      manager.add(refreshAction);
       // reanalyze
       if (!selection.isEmpty() && allElementsAreProjects(selection)) {
         manager.add(cleanFoldersAction);
@@ -548,6 +555,12 @@ public class FilesView extends ViewPart implements ISetSelectionTarget {
       }
 
       if (!isPackagesDir) {
+
+        // Only show this if it's enabled (if it's not the WST one will be there instead)
+        if (formatFileAction.isEnabled()) {
+          manager.add(new Separator());
+          manager.add(formatFileAction);
+        }
 
 //        manager.add(cleanUpAction);
         manager.add(new Separator());
@@ -743,7 +756,7 @@ public class FilesView extends ViewPart implements ISetSelectionTarget {
 
     actionBars.setGlobalActionHandler(ActionFactory.COPY.getId(), copyAction);
     actionBars.setGlobalActionHandler(ActionFactory.PASTE.getId(), pasteAction);
-    actionBars.setGlobalActionHandler(ActionFactory.REFRESH.getId(), refreshAction);
+//    actionBars.setGlobalActionHandler(ActionFactory.REFRESH.getId(), refreshAction);
 
   }
 
@@ -823,6 +836,10 @@ public class FilesView extends ViewPart implements ISetSelectionTarget {
     moveAction = new MoveResourceAction(getShell());
     treeViewer.addSelectionChangedListener(moveAction);
 
+    formatFileAction = new FormatFileAction(getViewSite());
+    formatFileAction.setEnabled(false); //selection events will update
+    treeViewer.addSelectionChangedListener(formatFileAction);
+
     propertyDialogAction = new PropertyDialogAction(getViewSite(), treeViewer);
     propertyDialogAction.setActionDefinitionId(IWorkbenchCommandConstants.FILE_PROPERTIES);
     propertyDialogAction.setEnabled(false); //selection events will update
@@ -843,8 +860,8 @@ public class FilesView extends ViewPart implements ISetSelectionTarget {
     copyAction.setEnabled(false); //selection events will update
     treeViewer.addSelectionChangedListener(copyAction);
 
-    refreshAction = new RefreshAction(this);
-    treeViewer.addSelectionChangedListener(refreshAction);
+//    refreshAction = new RefreshAction(this);
+//    treeViewer.addSelectionChangedListener(refreshAction);
 
     deleteAction = new DeleteAction(getSite());
     deleteAction.setImageDescriptor(PlatformUI.getWorkbench().getSharedImages().getImageDescriptor(

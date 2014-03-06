@@ -4,6 +4,8 @@
 
 [ $compiler == dartanalyzer ]
 
+LibTest/core/RegExp/firstMatch_A01_t01: Fail
+
 # invalid argument for constant constructor
 Language/07_Classes/6_Constructors/3_Constant_Constructors_A05_t02: fail
 
@@ -114,7 +116,6 @@ Language/13_Statements/06_For/1_For_Loop_A01_t07: MissingStaticWarning
 Language/13_Statements/06_For/1_For_Loop_A01_t08: MissingStaticWarning
 Language/13_Statements/09_Switch_A10_t03: MissingStaticWarning
 Language/13_Statements/15_Assert_A04_t04: MissingStaticWarning
-LibTest/collection/IterableMixin/IterableMixin_class_A01_t01: MissingStaticWarning
 
 Language/05_Variables/05_Variables_A05_t04: MissingCompileTimeError # co19-roll r651: Please triage this failure
 Language/05_Variables/05_Variables_A05_t05: MissingCompileTimeError # co19-roll r651: Please triage this failure
@@ -129,7 +130,6 @@ Language/12_Expressions/14_Function_Invocation/3_Unqualified_Invocation_A01_t18:
 
 Language/07_Classes/10_Superinterfaces_A07_t05: StaticWarning # co19-roll r667: Please triage this failure
 LibTest/convert/JsonEncoder/JsonEncoder_A01_t01: StaticWarning # co19-roll r667: Please triage this failure
-LibTest/async/Zone/operator_subscript_A01_t01: StaticWarning # co19-roll r672: Please triage this failure
 
 # co19 issue 656
 LibTest/typed_data/Float32x4/equal_A01_t01: Skip # co19 issue 656

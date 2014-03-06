@@ -132,6 +132,7 @@ class Heap {
   // traversal through the heap space continues.
   RawInstructions* FindObjectInCodeSpace(FindObjectVisitor* visitor);
   RawInstructions* FindObjectInStubCodeSpace(FindObjectVisitor* visitor);
+  RawObject* FindOldObject(FindObjectVisitor* visitor) const;
 
   void CollectGarbage(Space space);
   void CollectGarbage(Space space, ApiCallbacks api_callbacks);
@@ -164,15 +165,14 @@ class Heap {
   // Return amount of memory used and capacity in a space.
   intptr_t UsedInWords(Space space) const;
   intptr_t CapacityInWords(Space space) const;
+  // Return the amount of GCing in microseconds.
+  int64_t GCTimeInMicros(Space space) const;
 
+  intptr_t Collections(Space space) const;
   // Returns the [lowest, highest) addresses in the heap.
   void StartEndAddress(uword* start, uword* end) const;
 
   ObjectSet* CreateAllocatedObjectSet() const;
-
-  // Generates a profile of the current and VM isolate heaps.
-  void Profile(Dart_FileWriteCallback callback, void* stream) const;
-  void ProfileToFile(const char* reason) const;
 
   static const char* GCReasonToString(GCReason gc_reason);
 
@@ -232,6 +232,8 @@ class Heap {
     return size <= kNewAllocatableSize;
   }
 
+  void PrintToJSONObject(Space space, JSONObject* object) const;
+
  private:
   class GCStats : public ValueObject {
    public:
@@ -276,7 +278,7 @@ class Heap {
   void RecordBeforeGC(Space space, GCReason reason);
   void RecordAfterGC();
   void PrintStats();
-  void UpdateObjectHistogram();
+  void UpdateClassHeapStatsBeforeGC(Heap::Space space);
 
   // The different spaces used for allocation.
   Scavenger* new_space_;

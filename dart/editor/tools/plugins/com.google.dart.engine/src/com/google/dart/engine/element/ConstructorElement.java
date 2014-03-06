@@ -13,6 +13,9 @@
  */
 package com.google.dart.engine.element;
 
+import com.google.dart.engine.ast.ConstructorDeclaration;
+import com.google.dart.engine.context.AnalysisException;
+
 /**
  * The interface {@code ConstructorElement} defines the behavior of elements representing a
  * constructor or a factory method defined within a type.
@@ -21,7 +24,21 @@ package com.google.dart.engine.element;
  */
 public interface ConstructorElement extends ClassMemberElement, ExecutableElement {
   /**
-   * Return the constructor to which this constructor is redirecting.
+   * Return the resolved {@link ConstructorDeclaration} node that declares this
+   * {@link ConstructorElement} .
+   * <p>
+   * This method is expensive, because resolved AST might be evicted from cache, so parsing and
+   * resolving will be performed.
+   * 
+   * @return the resolved {@link ConstructorDeclaration}, not {@code null}.
+   */
+  @Override
+  public ConstructorDeclaration getNode() throws AnalysisException;
+
+  /**
+   * Return the constructor to which this constructor is redirecting, or {@code null} if this constructor
+   * does not redirect to another constructor or if the library containing this constructor has
+   * not yet been resolved.
    * 
    * @return the constructor to which this constructor is redirecting
    */

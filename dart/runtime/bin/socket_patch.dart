@@ -62,8 +62,7 @@ class _InternetAddress implements InternetAddress {
   static const int _ADDRESS_LOOPBACK_IP_V6 = 1;
   static const int _ADDRESS_ANY_IP_V4 = 2;
   static const int _ADDRESS_ANY_IP_V6 = 3;
-  static const int _IPV4_ADDR_OFFSET = 4;
-  static const int _IPV6_ADDR_OFFSET = 8;
+  static const int _IPV4_ADDR_LENGTH = 4;
   static const int _IPV6_ADDR_LENGTH = 16;
 
   static _InternetAddress LOOPBACK_IP_V4 =
@@ -75,24 +74,28 @@ class _InternetAddress implements InternetAddress {
   static _InternetAddress ANY_IP_V6 =
       new _InternetAddress.fixed(_ADDRESS_ANY_IP_V6);
 
-  final InternetAddressType type;
   final String address;
   final String _host;
-  final Uint8List _sockaddr_storage;
+  final Uint8List _in_addr;
+
+  InternetAddressType get type =>
+      _in_addr.length == _IPV4_ADDR_LENGTH ? InternetAddressType.IP_V4
+                                           : InternetAddressType.IP_V6;
 
   String get host => _host != null ? _host : address;
+
+  List<int> get rawAddress => new Uint8List.fromList(_in_addr);
 
   bool get isLoopback {
     switch (type) {
       case InternetAddressType.IP_V4:
-        return _sockaddr_storage[_IPV4_ADDR_OFFSET] == 127;
+        return _in_addr[0] == 127;
 
       case InternetAddressType.IP_V6:
         for (int i = 0; i < _IPV6_ADDR_LENGTH - 1; i++) {
-          if (_sockaddr_storage[_IPV6_ADDR_OFFSET + i] != 0) return false;
+          if (_in_addr[i] != 0) return false;
         }
-        int lastByteIndex = _IPV6_ADDR_OFFSET + _IPV6_ADDR_LENGTH - 1;
-        return _sockaddr_storage[lastByteIndex] == 1;
+        return _in_addr[_IPV6_ADDR_LENGTH - 1] == 1;
     }
   }
 
@@ -100,13 +103,11 @@ class _InternetAddress implements InternetAddress {
     switch (type) {
       case InternetAddressType.IP_V4:
         // Checking for 169.254.0.0/16.
-        return _sockaddr_storage[_IPV4_ADDR_OFFSET] == 169 &&
-            _sockaddr_storage[_IPV4_ADDR_OFFSET + 1] == 254;
+        return _in_addr[0] == 169 && _in_addr[1] == 254;
 
       case InternetAddressType.IP_V6:
         // Checking for fe80::/10.
-        return _sockaddr_storage[_IPV6_ADDR_OFFSET] == 0xFE &&
-            (_sockaddr_storage[_IPV6_ADDR_OFFSET + 1] & 0xB0) == 0x80;
+        return _in_addr[0] == 0xFE && (_in_addr[1] & 0xB0) == 0x80;
     }
   }
 
@@ -114,48 +115,48 @@ class _InternetAddress implements InternetAddress {
     switch (type) {
       case InternetAddressType.IP_V4:
         // Checking for 224.0.0.0 through 239.255.255.255.
-        return _sockaddr_storage[_IPV4_ADDR_OFFSET] >= 224 &&
-            _sockaddr_storage[_IPV4_ADDR_OFFSET] < 240;
+        return _in_addr[0] >= 224 && _in_addr[0] < 240;
 
       case InternetAddressType.IP_V6:
         // Checking for ff00::/8.
-        return _sockaddr_storage[_IPV6_ADDR_OFFSET] == 0xFF;
+        return _in_addr[0] == 0xFF;
     }
   }
 
   Future<InternetAddress> reverse() => _NativeSocket.reverseLookup(this);
 
-  _InternetAddress(InternetAddressType this.type,
-                   String this.address,
+  _InternetAddress(String this.address,
                    String this._host,
-                   List<int> this._sockaddr_storage);
+                   List<int> this._in_addr);
 
   factory _InternetAddress.parse(String address) {
-    var type = address.indexOf(':') == -1
-        ? InternetAddressType.IP_V4
-        : InternetAddressType.IP_V6;
-    var raw = _parse(type._value, address);
-    if (raw == null) {
+    if (address is !String) {
       throw new ArgumentError("Invalid internet address $address");
     }
-    return new _InternetAddress(type, address, null, raw);
+    var in_addr = _parse(address);
+    if (in_addr == null) {
+      throw new ArgumentError("Invalid internet address $address");
+    }
+    return new _InternetAddress(address, null, in_addr);
   }
 
   factory _InternetAddress.fixed(int id) {
-    var sockaddr = _fixed(id);
     switch (id) {
       case _ADDRESS_LOOPBACK_IP_V4:
-        return new _InternetAddress(
-            InternetAddressType.IP_V4, "127.0.0.1", null, sockaddr);
+        var in_addr = new Uint8List(_IPV4_ADDR_LENGTH);
+        in_addr[0] = 127;
+        in_addr[_IPV4_ADDR_LENGTH - 1] = 1;
+        return new _InternetAddress("127.0.0.1", null, in_addr);
       case _ADDRESS_LOOPBACK_IP_V6:
-        return new _InternetAddress(
-            InternetAddressType.IP_V6, "::1", null, sockaddr);
+        var in_addr = new Uint8List(_IPV6_ADDR_LENGTH);
+        in_addr[_IPV6_ADDR_LENGTH - 1] = 1;
+        return new _InternetAddress("::1", null, in_addr);
       case _ADDRESS_ANY_IP_V4:
-        return new _InternetAddress(
-            InternetAddressType.IP_V4, "0.0.0.0", "0.0.0.0", sockaddr);
+        var in_addr = new Uint8List(_IPV4_ADDR_LENGTH);
+        return new _InternetAddress("0.0.0.0", "0.0.0.0", in_addr);
       case _ADDRESS_ANY_IP_V6:
-        return new _InternetAddress(
-            InternetAddressType.IP_V6, "::", "::", sockaddr);
+        var in_addr = new Uint8List(_IPV6_ADDR_LENGTH);
+        return new _InternetAddress("::", "::", in_addr);
       default:
         assert(false);
         throw new ArgumentError();
@@ -165,23 +166,23 @@ class _InternetAddress implements InternetAddress {
   // Create a clone of this _InternetAddress replacing the host.
   _InternetAddress _cloneWithNewHost(String host) {
     return new _InternetAddress(
-        type, address, host, new Uint8List.fromList(_sockaddr_storage));
+        address, host, new Uint8List.fromList(_in_addr));
   }
 
   bool operator ==(other) {
     if (!(other is _InternetAddress)) return false;
     if (other.type != type) return false;
     bool equals = true;
-    for (int i = 0; i < _sockaddr_storage.length && equals; i++) {
-      equals = other._sockaddr_storage[i] == _sockaddr_storage[i];
+    for (int i = 0; i < _in_addr.length && equals; i++) {
+      equals = other._in_addr[i] == _in_addr[i];
     }
     return equals;
   }
 
   int get hashCode {
     int result = 1;
-    for (int i = 0; i < _sockaddr_storage.length; i++) {
-      result = (result * 31 + _sockaddr_storage[i]) & 0x3FFFFFFF;
+    for (int i = 0; i < _in_addr.length; i++) {
+      result = (result * 31 + _in_addr[i]) & 0x3FFFFFFF;
     }
     return result;
   }
@@ -190,9 +191,7 @@ class _InternetAddress implements InternetAddress {
     return "InternetAddress('$address', ${type.name})";
   }
 
-  static Uint8List _fixed(int id) native "InternetAddress_Fixed";
-  static Uint8List _parse(int type, String address)
-      native "InternetAddress_Parse";
+  static Uint8List _parse(String address) native "InternetAddress_Parse";
 }
 
 class _NetworkInterface implements NetworkInterface {
@@ -256,15 +255,11 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
   bool isClosing = false;
   bool isClosedRead = false;
   bool isClosedWrite = false;
-  Completer closeCompleter = new Completer();
+  Completer closeCompleter = new Completer.sync();
 
   // Handlers and receive port for socket events from the event handler.
-  int eventMask = 0;
-  List eventHandlers;
+  final List eventHandlers = new List(EVENT_COUNT + 1);
   RawReceivePort eventPort;
-
-  // Indicates if native interrupts can be activated.
-  bool canActivateEvents = true;
 
   // The type flags for this socket.
   final int typeFlags;
@@ -275,6 +270,15 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
   // Holds the address used to connect or bind the socket.
   InternetAddress address;
 
+  int available = 0;
+
+  bool sendReadEvents = false;
+  bool readEventIssued = false;
+
+  bool sendWriteEvents = false;
+  bool writeEventIssued = false;
+  bool writeAvailable = false;
+
   static Future<List<InternetAddress>> lookup(
       String host, {InternetAddressType type: InternetAddressType.ANY}) {
     return _IOService.dispatch(_SOCKET_LOOKUP, [host, type._value])
@@ -284,14 +288,14 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
           } else {
             return response.skip(1).map((result) {
               var type = new InternetAddressType._from(result[0]);
-              return new _InternetAddress(type, result[1], host, result[2]);
+              return new _InternetAddress(result[1], host, result[2]);
             }).toList();
           }
         });
   }
 
   static Future<InternetAddress> reverseLookup(InternetAddress addr) {
-    return _IOService.dispatch(_SOCKET_REVERSE_LOOKUP, [addr._sockaddr_storage])
+    return _IOService.dispatch(_SOCKET_REVERSE_LOOKUP, [addr._in_addr])
         .then((response) {
           if (isErrorResponse(response)) {
             throw createError(response, "Failed reverse host lookup", addr);
@@ -315,8 +319,7 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
                   var type = new InternetAddressType._from(result[0]);
                   var name = result[3];
                   var index = result[4];
-                  var address = new _InternetAddress(
-                      type, result[1], "", result[2]);
+                  var address = new _InternetAddress(result[1], "", result[2]);
                   if (!includeLinkLocal && address.isLinkLocal) return map;
                   if (!includeLoopback && address.isLoopback) return map;
                   map.putIfAbsent(
@@ -345,7 +348,7 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
           var socket = new _NativeSocket.normal();
           socket.address = address;
           var result = socket.nativeCreateConnect(
-              address._sockaddr_storage, port);
+              address._in_addr, port);
           if (result is OSError) {
             throw createError(result, "Connection failed", address, port);
           } else {
@@ -387,7 +390,7 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
         .then((address) {
           var socket = new _NativeSocket.listen();
           socket.address = address;
-          var result = socket.nativeCreateBindListen(address._sockaddr_storage,
+          var result = socket.nativeCreateBindListen(address._in_addr,
                                                      port,
                                                      backlog,
                                                      v6Only);
@@ -418,7 +421,7 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
         .then((address) {
           var socket = new _NativeSocket.datagram(address);
           var result = socket.nativeCreateBindDatagram(
-              address._sockaddr_storage, port, reuseAddress);
+              address._in_addr, port, reuseAddress);
           if (result is OSError) {
             throw new SocketException("Failed to create datagram socket",
                                       osError: result,
@@ -430,38 +433,17 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
         });
   }
 
-  _NativeSocket.datagram(this.address)
-      : typeFlags = TYPE_NORMAL_SOCKET {
-    eventHandlers = new List(EVENT_COUNT + 1);
-  }
+  _NativeSocket.datagram(this.address) : typeFlags = TYPE_NORMAL_SOCKET;
 
-  _NativeSocket.normal() : typeFlags = TYPE_NORMAL_SOCKET {
-    eventHandlers = new List(EVENT_COUNT + 1);
-  }
+  _NativeSocket.normal() : typeFlags = TYPE_NORMAL_SOCKET;
 
-  _NativeSocket.listen() : typeFlags = TYPE_LISTENING_SOCKET {
-    eventHandlers = new List(EVENT_COUNT + 1);
-  }
+  _NativeSocket.listen() : typeFlags = TYPE_LISTENING_SOCKET;
 
-  _NativeSocket.pipe() : typeFlags = TYPE_PIPE {
-    eventHandlers = new List(EVENT_COUNT + 1);
-  }
+  _NativeSocket.pipe() : typeFlags = TYPE_PIPE;
 
   _NativeSocket.watch(int id) : typeFlags = TYPE_NORMAL_SOCKET {
-    eventHandlers = new List(EVENT_COUNT + 1);
     isClosedWrite = true;
     nativeSetSocketId(id);
-  }
-
-  int available() {
-    if (isClosing || isClosed) return 0;
-    var result = nativeAvailable();
-    if (result is OSError) {
-      reportError(result, "Available failed");
-      return 0;
-    } else {
-      return result;
-    }
   }
 
   List<int> read(int len) {
@@ -469,11 +451,14 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
       throw new ArgumentError("Illegal length $len");
     }
     if (isClosing || isClosed) return null;
-    var result = nativeRead(len == null ? -1 : len);
+    len = min(available, len == null ? available : len);
+    if (len == 0) return null;
+    var result = nativeRead(len);
     if (result is OSError) {
       reportError(result, "Read failed");
       return null;
     }
+    if (result != null) available -= result.length;
     return result;
   }
 
@@ -483,6 +468,15 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
     if (result is OSError) {
       reportError(result, "Receive failed");
       return null;
+    }
+    if (result != null) {
+      if (Platform.isMacOS) {
+        // Mac includes the header size, so we need to query the actual
+        // available.
+        available = nativeAvailable();
+      } else {
+        available -= result.data.length;
+      }
     }
     return result;
   }
@@ -514,6 +508,14 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
       scheduleMicrotask(() => reportError(result, "Write failed"));
       result = 0;
     }
+    // The result may be negative, if we forced a short write for testing
+    // purpose. In such case, don't mark writeAvailable as false, as we don't
+    // know if we'll receive an event. It's better to just retry.
+    if (result >= 0 && result < bytes) {
+      writeAvailable = false;
+    }
+    // Negate the result, as stated above.
+    if (result < 0) result = -result;
     return result;
   }
 
@@ -525,7 +527,7 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
             buffer, offset, bytes);
     var result = nativeSendTo(
         bufferAndStart.buffer, bufferAndStart.start, bytes,
-        address._sockaddr_storage, port);
+        address._in_addr, port);
     if (result is OSError) {
       scheduleMicrotask(() => reportError(result, "Send failed"));
       result = 0;
@@ -555,49 +557,100 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
   InternetAddress get remoteAddress {
     var result = nativeGetRemotePeer()[0];
     var type = new InternetAddressType._from(result[0]);
-    return new _InternetAddress(type, result[1], null, result[2]);
+    return new _InternetAddress(result[1], null, result[2]);
+  }
+
+  void issueReadEvent() {
+    if (readEventIssued) return;
+    readEventIssued = true;
+    void issue() {
+      readEventIssued = false;
+      if (isClosing) return;
+      if (!sendReadEvents) return;
+      if (available == 0) {
+        if (isClosedRead) {
+          if (isClosedWrite) close();
+          var handler = eventHandlers[CLOSED_EVENT];
+          if (handler == null) return;
+          handler();
+        }
+        return;
+      }
+      var handler = eventHandlers[READ_EVENT];
+      if (handler == null) return;
+      readEventIssued = true;
+      handler();
+      scheduleMicrotask(issue);
+    }
+    scheduleMicrotask(issue);
+  }
+
+  void issueWriteEvent({bool delayed: true}) {
+    if (writeEventIssued) return;
+    if (!writeAvailable) return;
+    void issue() {
+      writeEventIssued = false;
+      if (!writeAvailable) return;
+      if (isClosing) return;
+      if (!sendWriteEvents) return;
+      sendWriteEvents = false;
+      var handler = eventHandlers[WRITE_EVENT];
+      if (handler == null) return;
+      handler();
+    }
+    if (delayed) {
+      writeEventIssued = true;
+      scheduleMicrotask(issue);
+    } else {
+      issue();
+    }
   }
 
   // Multiplexes socket events to the socket handlers.
   void multiplex(int events) {
-    canActivateEvents = false;
     for (int i = FIRST_EVENT; i <= LAST_EVENT; i++) {
       if (((events & (1 << i)) != 0)) {
         if ((i == CLOSED_EVENT || i == READ_EVENT) && isClosedRead) continue;
+        if (isClosing && i != DESTROYED_EVENT) continue;
         if (i == CLOSED_EVENT &&
             typeFlags != TYPE_LISTENING_SOCKET &&
             !isClosing &&
             !isClosed) {
           isClosedRead = true;
+          issueReadEvent();
+          continue;
+        }
+
+        if (i == WRITE_EVENT) {
+          writeAvailable = true;
+          issueWriteEvent(delayed: false);
+          continue;
+        }
+
+        if (i == READ_EVENT &&
+            typeFlags != TYPE_LISTENING_SOCKET) {
+          var avail = nativeAvailable();
+          if (avail is int) {
+            available = avail;
+          } else {
+            // Available failed. Mark socket as having data, to ensure read
+            // events, and thus reporting of this error.
+            available = 1;
+          }
+          issueReadEvent();
+          continue;
         }
 
         var handler = eventHandlers[i];
         if (i == DESTROYED_EVENT) {
           assert(!isClosed);
           isClosed = true;
-          closeCompleter.complete(this);
+          closeCompleter.complete();
           disconnectFromEventHandler();
           if (handler != null) handler();
           continue;
         }
-        assert(handler != null);
-        if (i == WRITE_EVENT) {
-          // If the event was disabled before we had a chance to fire the event,
-          // discard it. If we register again, we'll get a new one.
-          if ((eventMask & (1 << i)) == 0) continue;
-          // Unregister the out handler before executing it. There is
-          // no need to notify the eventhandler as handlers are
-          // disabled while the event is handled.
-          eventMask &= ~(1 << i);
-        }
 
-        // Don't call the in handler if there is no data available
-        // after all.
-        if (i == READ_EVENT &&
-            typeFlags != TYPE_LISTENING_SOCKET &&
-            available() == 0) {
-          continue;
-        }
         if (i == ERROR_EVENT) {
           if (!isClosing) {
             reportError(nativeGetError(), "");
@@ -609,9 +662,6 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
         }
       }
     }
-    if (isClosedRead && isClosedWrite) close();
-    canActivateEvents = true;
-    activateHandlers();
   }
 
   void setHandlers({read, write, error, closed, destroyed}) {
@@ -623,36 +673,24 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
   }
 
   void setListening({read: true, write: true}) {
-    eventMask = (1 << CLOSED_EVENT) | (1 << ERROR_EVENT);
-    if (read) eventMask |= (1 << READ_EVENT);
-    if (write) eventMask |= (1 << WRITE_EVENT);
-    activateHandlers();
-  }
-
-  Future<_NativeSocket> get closeFuture => closeCompleter.future;
-
-  void activateHandlers() {
-    if (canActivateEvents && !isClosing && !isClosed) {
-      if ((eventMask & ((1 << READ_EVENT) | (1 << WRITE_EVENT))) == 0) {
-        // If we don't listen for either read or write, disconnect as we won't
-        // get close and error events anyway.
-        if (eventPort != null) disconnectFromEventHandler();
-      } else {
-        int data = eventMask;
-        if (isClosedRead) data &= ~(1 << READ_EVENT);
-        if (isClosedWrite) data &= ~(1 << WRITE_EVENT);
-        data |= typeFlags;
-        sendToEventHandler(data);
-      }
+    sendReadEvents = read;
+    sendWriteEvents = write;
+    if (read) issueReadEvent();
+    if (write) issueWriteEvent();
+    if (eventPort == null) {
+      int flags = typeFlags;
+      if (!isClosedRead) flags |= 1 << READ_EVENT;
+      if (!isClosedWrite) flags |= 1 << WRITE_EVENT;
+      sendToEventHandler(flags);
     }
   }
 
-  Future<_NativeSocket> close() {
+  Future close() {
     if (!isClosing && !isClosed) {
       sendToEventHandler(1 << CLOSE_COMMAND);
       isClosing = true;
     }
-    return closeFuture;
+    return closeCompleter.future;
   }
 
   void shutdown(SocketDirection direction) {
@@ -678,9 +716,7 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
       if (isClosedRead) {
         close();
       } else {
-        bool connected = eventPort != null;
         sendToEventHandler(1 << SHUTDOWN_WRITE_COMMAND);
-        if (!connected) disconnectFromEventHandler();
       }
       isClosedWrite = true;
     }
@@ -691,17 +727,15 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
       if (isClosedWrite) {
         close();
       } else {
-        bool connected = eventPort != null;
         sendToEventHandler(1 << SHUTDOWN_READ_COMMAND);
-        if (!connected) disconnectFromEventHandler();
       }
       isClosedRead = true;
     }
   }
 
   void sendToEventHandler(int data) {
-    connectToEventHandler();
     assert(!isClosed);
+    connectToEventHandler();
     _EventHandler._sendData(this, eventPort, data);
   }
 
@@ -712,10 +746,9 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
   }
 
   void disconnectFromEventHandler() {
-    if (eventPort != null) {
-      eventPort.close();
-      eventPort = null;
-    }
+    assert(eventPort != null);
+    eventPort.close();
+    eventPort = null;
   }
 
   // Check whether this is an error response from a native port call.
@@ -780,7 +813,7 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
     if (Platform.isMacOS && addr.type == InternetAddressType.IP_V4) {
       if (interface != null) {
         for (int i = 0; i < interface.addresses.length; i++) {
-          if (addr.type == InternetAddressType.IP_V4) {
+          if (interface.addresses[i].type == InternetAddressType.IP_V4) {
             return interface.addresses[i];
           }
         }
@@ -789,7 +822,7 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
             "The network interface does not have an address "
             "of the same family as the multicast address");
       } else {
-        // Default to the ANY address if on iterface is specified.
+        // Default to the ANY address if no iterface is specified.
         return InternetAddress.ANY_IP_V4;
       }
     } else {
@@ -801,8 +834,8 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
     var interfaceAddr = multicastAddress(addr, interface);
     var interfaceIndex = interface == null ? 0 : interface.index;
     var result = nativeJoinMulticast(
-        addr._sockaddr_storage,
-        interfaceAddr == null ? null : interfaceAddr._sockaddr_storage,
+        addr._in_addr,
+        interfaceAddr == null ? null : interfaceAddr._in_addr,
         interfaceIndex);
     if (result is OSError) throw result;
   }
@@ -811,8 +844,8 @@ class _NativeSocket extends NativeFieldWrapperClass1 {
     var interfaceAddr = multicastAddress(addr, interface);
     var interfaceIndex = interface == null ? 0 : interface.index;
     var result = nativeLeaveMulticast(
-        addr._sockaddr_storage,
-        interfaceAddr == null ? null : interfaceAddr._sockaddr_storage,
+        addr._in_addr,
+        interfaceAddr == null ? null : interfaceAddr._in_addr,
         interfaceIndex);
     if (result is OSError) throw result;
   }
@@ -871,16 +904,19 @@ class _RawServerSocket extends Stream<RawSocket>
         onCancel: _onSubscriptionStateChange,
         onPause: _onPauseStateChange,
         onResume: _onPauseStateChange);
-    _socket.closeFuture.then((_) => _controller.close());
     _socket.setHandlers(
       read: zone.bindCallback(() {
-        var socket = _socket.accept();
-        if (socket != null) _controller.add(new _RawSocket(socket));
+        do {
+          var socket = _socket.accept();
+          if (socket == null) return;
+          _controller.add(new _RawSocket(socket));
+        } while (!_controller.isPaused);
       }),
       error: zone.bindUnaryCallback((e) {
         _controller.addError(e);
         _controller.close();
-      })
+      }),
+      destroyed: _controller.close
     );
   }
 
@@ -913,7 +949,7 @@ class _RawServerSocket extends Stream<RawSocket>
     if (_controller.hasListener) {
       _resume();
     } else {
-      close();
+      _socket.close();
     }
   }
 
@@ -949,7 +985,6 @@ class _RawSocket extends Stream<RawSocketEvent>
         onCancel: _onSubscriptionStateChange,
         onPause: _onPauseStateChange,
         onResume: _onPauseStateChange);
-    _socket.closeFuture.then((_) => _controller.close());
     _socket.setHandlers(
       read: () => _controller.add(RawSocketEvent.READ),
       write: () {
@@ -959,18 +994,20 @@ class _RawSocket extends Stream<RawSocketEvent>
         _controller.add(RawSocketEvent.WRITE);
       },
       closed: () => _controller.add(RawSocketEvent.READ_CLOSED),
-      destroyed: () => _controller.add(RawSocketEvent.CLOSED),
+      destroyed: () {
+        _controller.add(RawSocketEvent.CLOSED);
+        _controller.close();
+      },
       error: zone.bindUnaryCallback((e) {
         _controller.addError(e);
-        close();
+        _socket.close();
       })
     );
   }
 
-  factory _RawSocket._writePipe(int fd) {
+  factory _RawSocket._writePipe() {
     var native = new _NativeSocket.pipe();
     native.isClosedRead = true;
-    if (fd != null) _getStdioHandle(native, fd);
     return new _RawSocket(native);
   }
 
@@ -996,7 +1033,7 @@ class _RawSocket extends Stream<RawSocketEvent>
         cancelOnError: cancelOnError);
   }
 
-  int available() => _socket.available();
+  int available() => _socket.available;
 
   List<int> read([int len]) {
     if (_isMacOSTerminalInput) {
@@ -1068,7 +1105,7 @@ class _RawSocket extends Stream<RawSocketEvent>
     if (_controller.hasListener) {
       _resume();
     } else {
-      close();
+      _socket.close();
     }
   }
 }
@@ -1144,7 +1181,13 @@ class _SocketStreamConsumer extends StreamConsumer<List<int>> {
             assert(buffer == null);
             buffer = data;
             offset = 0;
-            write();
+            try {
+              write();
+            } catch (e) {
+              stop();
+              socket._consumerDone();
+              done(e);
+            }
           },
           onError: (error, [stackTrace]) {
             socket._consumerDone();
@@ -1164,28 +1207,22 @@ class _SocketStreamConsumer extends StreamConsumer<List<int>> {
   }
 
   void write() {
-    try {
-      if (subscription == null) return;
-      assert(buffer != null);
-      // Write as much as possible.
-      offset += socket._write(buffer, offset, buffer.length - offset);
-      if (offset < buffer.length) {
-        if (!paused) {
-          paused = true;
-          subscription.pause();
-        }
-        socket._enableWriteEvent();
-      } else {
-        buffer = null;
-        if (paused) {
-          paused = false;
-          subscription.resume();
-        }
+    if (subscription == null) return;
+    assert(buffer != null);
+    // Write as much as possible.
+    offset += socket._write(buffer, offset, buffer.length - offset);
+    if (offset < buffer.length) {
+      if (!paused) {
+        paused = true;
+        subscription.pause();
       }
-    } catch (e) {
-      stop();
-      socket._consumerDone();
-      done(e);
+      socket._enableWriteEvent();
+    } else {
+      buffer = null;
+      if (paused) {
+        paused = false;
+        subscription.resume();
+      }
     }
   }
 
@@ -1236,8 +1273,8 @@ class _Socket extends Stream<List<int>> implements Socket {
     _raw.writeEventsEnabled = false;
   }
 
-  factory _Socket._writePipe([int fd]) {
-    return new _Socket(new _RawSocket._writePipe(fd));
+  factory _Socket._writePipe() {
+    return new _Socket(new _RawSocket._writePipe());
   }
 
   factory _Socket._readPipe([int fd]) {
@@ -1431,7 +1468,6 @@ class _RawDatagramSocket extends Stream implements RawDatagramSocket {
         onCancel: _onSubscriptionStateChange,
         onPause: _onPauseStateChange,
         onResume: _onPauseStateChange);
-    _socket.closeFuture.then((_) => _controller.close());
     _socket.setHandlers(
       read: () => _controller.add(RawSocketEvent.READ),
       write: () {
@@ -1441,10 +1477,13 @@ class _RawDatagramSocket extends Stream implements RawDatagramSocket {
         _controller.add(RawSocketEvent.WRITE);
       },
       closed: () => _controller.add(RawSocketEvent.READ_CLOSED),
-      destroyed: () => _controller.add(RawSocketEvent.CLOSED),
+      destroyed: () {
+        _controller.add(RawSocketEvent.CLOSED);
+        _controller.close();
+      },
       error: zone.bindUnaryCallback((e) {
         _controller.addError(e);
-        close();
+        _socket.close();
       })
     );
   }
@@ -1545,20 +1584,17 @@ class _RawDatagramSocket extends Stream implements RawDatagramSocket {
     if (_controller.hasListener) {
       _resume();
     } else {
-      close();
+      _socket.close();
     }
   }
 }
 
 Datagram _makeDatagram(List<int> data,
-                       bool ipV6,
                        String address,
-                       List<int> sockaddr_storage,
+                       List<int> in_addr,
                        int port) {
-  var addressType =
-      ipV6 ? InternetAddressType.IP_V6 : InternetAddressType.IP_V4;
   return new Datagram(
       data,
-      new _InternetAddress(addressType, address, null, sockaddr_storage),
+      new _InternetAddress(address, null, in_addr),
       port);
 }

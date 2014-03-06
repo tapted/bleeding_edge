@@ -5,6 +5,7 @@
 # These tests are expected to crash on all platforms.
 cc/ArrayNew_Overflow_Crash: Crash
 cc/AllocGeneric_Overflow: Crash
+cc/CodeImmutability: Crash
 
 cc/SNPrint_BadArgs: Skip
 
@@ -27,6 +28,11 @@ cc/ThreadInterrupterHigh: Skip
 cc/ThreadInterrupterMedium: Skip
 cc/ThreadInterrupterLow: Skip
 
+[ $system == linux ]
+cc/ThreadInterrupterHigh: Skip
+cc/ThreadInterrupterMedium: Skip
+cc/ThreadInterrupterLow: Skip
+
 [ $system == macos ]
 cc/ThreadInterrupterHigh: Skip
 cc/ThreadInterrupterMedium: Skip
@@ -36,6 +42,9 @@ cc/ThreadInterrupterLow: Skip
 cc/ThreadInterrupterHigh: Skip
 cc/ThreadInterrupterMedium: Skip
 cc/ThreadInterrupterLow: Skip
+
+[ $arch == simmips ]
+cc/Service_Coverage: Skip # Dart bug 16250
 
 [ $compiler == dart2js ]
 dart/mirrored_compilation_error_test: Skip # VM-specific flag

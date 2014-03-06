@@ -92,6 +92,35 @@ public interface LibraryElement extends Element {
   public ClassElement getType(String className);
 
   /**
+   * Return an array containing all of the compilation units this library consists of. This includes
+   * the defining compilation unit and units included using the {@code part} directive.
+   * 
+   * @return the compilation units this library consists of
+   */
+  public CompilationUnitElement[] getUnits();
+
+  /**
+   * Return an array containing all directly and indirectly imported libraries.
+   * 
+   * @return all directly and indirectly imported libraries
+   */
+  public LibraryElement[] getVisibleLibraries();
+
+  /**
+   * Return {@code true} if the defining compilation unit of this library contains at least one
+   * import directive whose URI uses the "dart-ext" scheme.
+   */
+  public boolean hasExtUri();
+
+  /**
+   * Return {@code true} if this library is created for Angular analysis. If this library has not
+   * yet had toolkit references resolved, then {@code false} will be returned.
+   * 
+   * @return {@code true} if this library is created for Angular analysis
+   */
+  public boolean isAngularHtml();
+
+  /**
    * Answer {@code true} if this library is an application that can be run in the browser.
    * 
    * @return {@code true} if this library is an application that can be run in the browser

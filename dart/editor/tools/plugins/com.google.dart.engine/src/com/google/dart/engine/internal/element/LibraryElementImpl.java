@@ -27,6 +27,7 @@ import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.PrefixElement;
 import com.google.dart.engine.sdk.DartSdk;
 import com.google.dart.engine.source.Source;
+import com.google.dart.engine.utilities.general.StringUtilities;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -56,14 +57,15 @@ public class LibraryElementImpl extends ElementImpl implements LibraryElement {
     if (!visitedLibraries.contains(library)) {
       visitedLibraries.add(library);
 
+      AnalysisContext context = library.getContext();
       // Check the defining compilation unit.
-      if (timeStamp < library.getDefiningCompilationUnit().getSource().getModificationStamp()) {
+      if (timeStamp < context.getModificationStamp(library.getDefiningCompilationUnit().getSource())) {
         return false;
       }
 
       // Check the parted compilation units.
       for (CompilationUnitElement element : library.getParts()) {
-        if (timeStamp < element.getSource().getModificationStamp()) {
+        if (timeStamp < context.getModificationStamp(element.getSource())) {
           return false;
         }
       }
@@ -116,6 +118,11 @@ public class LibraryElementImpl extends ElementImpl implements LibraryElement {
    * {@code part} directive.
    */
   private CompilationUnitElement[] parts = CompilationUnitElementImpl.EMPTY_ARRAY;
+
+  /**
+   * Is {@code true} if this library is created for Angular analysis.
+   */
+  private boolean isAngularHtml;
 
   /**
    * Initialize a newly created library element to have the given name.
@@ -263,8 +270,33 @@ public class LibraryElementImpl extends ElementImpl implements LibraryElement {
   }
 
   @Override
+  public CompilationUnitElement[] getUnits() {
+    CompilationUnitElement[] units = new CompilationUnitElement[1 + parts.length];
+    units[0] = definingCompilationUnit;
+    System.arraycopy(parts, 0, units, 1, parts.length);
+    return units;
+  }
+
+  @Override
+  public LibraryElement[] getVisibleLibraries() {
+    Set<LibraryElement> visibleLibraries = Sets.newHashSet();
+    addVisibleLibraries(visibleLibraries, false);
+    return visibleLibraries.toArray(new LibraryElement[visibleLibraries.size()]);
+  }
+
+  @Override
+  public boolean hasExtUri() {
+    return hasModifier(Modifier.HAS_EXT_URI);
+  }
+
+  @Override
   public int hashCode() {
     return definingCompilationUnit.hashCode();
+  }
+
+  @Override
+  public boolean isAngularHtml() {
+    return isAngularHtml;
   }
 
   @Override
@@ -279,7 +311,7 @@ public class LibraryElementImpl extends ElementImpl implements LibraryElement {
 
   @Override
   public boolean isInSdk() {
-    return getName().startsWith("dart.");
+    return StringUtilities.startsWith5(getName(), 0, 'd', 'a', 'r', 't', '.');
   }
 
   @Override
@@ -287,6 +319,13 @@ public class LibraryElementImpl extends ElementImpl implements LibraryElement {
     Set<LibraryElement> visitedLibraries = Sets.newHashSet();
 
     return isUpToDate(this, timeStamp, visitedLibraries);
+  }
+
+  /**
+   * Specifies if this library is created for Angular analysis.
+   */
+  public void setAngularHtml(boolean isAngularHtml) {
+    this.isAngularHtml = isAngularHtml;
   }
 
   /**
@@ -318,6 +357,15 @@ public class LibraryElementImpl extends ElementImpl implements LibraryElement {
       ((ExportElementImpl) exportElement).setEnclosingElement(this);
     }
     this.exports = exports;
+  }
+
+  /**
+   * Set whether this library has an import of a "dart-ext" URI to the given value.
+   * 
+   * @param hasExtUri {@code true} if this library has an import of a "dart-ext" URI
+   */
+  public void setHasExtUri(boolean hasExtUri) {
+    setModifier(Modifier.HAS_EXT_URI, hasExtUri);
   }
 
   /**
@@ -361,6 +409,32 @@ public class LibraryElementImpl extends ElementImpl implements LibraryElement {
   @Override
   protected String getIdentifier() {
     return definingCompilationUnit.getSource().getEncoding();
+  }
+
+  /**
+   * Recursively fills set of visible libraries for {@link #getVisibleElementsLibraries}.
+   */
+  private void addVisibleLibraries(Set<LibraryElement> visibleLibraries, boolean includeExports) {
+    // maybe already processed
+    if (!visibleLibraries.add(this)) {
+      return;
+    }
+    // add imported libraries
+    for (ImportElement importElement : imports) {
+      LibraryElement importedLibrary = importElement.getImportedLibrary();
+      if (importedLibrary != null) {
+        ((LibraryElementImpl) importedLibrary).addVisibleLibraries(visibleLibraries, true);
+      }
+    }
+    // add exported libraries
+    if (includeExports) {
+      for (ExportElement exportElement : exports) {
+        LibraryElement exportedLibrary = exportElement.getExportedLibrary();
+        if (exportedLibrary != null) {
+          ((LibraryElementImpl) exportedLibrary).addVisibleLibraries(visibleLibraries, true);
+        }
+      }
+    }
   }
 
   /**

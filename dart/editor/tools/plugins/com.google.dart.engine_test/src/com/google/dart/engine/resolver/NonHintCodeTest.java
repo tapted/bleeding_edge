@@ -175,7 +175,7 @@ public class NonHintCodeTest extends ResolverTestCase {
   public void test_divisionOptimization_supressIfDivisionOverridden() throws Exception {
     Source source = addSource(createSource(//
         "class A {",
-        "  num operator /(x) {}",
+        "  num operator /(x) { return x; }",
         "}",
         "f(A x, A y) {",
         "  var v = (x / y).toInt();",
@@ -232,6 +232,40 @@ public class NonHintCodeTest extends ResolverTestCase {
     verify(source);
   }
 
+  public void test_missingReturn_emptyFunctionBody() throws Exception {
+    Source source = addSource(createSource(//
+        "abstract class A {",
+        "  int m();",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_missingReturn_expressionFunctionBody() throws Exception {
+    Source source = addSource(createSource(//
+    "int f() => 0;"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_missingReturn_noReturnType() throws Exception {
+    Source source = addSource(createSource(//
+    "f() {}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_missingReturn_voidReturnType() throws Exception {
+    Source source = addSource(createSource(//
+    "void f() {}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
   public void test_overriddingPrivateMember_sameLibrary() throws Exception {
     Source source = addSource(createSource(//
         "class A {",
@@ -248,8 +282,104 @@ public class NonHintCodeTest extends ResolverTestCase {
   public void test_overrideEqualsButNotHashCode() throws Exception {
     Source source = addSource(createSource(//
         "class A {",
-        "  bool operator ==(x) {}",
+        "  bool operator ==(x) { return x; }",
         "  get hashCode => 0;",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_overrideOnNonOverridingGetter_inInterface() throws Exception {
+    Source source = addSource(createSource(//
+        "library dart.core;",
+        "const override = null;",
+        "class A {",
+        "  int get m => 0;",
+        "}",
+        "class B implements A {",
+        "  @override",
+        "  int get m => 1;",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_overrideOnNonOverridingGetter_inSuperclass() throws Exception {
+    Source source = addSource(createSource(//
+        "library dart.core;",
+        "const override = null;",
+        "class A {",
+        "  int get m => 0;",
+        "}",
+        "class B extends A {",
+        "  @override",
+        "  int get m => 1;",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_overrideOnNonOverridingMethod_inInterface() throws Exception {
+    Source source = addSource(createSource(//
+        "library dart.core;",
+        "const override = null;",
+        "class A {",
+        "  int m() => 0;",
+        "}",
+        "class B implements A {",
+        "  @override",
+        "  int m() => 1;",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_overrideOnNonOverridingMethod_inSuperclass() throws Exception {
+    Source source = addSource(createSource(//
+        "library dart.core;",
+        "const override = null;",
+        "class A {",
+        "  int m() => 0;",
+        "}",
+        "class B extends A {",
+        "  @override",
+        "  int m() => 1;",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_overrideOnNonOverridingSetter_inInterface() throws Exception {
+    Source source = addSource(createSource(//
+        "library dart.core;",
+        "const override = null;",
+        "class A {",
+        "  set m(int x) {}",
+        "}",
+        "class B implements A {",
+        "  @override",
+        "  set m(int x) {}",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_overrideOnNonOverridingSetter_inSuperclass() throws Exception {
+    Source source = addSource(createSource(//
+        "library dart.core;",
+        "const override = null;",
+        "class A {",
+        "  set m(int x) {}",
+        "}",
+        "class B extends A {",
+        "  @override",
+        "  set m(int x) {}",
         "}"));
     resolve(source);
     assertNoErrors(source);
@@ -599,6 +729,30 @@ public class NonHintCodeTest extends ResolverTestCase {
         "library lib1;",
         "class One {}",
         "topLevelFunction() {}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_useOfVoidResult_implicitReturnValue() throws Exception {
+    Source source = addSource(createSource(//
+        "f() {}",
+        "class A {",
+        "  n() {",
+        "    var a = f();",
+        "  }",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_useOfVoidResult_nonVoidReturnValue() throws Exception {
+    Source source = addSource(createSource(//
+        "int f() => 1;",
+        "g() {",
+        "  var a = f();",
+        "}"));
     resolve(source);
     assertNoErrors(source);
     verify(source);

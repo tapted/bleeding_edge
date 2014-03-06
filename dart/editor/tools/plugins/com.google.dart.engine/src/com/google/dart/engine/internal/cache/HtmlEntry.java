@@ -14,8 +14,10 @@
 package com.google.dart.engine.internal.cache;
 
 import com.google.dart.engine.element.HtmlElement;
+import com.google.dart.engine.element.angular.AngularComponentElement;
 import com.google.dart.engine.error.AnalysisError;
 import com.google.dart.engine.html.ast.HtmlUnit;
+import com.google.dart.engine.internal.element.angular.AngularApplication;
 import com.google.dart.engine.source.Source;
 
 /**
@@ -25,6 +27,33 @@ import com.google.dart.engine.source.Source;
  * @coverage dart.engine
  */
 public interface HtmlEntry extends SourceEntry {
+  /**
+   * The data descriptor representing the information about an Angular application this source is
+   * used in.
+   */
+  public static final DataDescriptor<AngularApplication> ANGULAR_APPLICATION = new DataDescriptor<AngularApplication>(
+      "HtmlEntry.ANGULAR_APPLICATION");
+
+  /**
+   * The data descriptor representing the information about an Angular component this source is used
+   * as template for.
+   */
+  public static final DataDescriptor<AngularComponentElement> ANGULAR_COMPONENT = new DataDescriptor<AngularComponentElement>(
+      "HtmlEntry.ANGULAR_COMPONENT");
+
+  /**
+   * The data descriptor representing the information about an Angular application this source is
+   * entry point for.
+   */
+  public static final DataDescriptor<AngularApplication> ANGULAR_ENTRY = new DataDescriptor<AngularApplication>(
+      "HtmlEntry.ANGULAR_ENTRY");
+
+  /**
+   * The data descriptor representing the errors reported during Angular resolution.
+   */
+  public static final DataDescriptor<AnalysisError[]> ANGULAR_ERRORS = new DataDescriptor<AnalysisError[]>(
+      "HtmlEntry.ANGULAR_ERRORS");
+
   /**
    * The data descriptor representing the HTML element.
    */
@@ -50,6 +79,12 @@ public interface HtmlEntry extends SourceEntry {
       "HtmlEntry.PARSED_UNIT");
 
   /**
+   * The data descriptor representing the resolved AST structure.
+   */
+  public static final DataDescriptor<HtmlUnit> RESOLVED_UNIT = new DataDescriptor<HtmlUnit>(
+      "HtmlEntry.RESOLVED_UNIT");
+
+  /**
    * The data descriptor representing the list of referenced libraries.
    */
   public static final DataDescriptor<Source[]> REFERENCED_LIBRARIES = new DataDescriptor<Source[]>(
@@ -67,6 +102,14 @@ public interface HtmlEntry extends SourceEntry {
    * @return all of the errors associated with the compilation unit
    */
   public AnalysisError[] getAllErrors();
+
+  /**
+   * Return a valid parsed unit, either an unresolved AST structure or the result of resolving the
+   * AST structure, or {@code null} if there is no parsed unit available.
+   * 
+   * @return a valid parsed unit
+   */
+  public HtmlUnit getAnyParsedUnit();
 
   @Override
   public HtmlEntryImpl getWritableCopy();

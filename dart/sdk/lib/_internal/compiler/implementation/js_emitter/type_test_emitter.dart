@@ -118,7 +118,7 @@ class TypeTestEmitter extends CodeEmitterHelper {
 
     bool haveSameTypeVariables(ClassElement a, ClassElement b) {
       if (a.isClosure()) return true;
-      return a.typeVariables == b.typeVariables;
+      return backend.rti.isTrivialSubstitution(a, b);
     }
 
     if (superclass != null && superclass != compiler.objectClass &&
@@ -130,9 +130,12 @@ class TypeTestEmitter extends CodeEmitterHelper {
       Set<ClassElement> emitted = new Set<ClassElement>();
       // TODO(karlklose): move the computation of these checks to
       // RuntimeTypeInformation.
-      if (backend.classNeedsRti(cls)) {
-        emitSubstitution(superclass, emitNull: true);
-        emitted.add(superclass);
+      while (superclass != null) {
+        if (backend.classNeedsRti(superclass)) {
+          emitSubstitution(superclass, emitNull: true);
+          emitted.add(superclass);
+        }
+        superclass = superclass.superclass;
       }
       for (DartType supertype in cls.allSupertypes) {
         ClassElement superclass = supertype.element;
@@ -268,13 +271,18 @@ class TypeTestEmitter extends CodeEmitterHelper {
     }
   }
 
-  void emitRuntimeTypeSupport(CodeBuffer buffer) {
+  void emitRuntimeTypeSupport(CodeBuffer buffer, OutputUnit outputUnit) {
     task.addComment('Runtime type support', buffer);
     RuntimeTypes rti = backend.rti;
     TypeChecks typeChecks = rti.requiredChecks;
 
     // Add checks to the constructors of instantiated classes.
+    // TODO(sigurdm): We should avoid running through this list for each
+    // output unit.
     for (ClassElement cls in typeChecks) {
+      OutputUnit destination =
+          compiler.deferredLoadTask.outputUnitForElement(cls);
+      if (destination != outputUnit) continue;
       // TODO(9556).  The properties added to 'holder' should be generated
       // directly as properties of the class object, not added later.
       String holder = namer.isolateAccess(backend.getImplementationClass(cls));
@@ -291,19 +299,6 @@ class TypeTestEmitter extends CodeEmitterHelper {
         }
       };
     }
-
-    void addSignature(FunctionType type) {
-      jsAst.Expression encoding = rti.getTypeEncoding(type);
-      buffer.add('${namer.signatureName(type)}$_=${_}');
-      buffer.write(jsAst.prettyPrint(encoding, compiler));
-      buffer.add('$N');
-    }
-
-    checkedNonGenericFunctionTypes.forEach(addSignature);
-
-    checkedGenericFunctionTypes.forEach((_, Set<FunctionType> functionTypes) {
-      functionTypes.forEach(addSignature);
-    });
   }
 
   /**
@@ -370,6 +365,33 @@ class TypeTestEmitter extends CodeEmitterHelper {
         rtiNeededClasses.add(contextClass);
       }
     }
+
+    bool canTearOff(Element function) {
+      if (!function.isFunction() ||
+          function.isConstructor() ||
+          function.isAccessor()) {
+        return false;
+      } else if (function.isInstanceMember()) {
+        if (!function.getEnclosingClass().isClosure()) {
+          return compiler.codegenWorld.hasInvokedGetter(function, compiler);
+        }
+      }
+      return false;
+    }
+
+    backend.generatedCode.keys.where((element) {
+      return element is FunctionElement &&
+          element is! ConstructorBodyElement &&
+          (canTearOff(element) || backend.isAccessibleByReflection(element));
+    }).forEach((FunctionElement function) {
+      DartType type = function.computeType(compiler);
+      for (ClassElement cls in backend.rti.getReferencedClasses(type)) {
+        while (cls != null) {
+          rtiNeededClasses.add(cls);
+          cls = cls.superclass;
+        }
+      }
+    });
 
     return rtiNeededClasses;
   }

@@ -87,7 +87,7 @@ DEFINE_NATIVE_ENTRY(Object_noSuchMethod, 6) {
       }
     }
     if (!function.IsNull()) {
-      const int total_num_parameters = function.NumParameters();
+      const intptr_t total_num_parameters = function.NumParameters();
       const Array& array = Array::Handle(Array::New(total_num_parameters - 1));
       // Skip receiver.
       for (int i = 1; i < total_num_parameters; i++) {
@@ -105,10 +105,7 @@ DEFINE_NATIVE_ENTRY(Object_runtimeType, 1) {
   const Instance& instance = Instance::CheckedHandle(arguments->NativeArgAt(0));
   // Special handling for following types outside this native.
   ASSERT(!instance.IsString() && !instance.IsInteger() && !instance.IsDouble());
-  const Type& type = Type::Handle(instance.GetType());
-  // The static type of null is specified to be the bottom type, however, the
-  // runtime type of null is the Null type, which we correctly return here.
-  return type.Canonicalize();
+  return instance.GetType();
 }
 
 
@@ -117,8 +114,8 @@ DEFINE_NATIVE_ENTRY(Object_instanceOf, 5) {
   // Instantiator at position 1 is not used. It is passed along so that the call
   // can be easily converted to an optimized implementation. Instantiator is
   // used to populate the subtype cache.
-  const AbstractTypeArguments& instantiator_type_arguments =
-      AbstractTypeArguments::CheckedHandle(arguments->NativeArgAt(2));
+  const TypeArguments& instantiator_type_arguments =
+      TypeArguments::CheckedHandle(arguments->NativeArgAt(2));
   const AbstractType& type =
       AbstractType::CheckedHandle(arguments->NativeArgAt(3));
   const Bool& negate = Bool::CheckedHandle(arguments->NativeArgAt(4));
@@ -131,7 +128,7 @@ DEFINE_NATIVE_ENTRY(Object_instanceOf, 5) {
                                                     &bound_error);
   if (FLAG_trace_type_checks) {
     const char* result_str = is_instance_of ? "true" : "false";
-    OS::Print("Object.instanceOf: result %s\n", result_str);
+    OS::Print("Native Object.instanceOf: result %s\n", result_str);
     const Type& instance_type = Type::Handle(instance.GetType());
     OS::Print("  instance type: %s\n",
               String::Handle(instance_type.Name()).ToCString());
@@ -162,8 +159,8 @@ DEFINE_NATIVE_ENTRY(Object_as, 4) {
   // Instantiator at position 1 is not used. It is passed along so that the call
   // can be easily converted to an optimized implementation. Instantiator is
   // used to populate the subtype cache.
-  const AbstractTypeArguments& instantiator_type_arguments =
-      AbstractTypeArguments::CheckedHandle(arguments->NativeArgAt(2));
+  const TypeArguments& instantiator_type_arguments =
+      TypeArguments::CheckedHandle(arguments->NativeArgAt(2));
   const AbstractType& type =
       AbstractType::CheckedHandle(arguments->NativeArgAt(3));
   ASSERT(type.IsFinalized());

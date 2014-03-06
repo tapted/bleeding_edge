@@ -15,10 +15,12 @@ package com.google.dart.tools.core.internal.analysis.model;
 
 import com.google.dart.engine.sdk.DartSdk;
 import com.google.dart.engine.source.FileBasedSource;
+import com.google.dart.engine.source.PackageUriResolver;
 import com.google.dart.engine.utilities.io.FileUtilities2;
 import com.google.dart.tools.core.DartCore;
 import com.google.dart.tools.core.pub.PubspecModel;
 
+import static com.google.dart.tools.core.DartCore.PACKAGES_DIRECTORY_NAME;
 import static com.google.dart.tools.core.pub.PubYamlUtilsTest.pubspecYamlString;
 
 import static org.mockito.Mockito.mock;
@@ -35,8 +37,8 @@ public class PubFolderImplTest extends PubResourceMapImplTest {
     }
     File file1 = new File(pkg1CanonicalDir, "file1.dart");
     File file2 = new File(pkg2CanonicalDir, "file2.dart");
-    FileBasedSource source1 = new FileBasedSource(contentCache, file1);
-    FileBasedSource source2 = new FileBasedSource(contentCache, file2);
+    FileBasedSource source1 = new FileBasedSource(file1);
+    FileBasedSource source2 = new FileBasedSource(file2);
 
     PubFolderImpl pubFolder = newTarget();
     InvertedSourceContainer container1 = pubFolder.getInvertedSourceContainer();
@@ -70,7 +72,9 @@ public class PubFolderImplTest extends PubResourceMapImplTest {
   protected PubFolderImpl newTarget() {
     pubContainer.getMockFile(DartCore.PUBSPEC_FILE_NAME).setContents(
         pubspecYamlString.replace("name: web_components", "name: myapp"));
-    return new PubFolderImpl(pubContainer, context, expectedSdk);
+    return new PubFolderImpl(pubContainer, context, expectedSdk, new PackageUriResolver(new File(
+        pubContainer.toFile(),
+        PACKAGES_DIRECTORY_NAME)));
   }
 
   @Override

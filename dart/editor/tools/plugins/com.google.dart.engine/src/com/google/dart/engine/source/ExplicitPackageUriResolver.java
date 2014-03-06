@@ -14,6 +14,7 @@
 
 package com.google.dart.engine.source;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.dart.engine.AnalysisEngine;
 import com.google.dart.engine.sdk.DirectoryBasedDartSdk;
 import com.google.dart.engine.utilities.io.ProcessRunner;
@@ -37,16 +38,16 @@ import java.util.Map;
  * concrete locations on disk.
  * 
  * <pre>
- * {
- *   "packages": {
- *     "foo": "path/to/foo",
- *     "bar": "path/to/bar"
- *   },
- *   "input_files": [
- *     ...
- *   ]
- * },
- * </pre>
+ *{
+ *"packages": {
+ *"foo": "path/to/foo",
+ *"bar": "path/to/bar"
+ *},
+ *"input_files": [
+ *...
+ *]
+ *},
+ *</pre>
  */
 public class ExplicitPackageUriResolver extends UriResolver {
   /**
@@ -68,7 +69,8 @@ public class ExplicitPackageUriResolver extends UriResolver {
 
   private File rootDir;
   private DirectoryBasedDartSdk sdk;
-  private Map<String, List<File>> packageMap;
+  @VisibleForTesting
+  protected Map<String, List<File>> packageMap;
 
   // TODO: For now, this takes a DirectoryBasedDartSdk. We may want to abstract this out into
   // something that can return a package map.
@@ -89,16 +91,16 @@ public class ExplicitPackageUriResolver extends UriResolver {
   }
 
   @Override
-  public Source fromEncoding(ContentCache contentCache, UriKind kind, URI uri) {
+  public Source fromEncoding(UriKind kind, URI uri) {
     if (kind == UriKind.PACKAGE_URI) {
-      return new FileBasedSource(contentCache, new File(uri), kind);
+      return new FileBasedSource(new File(uri), kind);
     } else {
       return null;
     }
   }
 
   @Override
-  public Source resolveAbsolute(ContentCache contentCache, URI uri) {
+  public Source resolveAbsolute(URI uri) {
     if (!isPackageUri(uri)) {
       return null;
     }
@@ -137,7 +139,7 @@ public class ExplicitPackageUriResolver extends UriResolver {
           File resolvedFile = new File(packageDir, relPath.replace('/', File.separatorChar));
 
           if (resolvedFile.exists()) {
-            return new FileBasedSource(contentCache, resolvedFile, UriKind.PACKAGE_URI);
+            return new FileBasedSource(resolvedFile, UriKind.PACKAGE_URI);
           }
         }
       }
@@ -148,10 +150,29 @@ public class ExplicitPackageUriResolver extends UriResolver {
 
     String fullPackagePath = pkgName + "/" + relPath;
 
-    return new FileBasedSource( //
-        contentCache,
+    return new FileBasedSource(
         new File(rootDir, fullPackagePath.replace('/', File.separatorChar)),
         UriKind.PACKAGE_URI);
+  }
+
+  public String resolvePathToPackage(String path) {
+    if (packageMap == null) {
+      return null;
+    }
+
+    for (String key : packageMap.keySet()) {
+      List<File> files = packageMap.get(key);
+      for (File file : files) {
+        try {
+          if (file.getCanonicalPath().endsWith(path)) {
+            return key;
+          }
+        } catch (IOException e) {
+
+        }
+      }
+    }
+    return null;
   }
 
   @Override

@@ -2,14 +2,43 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+import 'dart:io';
+
+import 'package:path/path.dart';
 import 'package:unittest/unittest.dart';
 
-import 'package:analyzer/src/generated/java_core.dart' show CharSequence;
 import 'package:analyzer/src/generated/scanner.dart';
 import 'package:analyzer/src/services/formatter_impl.dart';
 import 'package:analyzer/src/services/writer.dart';
 
+// Test data location ('pkg/analyzer/test/services/data')
+final TEST_DATA_DIR = join(dirname(fromUri(Platform.script)), 'data');
+
 main() {
+
+  /// Data-driven statement tests
+  group('stmt_tests.data', () {
+    // NOTE: statement tests are run with transforms enabled
+    runTests('stmt_tests.data', (input, expectedOutput) {
+      expect(formatStatement(input,
+          options: new FormatterOptions(codeTransforms: true)) + '\n',
+          equals(expectedOutput));
+    });
+  });
+
+  /// Data-driven compilation unit tests
+  group('cu_tests.data', () {
+    runTests('cu_tests.data', (input, expectedOutput) {
+      expectCUFormatsTo(input, expectedOutput);
+    });
+  });
+
+  /// Data-driven Style Guide acceptance tests
+  group('style_guide_tests.data', () {
+    runTests('style_guide_tests.data', (input, expectedOutput) {
+      expectCUFormatsTo(input, expectedOutput);
+    });
+  });
 
   /// Formatter tests
   group('formatter', () {
@@ -162,8 +191,7 @@ main() {
       expectCUFormatsTo(
           'library a; class B { }',
           'library a;\n'
-          'class B {\n'
-          '}\n'
+          'class B {}\n'
       );
     });
 
@@ -566,7 +594,10 @@ main() {
     test('CU - comments (11)', () {
       expectCUFormatsTo(
           'var m = {1: 2 /* bang */, 3: 4};\n',
-          'var m = {1: 2 /* bang */, 3: 4};\n'
+          'var m = {\n'
+          '  1: 2 /* bang */,\n'
+          '  3: 4\n'
+          '};\n'
       );
     });
 
@@ -621,20 +652,6 @@ main() {
           '}\n',
           'class A {\n'
           '  const factory A() = B;\n'
-          '}\n'
-        );
-    });
-
-    test('CU - constructor initializers', () {
-      expectCUFormatsTo(
-          'class A {\n'
-          '  int _a;\n'
-          '  A(a) : _a = a;\n'
-          '}\n',
-          'class A {\n'
-          '  int _a;\n'
-          '  A(a)\n'
-          '      : _a = a;\n'
           '}\n'
         );
     });
@@ -787,10 +804,7 @@ main() {
         '1,\n'
         '2,\n'
         '];',
-        'var l = [\n'
-        '  1,\n'
-        '  2,\n'
-        '];'
+        'var l = [1, 2,];'
       );
       //Dangling ','
       expectStmtFormatsTo(
@@ -802,24 +816,29 @@ main() {
     test('stmt (maps)', () {
       expectStmtFormatsTo(
         'var map = const {"foo": "bar", "fuz": null};',
-        'var map = const {"foo": "bar", "fuz": null};'
+        'var map = const {\n'
+        '  "foo": "bar",\n'
+        '  "fuz": null\n'
+        '};'
       );
 
       expectStmtFormatsTo(
           'var map = {\n'
           '"foo": "bar",\n'
-          '"bar": "baz"'
+          '"bar": "baz"\n'
           '};',
           'var map = {\n'
           '  "foo": "bar",\n'
-          '  "bar": "baz"'
+          '  "bar": "baz"\n'
           '};'
       );
 
       //Dangling ','
       expectStmtFormatsTo(
         'var map = {"foo": "bar",};',
-        'var map = {"foo": "bar",};'
+        'var map = {\n'
+        '  "foo": "bar",\n'
+        '};'
       );
     });
 
@@ -914,6 +933,134 @@ main() {
                           transforms: false);
     });
 
+    // smoketest to ensure we're enforcing the 'no gratuitous linebreaks'
+    // opinion
+    test('CU (eat newlines)', () {
+      expectCUFormatsTo(
+        'abstract\n'
+        'class\n'
+        'A{}',
+        'abstract class A {}\n'
+      );
+    });
+
+//    test('line continuations - 1', () {
+//      expectStmtFormatsTo(
+//          'if (x &&\n'
+//          '    y) {\n'
+//          '  print("yes!");\n'
+//          '}',
+//          'if (x &&\n'
+//          '    y) {\n'
+//          '  print("yes!");\n'
+//          '}'
+//      );
+//      expectStmtFormatsTo(
+//          'var x =\n'
+//          '    1234567890;',
+//          'var x =\n'
+//          '    1234567890;'
+//      );
+//      expectStmtFormatsTo(
+//          'foo() {\n'
+//          '  var x = 0;\n'
+//          '  x =\n'
+//          '      1234567890;\n'
+//          '}',
+//          'foo() {\n'
+//          '  var x = 0;\n'
+//          '  x =\n'
+//          '      1234567890;\n'
+//          '}'
+//      );
+//      expectStmtFormatsTo(
+//          'foo() {\n'
+//          '  while (true &&\n'
+//          '      true) {\n'
+//          '    print("!");\n'
+//          '  }\n'
+//          '}',
+//          'foo() {\n'
+//          '  while (true &&\n'
+//          '      true) {\n'
+//          '    print("!");\n'
+//          '  }\n'
+//          '}'
+//      );
+//      expectStmtFormatsTo(
+//          'foo() {\n'
+//          '  do {\n'
+//          '    print("!");\n'
+//          '  } while (true &&\n'
+//          '      true);\n'
+//          '}',
+//          'foo() {\n'
+//          '  do {\n'
+//          '    print("!");\n'
+//          '  } while (true &&\n'
+//          '      true);\n'
+//          '}'
+//      );
+//      expectStmtFormatsTo(
+//          'int foo() {\n'
+//          '  return\n'
+//          '      foo();\n'
+//          '}',
+//          'int foo() {\n'
+//          '  return\n'
+//          '      foo();\n'
+//          '}'
+//      );
+//      expectStmtFormatsTo(
+//          'int foo() {\n'
+//          '  return\n'
+//          '      13;\n'
+//          '}',
+//          'int foo() {\n'
+//          '  return\n'
+//          '      13;\n'
+//          '}'
+//      );
+//      expectStmtFormatsTo(
+//          'foo(fn()) {\n'
+//          '  return foo(() {\n'
+//          '    return 1;\n'
+//          '});\n'
+//          '}',
+//          'foo(fn()) {\n'
+//          '  return foo(() {\n'
+//          '    return 1;\n'
+//          '});\n'
+//          '}'
+//      );
+//      expectStmtFormatsTo(
+//          'true ? foo() :\n'
+//          '    bar();',
+//          'true ? foo() :\n'
+//          '    bar();'
+//      );
+//      expectCUFormatsTo(
+//          'import "dart:core" as\n'
+//          '    core;\n',
+//          'import "dart:core" as\n'
+//          '    core;\n'
+//      );
+//      expectCUFormatsTo(
+//          'export "package:foo/foo.dart" show\n'
+//          '    Foo;\n',
+//          'export "package:foo/foo.dart" show\n'
+//          '    Foo;\n'
+//      );
+//      expectCUFormatsTo(
+//          'class Foo extends Bar implements\n'
+//          '    Baz {\n'
+//          '}\n',
+//          'class Foo extends Bar implements\n'
+//          '    Baz {\n'
+//          '}\n'
+//      );
+//    });
+
     test('initialIndent', () {
       var formatter = new CodeFormatter(
           new FormatterOptions(initialIndentationLevel: 2));
@@ -982,18 +1129,18 @@ main() {
   group('line', () {
 
     test('space', () {
-      var line = new Line(indent: 0);
+      var line = new Line(indentLevel: 0);
       line.addSpaces(2);
       expect(line.toString(), equals('  '));
     });
 
     test('initial indent', () {
-      var line = new Line(indent: 2);
+      var line = new Line(indentLevel: 2);
       expect(line.toString(), equals('    '));
     });
 
     test('initial indent (tabbed)', () {
-      var line = new Line(indent:1, useTabs: true);
+      var line = new Line(indentLevel:1, useTabs: true);
       expect(line.toString(), equals('\t'));
     });
 
@@ -1004,33 +1151,32 @@ main() {
     });
 
     test('addToken (2)', () {
-      var line = new Line(indent: 1);
+      var line = new Line(indentLevel: 1);
       line.addToken(new LineToken('foo'));
       expect(line.toString(), equals('  foo'));
     });
 
     test('isWhitespace', () {
-      var line = new Line(indent: 1);
+      var line = new Line(indentLevel: 1);
       expect(line.isWhitespace(), isTrue);
     });
 
   });
-
 
   /// Writer tests
   group('writer', () {
 
     test('basic print', () {
       var writer = new SourceWriter();
-      writer.print('foo');
-      writer.print(' ');
-      writer.print('bar');
+      writer.write('foo');
+      writer.write(' ');
+      writer.write('bar');
       expect(writer.toString(), equals('foo bar'));
     });
 
     test('newline', () {
       var writer = new SourceWriter();
-      writer.print('foo');
+      writer.write('foo');
       writer.newline();
       expect(writer.toString(), equals('foo\n'));
     });
@@ -1043,26 +1189,145 @@ main() {
 
     test('basic print (with indents)', () {
       var writer = new SourceWriter();
-      writer.print('foo');
+      writer.write('foo');
       writer.indent();
       writer.newline();
-      writer.print('bar');
+      writer.write('bar');
       writer.unindent();
       writer.newline();
-      writer.print('baz');
+      writer.write('baz');
       expect(writer.toString(), equals('foo\n  bar\nbaz'));
     });
 
   });
 
 
+
+  /// Line breaker tests
+  group('linebreaker', () {
+
+    List<Chunk> breakLine(Line line, int maxLength) =>
+        new SimpleLineBreaker(maxLength).breakLine(line);
+
+    String printLine(Line line, int maxLength) =>
+        new SimpleLineBreaker(maxLength).printLine(line);
+
+    Line line(List tokens) {
+      var line = new Line();
+      tokens.forEach((t) =>
+          line.addToken(t is LineToken ? t : new LineToken(t)));
+      return line;
+    }
+
+    expectTextsEqual(List<Chunk> chunks, List<String> texts) {
+      expect(chunks.map((chunk) => chunk.toString()), orderedEquals(texts));
+    }
+
+    expectTokensEqual(List<LineToken> tokens, List<String> texts) {
+      expect(tokens.map((token) => token.toString()), orderedEquals(texts));
+    }
+
+
+    final SP_1 = new SpaceToken(1, breakWeight: 1);
+
+    // 'foo|1|bar|1|baz|1|foo|1|bar|1|baz'
+    final LINE_1 = line(['foo', SP_1, 'bar', SP_1, 'baz', SP_1,
+                         'foo', SP_1, 'bar', SP_1, 'baz']);
+
+    // '  foo|1|bar|1|baz|1|foo|1|bar|1|baz'
+    final LINE_2 = line(['  foo', SP_1, 'bar', SP_1, 'baz', SP_1,
+                         'foo', SP_1, 'bar', SP_1, 'baz']);
+
+    test('breakLine - 0', () {
+      var chunks = breakLine(line(['  foo']), 8);
+      expectTextsEqual(chunks, ['  foo']);
+    });
+
+    test('breakLine - 1', () {
+      var chunks = breakLine(LINE_1, 1);
+      expectTextsEqual(chunks, ['foo', 'bar', 'baz', 'foo', 'bar', 'baz']);
+    });
+
+    test('breakLine - 2', () {
+      var chunks = breakLine(LINE_1, 4);
+      expectTextsEqual(chunks, ['foo', 'bar', 'baz', 'foo', 'bar', 'baz']);
+    });
+
+    test('breakLine - 3', () {
+      var chunks = breakLine(LINE_1, 8);
+      expectTextsEqual(chunks, ['foo bar', 'baz foo', 'bar baz']);
+    });
+
+    test('breakLine - 4', () {
+      var chunks = breakLine(LINE_1, 12);
+      expectTextsEqual(chunks, ['foo bar baz', 'foo bar baz']);
+    });
+
+    test('breakLine - 5', () {
+      var chunks = breakLine(LINE_2, 16);
+      expectTextsEqual(chunks, ['  foo bar baz', 'foo bar baz']);
+    });
+
+    test('printLine - 1', () {
+      var line = printLine(LINE_1, 1);
+      expect(line, 'foo\nbar\nbaz\nfoo\nbar\nbaz');
+    });
+
+    test('printLine - 2', () {
+      var line = printLine(LINE_1, 4);
+      expect(line, 'foo\nbar\nbaz\nfoo\nbar\nbaz');
+    });
+
+    test('printLine - 3', () {
+      var line = printLine(LINE_1, 8);
+      expect(line, 'foo bar\nbaz foo\nbar baz');
+    });
+
+    test('printLine - 4', () {
+      var line = printLine(LINE_1, 12);
+      expect(line, 'foo bar baz\nfoo bar baz');
+    });
+
+    test('isWhitespace', () {
+      expect(isWhitespace('foo'), false);
+      expect(isWhitespace('  foo'), false);
+      expect(isWhitespace('foo  '), false);
+      expect(isWhitespace(' foo '), false);
+      expect(isWhitespace(' '), true);
+      expect(isWhitespace('  '), true);
+      expect(isWhitespace('\t'), true);
+      expect(isWhitespace('\t\t'), true);
+      expect(isWhitespace('\n'), true);
+      expect(isWhitespace('\r'), true);
+    });
+
+    test('preprocess - 1', () {
+      var tokens = line(['f', 'o', 'o', SP_1, 'b', 'a', 'r']).tokens;
+      var processed = SimpleLineBreaker.preprocess(tokens);
+      expectTokensEqual(processed, ['foo', ' ', 'bar']);
+    });
+
+    test('preprocess - 2', () {
+      var tokens = line(['f', 'o', 'o', SP_1, SP_1, 'b', 'a', 'r']).tokens;
+      var processed = SimpleLineBreaker.preprocess(tokens);
+      expectTokensEqual(processed, ['foo', ' ', ' ', 'bar']);
+    });
+
+    test('preprocess - 3', () {
+      var tokens = line(['f', 'o', 'o', SP_1, 'b', 'a', 'r', SP_1]).tokens;
+      var processed = SimpleLineBreaker.preprocess(tokens);
+      expectTokensEqual(processed, ['foo', ' ', 'bar', ' ']);
+    });
+
+  });
+
   /// Helper method tests
   group('helpers', () {
 
     test('indentString', () {
       expect(getIndentString(0), '');
-      expect(getIndentString(1), ' ');
-      expect(getIndentString(4), '    ');
+      expect(getIndentString(1), '  ');
+      expect(getIndentString(4), '        ');
     });
 
     test('indentString (tabbed)', () {
@@ -1121,7 +1386,7 @@ String formatStatement(src, {options: const FormatterOptions()}) =>
     new CodeFormatter(options).format(CodeKind.STATEMENT, src).source;
 
 Token tokenize(String str) {
-  var reader = new CharSequenceReader(new CharSequence(str));
+  var reader = new CharSequenceReader(str);
   return new Scanner(null, reader, null).tokenize();
 }
 
@@ -1155,3 +1420,24 @@ expectCUFormatsTo(src, expected, {transforms: true}) =>
 expectStmtFormatsTo(src, expected, {transforms: true}) =>
     expect(formatStatement(src, options:
       new FormatterOptions(codeTransforms: transforms)), equals(expected));
+
+
+runTests(testFileName, expectClause(input, output)) {
+
+  var testIndex = 1;
+  var testFile = new File(join(TEST_DATA_DIR, testFileName));
+  var lines = testFile.readAsLinesSync();
+
+  for (var i = 1; i < lines.length; ++i) {
+    var input = '', expectedOutput = '';
+    while(!lines[i].startsWith('<<<')) {
+      input += lines[i++] + '\n';
+    }
+    while(++i < lines.length && !lines[i].startsWith('>>>')) {
+      expectedOutput += lines[i] + '\n';
+    }
+    test('test - (${testIndex++})', () {
+      expectClause(input, expectedOutput);
+    });
+  }
+}

@@ -23,6 +23,7 @@ namespace bin {
 // Advanced I/O classes like sockets and process management are implemented
 // using functions listed in io_natives.cc.
 #define BUILTIN_NATIVE_LIST(V)                                                 \
+  V(Crypto_GetRandomBytes, 1)                                                  \
   V(Directory_Exists, 1)                                                       \
   V(Directory_Create, 1)                                                       \
   V(Directory_Current, 0)                                                      \
@@ -61,13 +62,6 @@ namespace bin {
   V(File_GetStdioHandleType, 1)                                                \
   V(File_GetType, 2)                                                           \
   V(File_AreIdentical, 2)                                                      \
-  V(FileSystemWatcher_CloseWatcher, 1)                                         \
-  V(FileSystemWatcher_GetSocketId, 2)                                          \
-  V(FileSystemWatcher_InitWatcher, 0)                                          \
-  V(FileSystemWatcher_IsSupported, 0)                                          \
-  V(FileSystemWatcher_ReadEvents, 2)                                           \
-  V(FileSystemWatcher_UnwatchPath, 2)                                          \
-  V(FileSystemWatcher_WatchPath, 4)                                            \
   V(Logger_PrintString, 1)
 
 BUILTIN_NATIVE_LIST(DECLARE_FUNCTION);
@@ -85,11 +79,14 @@ static struct NativeEntries {
  * Looks up native functions in both libdart_builtin and libdart_io.
  */
 Dart_NativeFunction Builtin::NativeLookup(Dart_Handle name,
-                                          int argument_count) {
+                                          int argument_count,
+                                          bool* auto_setup_scope) {
   const char* function_name = NULL;
   Dart_Handle result = Dart_StringToCString(name, &function_name);
   DART_CHECK_VALID(result);
   ASSERT(function_name != NULL);
+  ASSERT(auto_setup_scope != NULL);
+  *auto_setup_scope = true;
   int num_entries = sizeof(BuiltinEntries) / sizeof(struct NativeEntries);
   for (int i = 0; i < num_entries; i++) {
     struct NativeEntries* entry = &(BuiltinEntries[i]);
@@ -98,7 +95,7 @@ Dart_NativeFunction Builtin::NativeLookup(Dart_Handle name,
       return reinterpret_cast<Dart_NativeFunction>(entry->function_);
     }
   }
-  return IONativeLookup(name, argument_count);
+  return IONativeLookup(name, argument_count, auto_setup_scope);
 }
 
 
@@ -114,10 +111,13 @@ void FUNCTION_NAME(Logger_PrintString)(Dart_NativeArguments args) {
     // an isolate gets interrupted by the embedder in the middle of
     // Dart_StringToUTF8?  We need to make sure not to swallow the
     // interrupt.
-    Platform::PrintBlocking(stdout, "%s\n", Dart_GetError(result));
+    fprintf(stdout, "%s\n", Dart_GetError(result));
   } else {
-    Platform::PrintBlocking(stdout, "%.*s\n", static_cast<int>(length), chars);
+    // Uses fwrite to support printing NUL bytes.
+    fwrite(chars, 1, length, stdout);
+    fputs("\n", stdout);
   }
+  fflush(stdout);
 }
 
 }  // namespace bin

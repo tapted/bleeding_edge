@@ -5,7 +5,6 @@
 library elements.modelx;
 
 import 'elements.dart';
-import '../../compiler.dart' as api;
 import '../tree/tree.dart';
 import '../util/util.dart';
 import '../resolution/resolution.dart';
@@ -50,10 +49,12 @@ abstract class ElementX implements Element {
 
   Node parseNode(DiagnosticListener listener) {
     listener.internalErrorOnElement(this, 'not implemented');
+    return null;
   }
 
   DartType computeType(Compiler compiler) {
     compiler.internalError("$this.computeType.", token: position());
+    return null;
   }
 
   void addMetadata(MetadataAnnotation annotation) {
@@ -298,7 +299,7 @@ abstract class ElementX implements Element {
 /**
  * Represents an unresolvable or duplicated element.
  *
- * An [ErroneousElement] is used instead of [null] to provide additional
+ * An [ErroneousElement] is used instead of [:null:] to provide additional
  * information about the error that caused the element to be unresolvable
  * or otherwise invalid.
  *
@@ -405,7 +406,7 @@ class WarnOnUseElementX extends ElementX implements WarnOnUseElement {
     if (warning != null) {
       Spannable spannable = warning.spannable;
       if (spannable == null) spannable = usageSpannable;
-      listener.reportWarningCode(
+      listener.reportWarning(
           spannable, warning.messageKind, warning.messageArguments);
     }
     if (info != null) {
@@ -434,7 +435,7 @@ class AmbiguousElementX extends ElementX implements AmbiguousElement {
   /**
    * The message to report on resolving this element.
    */
-  final DualKind messageKind;
+  final MessageKind messageKind;
 
   /**
    * The message arguments to report on resolving this element.
@@ -511,10 +512,8 @@ class ScopeX {
       if (!identical(existing, element)) {
         listener.reportError(
             element, MessageKind.DUPLICATE_DEFINITION, {'name': name});
-        listener.reportMessage(
-            listener.spanFromSpannable(existing),
-            MessageKind.EXISTING_DEFINITION.error({'name': name}),
-            api.Diagnostic.INFO);
+        listener.reportInfo(existing,
+            MessageKind.EXISTING_DEFINITION, {'name': name});
       }
     }
   }
@@ -606,10 +605,7 @@ class CompilationUnitElementX extends ElementX
   void setPartOf(PartOf tag, DiagnosticListener listener) {
     LibraryElementX library = enclosingElement;
     if (library.entryCompilationUnit == this) {
-      listener.reportMessage(
-          listener.spanFromSpannable(tag),
-          MessageKind.ILLEGAL_DIRECTIVE.error(),
-          api.Diagnostic.WARNING);
+      listener.reportError(tag, MessageKind.ILLEGAL_DIRECTIVE);
       return;
     }
     if (!localMembers.isEmpty) {
@@ -617,24 +613,25 @@ class CompilationUnitElementX extends ElementX
       return;
     }
     if (partTag != null) {
-      listener.reportMessage(
-          listener.spanFromSpannable(tag),
-          MessageKind.DUPLICATED_PART_OF.error(),
-          api.Diagnostic.WARNING);
+      listener.reportWarning(tag, MessageKind.DUPLICATED_PART_OF);
       return;
     }
     partTag = tag;
     LibraryName libraryTag = getLibrary().libraryTag;
+    String actualName = tag.name.toString();
     if (libraryTag != null) {
-      String actualName = tag.name.toString();
       String expectedName = libraryTag.name.toString();
       if (expectedName != actualName) {
-        listener.reportMessage(
-            listener.spanFromSpannable(tag.name),
-            MessageKind.LIBRARY_NAME_MISMATCH.error(
-                {'libraryName': expectedName}),
-            api.Diagnostic.WARNING);
+        listener.reportWarning(tag.name,
+            MessageKind.LIBRARY_NAME_MISMATCH,
+            {'libraryName': expectedName});
       }
+    } else {
+      listener.reportWarning(getLibrary(),
+          MessageKind.MISSING_LIBRARY_NAME,
+          {'libraryName': actualName});
+      listener.reportInfo(tag.name,
+          MessageKind.THIS_IS_THE_PART_OF_TAG);
     }
   }
 
@@ -931,6 +928,8 @@ class LibraryElementX extends ElementX implements LibraryElement {
     exports.forEach((Element e) => f(e));
   }
 
+  Link<Import> getImportsFor(Element element) => importers.getImports(element);
+
   void forEachLocalMember(f(Element element)) {
     if (isPatch) {
       // Patch libraries traverse both origin and injected members.
@@ -971,6 +970,9 @@ class LibraryElementX extends ElementX implements LibraryElement {
    * Returns the library name (as defined by the library tag) or for script
    * (which have no library tag) the script file name. The latter case is used
    * to private 'library name' for scripts to use for instance in dartdoc.
+   *
+   * Note: the returned filename will still be escaped ("a%20b.dart" instead of
+   * "a b.dart").
    */
   String getLibraryOrScriptName() {
     if (libraryTag != null) {
@@ -1115,7 +1117,12 @@ class TypedefElementX extends ElementX implements TypedefElement {
   accept(ElementVisitor visitor) => visitor.visitTypedefElement(this);
 }
 
-class VariableElementX extends ElementX implements VariableElement {
+abstract class MetadataContainer extends Element {
+  Link<MetadataAnnotation> metadata;
+}
+
+class VariableElementX extends ElementX implements VariableElement,
+    MetadataContainer {
   final VariableListElement variables;
   Expression cachedNode; // The send or the identifier in the variables list.
 
@@ -1134,6 +1141,12 @@ class VariableElementX extends ElementX implements VariableElement {
         variables = null,
         super(name, kind, enclosing);
 
+  void addMetadata(MetadataAnnotation metadata) {
+    variables.addMetadata(metadata);
+  }
+
+  Link<MetadataAnnotation> get metadata => variables.metadata;
+
   Node parseNode(DiagnosticListener listener) {
     if (cachedNode != null) return cachedNode;
     VariableDefinitions definitions = variables.parseNode(listener);
@@ -1150,6 +1163,7 @@ class VariableElementX extends ElementX implements VariableElement {
       }
     }
     listener.cancel('internal error: could not find $name', node: variables);
+    return null;
   }
 
   DartType computeType(Compiler compiler) {
@@ -1180,18 +1194,19 @@ class FieldElementX extends VariableElementX implements FieldElement {
  * Parameters in constructors that directly initialize fields. For example:
  * [:A(this.field):].
  */
-class FieldParameterElementX extends VariableElementX
+class FieldParameterElementX extends ParameterElementX
     implements FieldParameterElement {
   VariableElement fieldElement;
 
   FieldParameterElementX(String name,
-                         this.fieldElement,
-                         VariableListElement variables,
-                         Node node)
-      : super(name, variables, ElementKind.FIELD_PARAMETER, node);
+                         Element enclosingElement,
+                         VariableDefinitions variables,
+                         Expression node,
+                         this.fieldElement)
+      : super(name, enclosingElement, ElementKind.FIELD_PARAMETER,
+          variables, node);
 
   DartType computeType(Compiler compiler) {
-    VariableDefinitions definitions = variables.parseNode(compiler);
     if (definitions.type == null) {
       return fieldElement.computeType(compiler);
     }
@@ -1205,17 +1220,13 @@ class FieldParameterElementX extends VariableElementX
 // It contains the node, and the type. A [VariableElement] always
 // references its [VariableListElement]. It forwards its
 // [computeType] and [parseNode] methods to this element.
-class VariableListElementX extends ElementX implements VariableListElement {
+class VariableListElementX extends ElementX implements VariableListElement,
+    MetadataContainer {
   VariableDefinitions cachedNode;
   DartType type;
   final Modifiers modifiers;
 
-  /**
-   * Function signature for a variable with a function type. The signature is
-   * kept to provide full information about parameter names through the mirror
-   * system.
-   */
-  FunctionSignature functionSignature;
+  FunctionSignature get functionSignature => null;
 
   VariableListElementX(ElementKind kind,
                        Modifiers this.modifiers,
@@ -1242,20 +1253,7 @@ class VariableListElementX extends ElementX implements VariableListElement {
       if (node.type != null) {
         type = compiler.resolveTypeAnnotation(this, node.type);
       } else {
-        // Is node.definitions exactly one FunctionExpression?
-        Link<Node> link = node.definitions.nodes;
-        if (!link.isEmpty &&
-            link.head.asFunctionExpression() != null &&
-            link.tail.isEmpty) {
-          FunctionExpression functionExpression = link.head;
-          // We found exactly one FunctionExpression
-          functionSignature =
-              compiler.resolveFunctionExpression(this, functionExpression);
-          type = compiler.computeFunctionType(compiler.functionClass,
-                                              functionSignature);
-        } else {
-          type = compiler.types.dynamicType;
-        }
+        type = compiler.types.dynamicType;
       }
     });
     assert(type != null);
@@ -1269,6 +1267,59 @@ class VariableListElementX extends ElementX implements VariableListElement {
   }
 
   accept(ElementVisitor visitor) => visitor.visitVariableListElement(this);
+}
+
+/// [Element] for a formal parameter.
+///
+/// A [ParameterElementX] can be patched. A parameter of an external method is
+/// patched with the corresponding parameter of the patch method. This is done
+/// to ensure that default values on parameters are computed once (on the
+/// origin parameter) but can be found through both the origin and the patch.
+class ParameterElementX extends ElementX
+    implements VariableElement, VariableListElement, MetadataContainer {
+  VariableDefinitions definitions;
+  Expression cachedNode;
+  DartType type;
+
+  /**
+   * Function signature for a variable with a function type. The signature is
+   * kept to provide full information about parameter names through the mirror
+   * system.
+   */
+  FunctionSignature functionSignature;
+
+  ParameterElementX(String name,
+                    Element enclosingElement,
+                    ElementKind elementKind,
+                    VariableDefinitions definitions,
+                    Expression node)
+      : this.definitions = definitions,
+        this.cachedNode = node,
+        super(name, elementKind, enclosingElement);
+
+  VariableListElement get variables => this;
+
+  Modifiers get modifiers => definitions.modifiers;
+
+  Token position() => cachedNode.getBeginToken();
+
+  Node parseNode(DiagnosticListener listener) => cachedNode;
+
+  DartType computeType(Compiler compiler) {
+    assert(invariant(this, type != null,
+        message: "Parameter type has not been set for $this."));
+    return type;
+  }
+
+  FunctionType get functionType => type;
+
+  accept(ElementVisitor visitor) => visitor.visitVariableElement(this);
+
+  ParameterElementX patch = null;
+  ParameterElementX origin = null;
+
+  bool get isPatch => origin != null;
+  bool get isPatched => patch != null;
 }
 
 class AbstractFieldElementX extends ElementX implements AbstractFieldElement {
@@ -1518,8 +1569,7 @@ class FunctionElementX extends ElementX implements FunctionElement {
     assert(invariant(this, redirectionTargetType != null,
         message: 'Redirection target type has not yet been computed for '
                  '$this.'));
-    return redirectionTargetType.subst(newType.typeArguments,
-                                       newType.element.typeVariables);
+    return redirectionTargetType.substByContext(newType);
   }
 
   /**
@@ -1577,7 +1627,14 @@ class FunctionElementX extends ElementX implements FunctionElement {
     return cachedNode;
   }
 
-  Token position() => cachedNode.getBeginToken();
+  Token position() {
+    // Use the name as position if this is not an unnamed closure.
+    if (cachedNode.name != null) {
+      return cachedNode.name.getBeginToken();
+    } else {
+      return cachedNode.getBeginToken();
+    }
+  }
 
   FunctionElement asFunctionElement() => this;
 
@@ -1617,6 +1674,7 @@ class ConstructorBodyElementX extends FunctionElementX
 
   FunctionType computeType(Compiler compiler) {
     compiler.internalErrorOnElement(this, '$this.computeType.');
+    return null;
   }
 
   Node parseNode(DiagnosticListener listener) {
@@ -1627,6 +1685,8 @@ class ConstructorBodyElementX extends FunctionElementX
   }
 
   Token position() => constructor.position();
+
+  Element getOutermostEnclosingMemberOrTopLevel() => constructor;
 
   accept(ElementVisitor visitor) => visitor.visitConstructorBodyElement(this);
 }
@@ -1671,6 +1731,8 @@ class SynthesizedConstructorElementX extends FunctionElementX {
       return functionSignature = compiler.objectClass.localLookup('')
           .computeSignature(compiler);
     }
+    // TODO(johnniwinther): Ensure that the function signature (and with it the
+    // function type) substitutes type variables correctly.
     return functionSignature = superMember.computeSignature(compiler);
   }
 
@@ -1759,6 +1821,7 @@ abstract class BaseClassElementX extends ElementX implements ClassElement {
   int resolutionState;
   bool get isResolved => resolutionState == STATE_DONE;
   bool isProxy = false;
+  bool hasIncompleteHierarchy = false;
 
   // backendMembers are members that have been added by the backend to simplify
   // compilation. They don't have any user-side counter-part.
@@ -1769,6 +1832,9 @@ abstract class BaseClassElementX extends ElementX implements ClassElement {
   Link<DartType> get allSupertypes => allSupertypesAndSelf.supertypes;
 
   int get hierarchyDepth => allSupertypesAndSelf.maxDepth;
+
+  Map<Name, Member> classMembers;
+  Map<Name, MemberSignature> interfaceMembers;
 
   BaseClassElementX(String name,
                     Element enclosing,
@@ -1869,6 +1935,7 @@ abstract class BaseClassElementX extends ElementX implements ClassElement {
         return element;
       }
     }
+    return null;
   }
   /**
    * Lookup super members for the class. This will ignore constructors.
@@ -2142,6 +2209,24 @@ abstract class BaseClassElementX extends ElementX implements ClassElement {
   bool isNative() => nativeTagInfo != null;
   void setNative(String name) {
     nativeTagInfo = name;
+  }
+
+  Member lookupClassMember(Name name) => classMembers[name];
+
+  void forEachClassMember(f(Member member)) {
+    classMembers.forEach((_, member) => f(member));
+  }
+
+  MemberSignature lookupInterfaceMember(Name name) => interfaceMembers[name];
+
+  void forEachInterfaceMember(f(MemberSignature member)) {
+    interfaceMembers.forEach((_, member) => f(member));
+  }
+
+  FunctionType get callType {
+    MemberSignature member =
+        lookupInterfaceMember(const PublicName(Compiler.CALL_OPERATOR_NAME));
+    return member != null && member.isMethod ? member.type : null;
   }
 }
 
@@ -2427,7 +2512,7 @@ abstract class MetadataAnnotationX implements MetadataAnnotation {
    * The compile-time constant which this annotation resolves to.
    * In the mirror system, this would be an object mirror.
    */
-  Constant get value;
+  Constant value;
   Element annotatedElement;
   int resolutionState;
 
@@ -2445,5 +2530,20 @@ abstract class MetadataAnnotationX implements MetadataAnnotation {
     return this;
   }
 
+  Node parseNode(DiagnosticListener listener);
+
   String toString() => 'MetadataAnnotation($value, $resolutionState)';
+}
+
+/// Metadata annotation on a parameter.
+class ParameterMetadataAnnotation extends MetadataAnnotationX {
+  final Metadata metadata;
+
+  ParameterMetadataAnnotation(Metadata this.metadata);
+
+  Node parseNode(DiagnosticListener listener) => metadata.expression;
+
+  Token get beginToken => metadata.getBeginToken();
+
+  Token get endToken => metadata.getEndToken();
 }

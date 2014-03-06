@@ -26,6 +26,7 @@ import com.google.dart.tools.core.model.DartProject;
 import com.google.dart.tools.core.model.SourceReference;
 import com.google.dart.tools.core.model.TypeMember;
 import com.google.dart.tools.internal.corext.refactoring.util.ExecutionUtils;
+import com.google.dart.tools.internal.corext.refactoring.util.ReflectionUtils;
 import com.google.dart.tools.internal.corext.refactoring.util.RunnableEx;
 import com.google.dart.tools.ui.DartToolsPlugin;
 import com.google.dart.tools.ui.DartUI;
@@ -61,6 +62,7 @@ import org.eclipse.jface.action.IMenuManager;
 import org.eclipse.jface.dialogs.ErrorDialog;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.preference.IPreferenceStore;
+import org.eclipse.jface.text.AbstractInformationControlManager;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.BadPositionCategoryException;
 import org.eclipse.jface.text.DefaultLineTracker;
@@ -102,7 +104,6 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.custom.VerifyKeyListener;
 import org.eclipse.swt.events.DisposeListener;
-import org.eclipse.swt.events.FocusListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.events.VerifyEvent;
@@ -142,7 +143,7 @@ import java.util.Stack;
  * Dart code editor.
  */
 public class CompilationUnitEditor extends DartEditor implements IDartReconcilingListener_OLD {
-  class AdaptedSourceViewer extends DartSourceViewer {
+  public class AdaptedSourceViewer extends DartSourceViewer {
 
     public AdaptedSourceViewer(Composite parent, IVerticalRuler verticalRuler,
         IOverviewRuler overviewRuler, boolean showAnnotationsOverview, int styles,
@@ -202,6 +203,10 @@ public class CompilationUnitEditor extends DartEditor implements IDartReconcilin
       return fContentAssistant;
     }
 
+    public CompilationUnitEditor getEditor() {
+      return CompilationUnitEditor.this;
+    }
+
     @Override
     public boolean requestWidgetToken(IWidgetTokenKeeper requester) {
       if (PlatformUI.getWorkbench().getHelpSystem().isContextHelpDisplayed()) {
@@ -216,6 +221,20 @@ public class CompilationUnitEditor extends DartEditor implements IDartReconcilin
         return false;
       }
       return super.requestWidgetToken(requester, priority);
+    }
+
+    @Override
+    protected void ensureAnnotationHoverManagerInstalled() {
+      super.ensureAnnotationHoverManagerInstalled();
+      // Hack to force ANCHOR_TOP instead of default ANCHOR_RIGHT.
+      // https://code.google.com/p/dart/issues/detail?id=17109
+      try {
+        AbstractInformationControlManager manager = ReflectionUtils.getFieldObject(
+            this,
+            "fVerticalRulerHoveringController");
+        manager.setAnchor(AbstractInformationControlManager.ANCHOR_TOP);
+      } catch (Throwable e) {
+      }
     }
 
     @Override
@@ -301,6 +320,9 @@ public class CompilationUnitEditor extends DartEditor implements IDartReconcilin
 
     @Override
     public void verifyKey(VerifyEvent event) {
+      if (!isEditable()) {
+        return;
+      }
 
       // early pruning to slow down normal typing as little as possible
       if (!event.doit || getInsertMode() != SMART_INSERT || isBlockSelectionModeEnabled()
@@ -396,6 +418,9 @@ public class CompilationUnitEditor extends DartEditor implements IDartReconcilin
             }
             if (prevToken == Symbols.TokenIDENT && "r".equals(previous)) {
               break; // handle raw strings
+            }
+            if (prevToken == Symbols.TokenRBRACE) {
+              return; // "${expression}^
             }
             if (nextToken == Symbols.TokenIDENT || prevToken == Symbols.TokenIDENT || next != null
                 && next.length() > 1
@@ -1229,11 +1254,6 @@ public class CompilationUnitEditor extends DartEditor implements IDartReconcilin
   @Override
   public void addViewerDisposeListener(DisposeListener listener) {
     getViewer().getTextWidget().addDisposeListener(listener);
-  }
-
-  @Override
-  public void addViewerFocusListener(FocusListener listener) {
-    getViewer().getTextWidget().addFocusListener(listener);
   }
 
   @Override

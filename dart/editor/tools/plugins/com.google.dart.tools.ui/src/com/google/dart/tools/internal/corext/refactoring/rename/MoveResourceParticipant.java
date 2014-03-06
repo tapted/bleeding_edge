@@ -18,6 +18,7 @@ import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.ast.Directive;
 import com.google.dart.engine.ast.StringLiteral;
 import com.google.dart.engine.ast.UriBasedDirective;
+import com.google.dart.engine.context.AnalysisContext;
 import com.google.dart.engine.element.CompilationUnitElement;
 import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ExportElement;
@@ -62,7 +63,6 @@ import org.eclipse.text.edits.TextEdit;
 import java.io.File;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.CharBuffer;
 import java.util.List;
 
 /**
@@ -71,25 +71,6 @@ import java.util.List;
  * @coverage dart.editor.ui.refactoring.core
  */
 public class MoveResourceParticipant extends MoveParticipant {
-  /**
-   * @return the {@link String} content of the given {@link Source}.
-   */
-  private static String getSourceContent(Source source) throws Exception {
-    final String result[] = {null};
-    source.getContents(new Source.ContentReceiver() {
-      @Override
-      public void accept(CharBuffer contents, long modificationTime) {
-        result[0] = contents.toString();
-      }
-
-      @Override
-      public void accept(String contents, long modificationTime) {
-        result[0] = contents;
-      }
-    });
-    return result[0];
-  }
-
   /**
    * @return the Java {@link File} which corresponds to the given {@link Source}, may be
    *         {@code null} if cannot be determined.
@@ -103,9 +84,11 @@ public class MoveResourceParticipant extends MoveParticipant {
   }
 
   private static boolean isPackageReference(SearchMatch match) throws Exception {
-    Source source = match.getElement().getSource();
+    Element element = match.getElement();
+    AnalysisContext context = element.getContext();
+    Source source = element.getSource();
     int offset = match.getSourceRange().getOffset() + "'".length();
-    String content = getSourceContent(source);
+    String content = context.getContents(source).getData().toString();
     return content.startsWith("package:", offset);
   }
 
@@ -178,7 +161,7 @@ public class MoveResourceParticipant extends MoveParticipant {
       File destDir = destContainer.getLocation().toFile();
       File destFile = new File(destDir, file.getName());
       SourceFactory sourceFactory = match.getElement().getContext().getSourceFactory();
-      FileBasedSource destSource = new FileBasedSource(sourceFactory.getContentCache(), destFile);
+      FileBasedSource destSource = new FileBasedSource(destFile);
       URI destUri = sourceFactory.restoreUri(destSource);
       if (destUri != null) {
         newUri = destUri.toString();
@@ -257,11 +240,10 @@ public class MoveResourceParticipant extends MoveParticipant {
   private Change createChangeEx(IProgressMonitor pm) throws Exception {
     MoveArguments arguments = getArguments();
     // prepare unit
-    CompilationUnit fileUnit = DartElementUtil.getResolvedCompilationUnit(file);
-    if (fileUnit == null) {
+    CompilationUnitElement fileElement = DartElementUtil.getCompilationUnitElement(file);
+    if (fileElement == null) {
       return null;
     }
-    CompilationUnitElement fileElement = fileUnit.getElement();
     // update references
     Object destination = arguments.getDestination();
     if (arguments.getUpdateReferences() && destination instanceof IContainer) {
@@ -277,6 +259,12 @@ public class MoveResourceParticipant extends MoveParticipant {
       {
         LibraryElement library = fileElement.getLibrary();
         if (library != null && Objects.equal(library.getDefiningCompilationUnit(), fileElement)) {
+          // prepare resolved unit AST
+          CompilationUnit fileUnit = DartElementUtil.resolveCompilationUnit(file);
+          if (fileUnit == null) {
+            return null;
+          }
+          //  update directives
           URI newUnitUri = destContainer.getLocationURI();
           for (Directive directive : fileUnit.getDirectives()) {
             if (directive instanceof UriBasedDirective) {

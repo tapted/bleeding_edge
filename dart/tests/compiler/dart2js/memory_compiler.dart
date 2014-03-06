@@ -4,7 +4,6 @@
 
 library dart2js.test.memory_compiler;
 
-import 'package:expect/expect.dart';
 import 'memory_source_file_helper.dart';
 
 import '../../../sdk/lib/_internal/compiler/implementation/dart2jslib.dart'
@@ -15,8 +14,8 @@ import '../../../sdk/lib/_internal/compiler/compiler.dart'
 
 import 'dart:async';
 
-import '../../../sdk/lib/_internal/compiler/implementation/mirrors/mirrors.dart';
-import '../../../sdk/lib/_internal/compiler/implementation/mirrors/dart2js_mirror.dart';
+import '../../../sdk/lib/_internal/compiler/implementation/mirrors/source_mirrors.dart';
+import '../../../sdk/lib/_internal/compiler/implementation/mirrors/analyze.dart';
 
 class DiagnosticMessage {
   final Uri uri;
@@ -26,6 +25,8 @@ class DiagnosticMessage {
   final Diagnostic kind;
 
   DiagnosticMessage(this.uri, this.begin, this.end, this.message, this.kind);
+
+  String toString() => '$uri:$begin:$end:$message:$kind';
 }
 
 class DiagnosticCollector {
@@ -51,6 +52,10 @@ class DiagnosticCollector {
 
   Iterable<DiagnosticMessage> get hints {
     return filterMessagesByKind(Diagnostic.HINT);
+  }
+
+  Iterable<DiagnosticMessage> get infos {
+    return filterMessagesByKind(Diagnostic.INFO);
   }
 }
 
@@ -81,10 +86,13 @@ Compiler compilerFor(Map<String,String> memorySourceFiles,
                      {DiagnosticHandler diagnosticHandler,
                       List<String> options: const [],
                       Compiler cachedCompiler,
-                      bool showDiagnostics: true}) {
-  Uri script = currentDirectory.resolveUri(Platform.script);
-  Uri libraryRoot = script.resolve('../../../sdk/');
-  Uri packageRoot = script.resolve('./packages/');
+                      bool showDiagnostics: true,
+                      Uri packageRoot}) {
+  Uri libraryRoot = Uri.base.resolve('sdk/');
+  Uri script = Uri.base.resolveUri(Platform.script);
+  if (packageRoot == null) {
+    packageRoot = Uri.base.resolve('${Platform.packageRoot}/');
+  }
 
   MemorySourceFileProvider provider;
   var readStringFromUri;
@@ -99,10 +107,7 @@ Compiler compilerFor(Map<String,String> memorySourceFiles,
     // files must be available to the new diagnostic handler.
     provider = expando[cachedCompiler.provider];
     readStringFromUri = cachedCompiler.provider;
-    provider.memorySourceFiles.clear();
-    memorySourceFiles.forEach((key, value) {
-      provider.memorySourceFiles[key] = value;
-    });
+    provider.memorySourceFiles = memorySourceFiles;
   }
   var handler =
       createDiagnosticHandler(diagnosticHandler, provider, showDiagnostics);
@@ -157,9 +162,9 @@ Future<MirrorSystem> mirrorSystemFor(Map<String,String> memorySourceFiles,
                                      {DiagnosticHandler diagnosticHandler,
                                       List<String> options: const [],
                                       bool showDiagnostics: true}) {
-  Uri script = currentDirectory.resolveUri(Platform.script);
-  Uri libraryRoot = script.resolve('../../../sdk/');
-  Uri packageRoot = script.resolve('./packages/');
+  Uri libraryRoot = Uri.base.resolve('sdk/');
+  Uri packageRoot = Uri.base.resolve('${Platform.packageRoot}/');
+  Uri script = Uri.base.resolveUri(Platform.script);
 
   var provider = new MemorySourceFileProvider(memorySourceFiles);
   var handler =

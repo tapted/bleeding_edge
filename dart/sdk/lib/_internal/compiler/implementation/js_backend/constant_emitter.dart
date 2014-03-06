@@ -144,6 +144,10 @@ class ConstantReferenceEmitter implements ConstantVisitor<jsAst.Expression> {
   jsAst.Expression visitInterceptor(InterceptorConstant constant) {
     return emitCanonicalVersion(constant);
   }
+
+  jsAst.Expression visitDummy(DummyConstant constant) {
+    return new jsAst.LiteralNumber('0');
+  }
 }
 
 /**
@@ -177,6 +181,7 @@ class ConstantInitializerEmitter implements ConstantVisitor<jsAst.Expression> {
   jsAst.Expression visitFunction(FunctionConstant constant) {
     compiler.internalError(
         "The function constant does not need specific JS code");
+    return null;
   }
 
   jsAst.Expression visitNull(NullConstant constant) {
@@ -311,6 +316,10 @@ class ConstantInitializerEmitter implements ConstantVisitor<jsAst.Expression> {
         new jsAst.VariableUse(
             getJsConstructor(constant.dispatchedType.element)),
         'prototype');
+  }
+
+  jsAst.Expression visitDummy(DummyConstant constant) {
+    return _reference(constant);
   }
 
   jsAst.Expression visitConstructed(ConstructedConstant constant) {

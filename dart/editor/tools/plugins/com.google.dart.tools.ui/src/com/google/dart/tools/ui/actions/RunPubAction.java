@@ -49,9 +49,7 @@ public class RunPubAction extends InstrumentedSelectionDispatchAction {
   public static RunPubAction createPubDeployAction(IWorkbenchWindow window) {
     RunPubAction action = new RunPubAction(window, RunPubJob.BUILD_COMMAND);
     action.setText(NLS.bind(ActionMessages.RunPubAction_commandText, "Build"));
-    action.setDescription(NLS.bind(
-        ActionMessages.RunPubAction_commandDesc,
-        RunPubJob.BUILD_COMMAND));
+    action.setDescription(NLS.bind(ActionMessages.RunPubAction_commandDesc, RunPubJob.BUILD_COMMAND));
     return action;
   }
 
@@ -132,12 +130,11 @@ public class RunPubAction extends InstrumentedSelectionDispatchAction {
       while (object != null && ((IContainer) object).findMember(DartCore.PUBSPEC_FILE_NAME) == null) {
         object = ((IContainer) object).getParent();
       }
-      if (object != null) {
-
-        instrumentation.data("name", ((IContainer) object).getName());
-        savePubspecFile((IContainer) object);
-        runPubJob((IContainer) object);
-
+      if (object instanceof IContainer) {
+        IContainer container = (IContainer) object;
+        instrumentation.data("name", container.getName());
+        savePubspecFile(container);
+        runPubJob(container);
         return;
       } else {
         instrumentation.metric("Problem", "Object was null").log();

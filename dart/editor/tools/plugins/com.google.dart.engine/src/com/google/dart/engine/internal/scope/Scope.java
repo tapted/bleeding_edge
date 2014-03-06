@@ -13,7 +13,7 @@
  */
 package com.google.dart.engine.internal.scope;
 
-import com.google.dart.engine.ast.ASTNode;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.CompilationUnit;
 import com.google.dart.engine.ast.Identifier;
 import com.google.dart.engine.element.CompilationUnitElement;
@@ -24,6 +24,7 @@ import com.google.dart.engine.error.AnalysisError;
 import com.google.dart.engine.error.AnalysisErrorListener;
 import com.google.dart.engine.error.CompileTimeErrorCode;
 import com.google.dart.engine.source.Source;
+import com.google.dart.engine.utilities.general.StringUtilities;
 
 import java.util.HashMap;
 
@@ -37,7 +38,7 @@ public abstract class Scope {
   /**
    * The prefix used to mark an identifier as being private to its library.
    */
-  public static final String PRIVATE_NAME_PREFIX = "_"; //$NON-NLS-1$
+  public static final int PRIVATE_NAME_PREFIX = '_';
 
   /**
    * The suffix added to the declared name of a setter when looking up the setter. Used to
@@ -58,7 +59,7 @@ public abstract class Scope {
    * @return {@code true} if the given name is a library-private name
    */
   public static boolean isPrivateName(String name) {
-    return name != null && name.startsWith(PRIVATE_NAME_PREFIX);
+    return name != null && StringUtilities.startsWithChar(name, PRIVATE_NAME_PREFIX);
   }
 
   /**
@@ -124,21 +125,21 @@ public abstract class Scope {
   /**
    * Add the given element to this scope without checking for duplication or hiding.
    * 
+   * @param name the name of the element to be added
    * @param element the element to be added to this scope
    */
-  protected void defineWithoutChecking(Element element) {
-    definedNames.put(getName(element), element);
+  protected void defineNameWithoutChecking(String name, Element element) {
+    definedNames.put(name, element);
     hasName = true;
   }
 
   /**
    * Add the given element to this scope without checking for duplication or hiding.
    * 
-   * @param name the name of the element to be added
    * @param element the element to be added to this scope
    */
-  protected void defineWithoutChecking(String name, Element element) {
-    definedNames.put(name, element);
+  protected void defineWithoutChecking(Element element) {
+    definedNames.put(getName(element), element);
     hasName = true;
   }
 
@@ -177,7 +178,7 @@ public abstract class Scope {
    * @param identifier the identifier whose source is to be returned
    * @return the source that contains the given identifier
    */
-  protected final Source getSource(ASTNode node) {
+  protected final Source getSource(AstNode node) {
     CompilationUnit unit = node.getAncestor(CompilationUnit.class);
     if (unit != null) {
       CompilationUnitElement unitElement = unit.getElement();

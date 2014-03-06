@@ -246,6 +246,7 @@ class FlowGraphCompiler : public ValueObject {
 
   static bool SupportsUnboxedMints();
   static bool SupportsSinCos();
+  static bool SupportsUnboxedFloat32x4();
 
   // Accessors.
   Assembler* assembler() const { return assembler_; }
@@ -427,15 +428,13 @@ class FlowGraphCompiler : public ValueObject {
 
   const Class& double_class() const { return double_class_; }
   const Class& float32x4_class() const { return float32x4_class_; }
+  const Class& float64x2_class() const { return float64x2_class_; }
   const Class& int32x4_class() const { return int32x4_class_; }
 
   void SaveLiveRegisters(LocationSummary* locs);
   void RestoreLiveRegisters(LocationSummary* locs);
 
   Environment* SlowPathEnvironmentFor(Instruction* instruction);
-
-  // Returns true if the compiled function has a finally clause.
-  bool HasFinally() const;
 
   intptr_t CurrentTryIndex() const {
     if (current_block_ == NULL) {
@@ -472,8 +471,6 @@ class FlowGraphCompiler : public ValueObject {
   friend class CheckStackOverflowSlowPath;  // For pending_deoptimization_env_.
 
   void EmitFrameEntry();
-
-  void EmitTrySyncMove(intptr_t dest_offset, Location loc, bool* push_emitted);
 
   void AddStaticCallTarget(const Function& function);
 
@@ -596,6 +593,7 @@ class FlowGraphCompiler : public ValueObject {
 
   const Class& double_class_;
   const Class& float32x4_class_;
+  const Class& float64x2_class_;
   const Class& int32x4_class_;
   const Class& list_class_;
 

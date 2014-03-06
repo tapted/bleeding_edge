@@ -7,7 +7,7 @@ library dart2js.cmdline;
 import 'dart:async'
     show Future, EventSink;
 import 'dart:io'
-    show exit, File, FileMode, Platform, RandomAccessFile;
+    show exit, File, FileMode, Platform, RandomAccessFile, FileSystemException;
 import 'dart:math' as math;
 
 import '../compiler.dart' as api;
@@ -279,6 +279,7 @@ Future compile(List<String> argv) {
     new OptionHandler('--dump-info', passThrough),
     new OptionHandler('--disallow-unsafe-eval',
                       (_) => hasDisallowUnsafeEval = true),
+    new OptionHandler('--show-package-warnings', passThrough),
     new OptionHandler('-D.+=.*', addInEnvironment),
 
     // The following two options must come last.
@@ -326,6 +327,8 @@ Future compile(List<String> argv) {
 
   options.add('--source-map=$sourceMapOut');
 
+  List<String> allOutputFiles = new List<String>();
+
   compilationDone(String code) {
     if (analyzeOnly) return;
     if (code == null) {
@@ -337,7 +340,14 @@ Future compile(List<String> argv) {
          'compiled ${inputProvider.dartCharactersRead} characters Dart '
          '-> $totalCharactersWritten characters $outputLanguage '
          'in ${relativize(currentDirectory, out, isWindows)}');
-    if (!explicitOut) {
+    if (diagnosticHandler.verbose) {
+      String input = uriPathToNative(arguments[0]);
+      print('Dart file ($input) compiled to $outputLanguage.');
+      print('Wrote the following files:');
+      for (String filename in allOutputFiles) {
+        print("  $filename");
+      }
+    } else if (!explicitOut) {
       String input = uriPathToNative(arguments[0]);
       String output = relativize(currentDirectory, out, isWindows);
       print('Dart file ($input) compiled to $outputLanguage: $output');
@@ -375,12 +385,19 @@ Future compile(List<String> argv) {
       fail('Error: Unhandled scheme ${uri.scheme} in $uri.');
     }
 
-    RandomAccessFile output =
-        new File(uriPathToNative(uri.path)).openSync(mode: FileMode.WRITE);
+    RandomAccessFile output;
+    try {
+      output = new File(uri.toFilePath()).openSync(mode: FileMode.WRITE);
+    } on FileSystemException catch(e) {
+      fail('$e');
+    }
+
+    allOutputFiles.add(relativize(currentDirectory, uri, isWindows));
+
     int charactersWritten = 0;
 
     writeStringSync(String data) {
-      // Write the data in chunks of 8kb, otherwise we risk running OOM
+      // Write the data in chunks of 8kb, otherwise we risk running OOM.
       int chunkSize = 8*1024;
 
       int offset = 0;
@@ -445,7 +462,7 @@ void writeString(Uri uri, String text) {
   if (uri.scheme != 'file') {
     fail('Error: Unhandled scheme ${uri.scheme}.');
   }
-  var file = new File(uriPathToNative(uri.path)).openSync(mode: FileMode.WRITE);
+  var file = new File(uri.toFilePath()).openSync(mode: FileMode.WRITE);
   file.writeStringSync(text);
   file.closeSync();
 }
@@ -540,6 +557,9 @@ Supported options:
   --terse
     Emit diagnostics without suggestions for how to get rid of the diagnosed
     problems.
+
+  --show-package-warnings
+    Show warnings and hints generated from packages.
 
 The following options are only used for compiler development and may
 be removed in a future version:

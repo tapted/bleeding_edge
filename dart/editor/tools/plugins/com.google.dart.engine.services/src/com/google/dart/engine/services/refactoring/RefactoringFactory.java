@@ -30,6 +30,13 @@ import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.LocalElement;
 import com.google.dart.engine.element.MethodElement;
 import com.google.dart.engine.element.PropertyAccessorElement;
+import com.google.dart.engine.element.angular.AngularComponentElement;
+import com.google.dart.engine.element.angular.AngularControllerElement;
+import com.google.dart.engine.element.angular.AngularFilterElement;
+import com.google.dart.engine.element.angular.AngularHasAttributeSelectorElement;
+import com.google.dart.engine.element.angular.AngularPropertyElement;
+import com.google.dart.engine.element.angular.AngularScopePropertyElement;
+import com.google.dart.engine.element.angular.AngularTagSelectorElement;
 import com.google.dart.engine.search.SearchEngine;
 import com.google.dart.engine.services.assist.AssistContext;
 import com.google.dart.engine.services.internal.refactoring.ConvertGetterToMethodRefactoringImpl;
@@ -38,6 +45,13 @@ import com.google.dart.engine.services.internal.refactoring.ExtractLocalRefactor
 import com.google.dart.engine.services.internal.refactoring.ExtractMethodRefactoringImpl;
 import com.google.dart.engine.services.internal.refactoring.InlineLocalRefactoringImpl;
 import com.google.dart.engine.services.internal.refactoring.InlineMethodRefactoringImpl;
+import com.google.dart.engine.services.internal.refactoring.RenameAngularComponentRefactoringImpl;
+import com.google.dart.engine.services.internal.refactoring.RenameAngularControllerRefactoringImpl;
+import com.google.dart.engine.services.internal.refactoring.RenameAngularFilterRefactoringImpl;
+import com.google.dart.engine.services.internal.refactoring.RenameAngularHasAttributeSelectorRefactoringImpl;
+import com.google.dart.engine.services.internal.refactoring.RenameAngularPropertyRefactoringImpl;
+import com.google.dart.engine.services.internal.refactoring.RenameAngularScopePropertyRefactoringImpl;
+import com.google.dart.engine.services.internal.refactoring.RenameAngularTagSelectorRefactoringImpl;
 import com.google.dart.engine.services.internal.refactoring.RenameClassMemberRefactoringImpl;
 import com.google.dart.engine.services.internal.refactoring.RenameConstructorRefactoringImpl;
 import com.google.dart.engine.services.internal.refactoring.RenameImportRefactoringImpl;
@@ -109,6 +123,39 @@ public class RefactoringFactory {
   public static RenameRefactoring createRenameRefactoring(SearchEngine searchEngine, Element element) {
     Preconditions.checkNotNull(searchEngine);
     Preconditions.checkNotNull(element);
+    if (element instanceof AngularFilterElement) {
+      AngularFilterElement filter = (AngularFilterElement) element;
+      return new RenameAngularFilterRefactoringImpl(searchEngine, filter);
+    }
+    if (element instanceof AngularComponentElement) {
+      AngularComponentElement component = (AngularComponentElement) element;
+      return new RenameAngularComponentRefactoringImpl(searchEngine, component);
+    }
+    if (element instanceof AngularControllerElement) {
+      AngularControllerElement controller = (AngularControllerElement) element;
+      return new RenameAngularControllerRefactoringImpl(searchEngine, controller);
+    }
+    if (element instanceof AngularPropertyElement) {
+      AngularPropertyElement property = (AngularPropertyElement) element;
+      Element selector = RenameAngularHasAttributeSelectorRefactoringImpl.getAttributeSelectorElement(property);
+      if (selector != null) {
+        element = selector;
+      } else {
+        return new RenameAngularPropertyRefactoringImpl(searchEngine, property);
+      }
+    }
+    if (element instanceof AngularScopePropertyElement) {
+      AngularScopePropertyElement property = (AngularScopePropertyElement) element;
+      return new RenameAngularScopePropertyRefactoringImpl(searchEngine, property);
+    }
+    if (element instanceof AngularTagSelectorElement) {
+      AngularTagSelectorElement selector = (AngularTagSelectorElement) element;
+      return new RenameAngularTagSelectorRefactoringImpl(searchEngine, selector);
+    }
+    if (element instanceof AngularHasAttributeSelectorElement) {
+      AngularHasAttributeSelectorElement selector = (AngularHasAttributeSelectorElement) element;
+      return new RenameAngularHasAttributeSelectorRefactoringImpl(searchEngine, selector);
+    }
     if (element instanceof PropertyAccessorElement) {
       element = ((PropertyAccessorElement) element).getVariable();
     }

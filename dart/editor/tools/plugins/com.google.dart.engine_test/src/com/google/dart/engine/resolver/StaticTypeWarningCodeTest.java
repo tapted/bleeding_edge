@@ -169,7 +169,7 @@ public class StaticTypeWarningCodeTest extends ResolverTestCase {
         "class byte {",
         "  int _value;",
         "  byte(this._value);",
-        "  int operator +(int val) {}",
+        "  int operator +(int val) { return 0; }",
         "}",
         "",
         "void main() {",
@@ -439,6 +439,7 @@ public class StaticTypeWarningCodeTest extends ResolverTestCase {
         "class A {",
         "  String m() {",
         "    int f() => '0';",
+        "    return '0';",
         "  }",
         "}"));
     resolve(source);
@@ -485,6 +486,7 @@ public class StaticTypeWarningCodeTest extends ResolverTestCase {
         "class A {",
         "  String m() {",
         "    int f() { return '0'; }",
+        "    return '0';",
         "  }",
         "}"));
     resolve(source);
@@ -552,7 +554,7 @@ public class StaticTypeWarningCodeTest extends ResolverTestCase {
         "class A {}",
         "class B {}",
         "class G<E extends A> {}",
-        "G<B> f() {}"));
+        "G<B> f() { return null; }"));
     resolve(source);
     assertErrors(source, StaticTypeWarningCode.TYPE_ARGUMENT_NOT_MATCHING_BOUNDS);
     verify(source);
@@ -608,7 +610,7 @@ public class StaticTypeWarningCodeTest extends ResolverTestCase {
         "class B {}",
         "class G<E extends A> {}",
         "class C {",
-        "  G<B> m() {}",
+        "  G<B> m() { return null; }",
         "}"));
     resolve(source);
     assertErrors(source, StaticTypeWarningCode.TYPE_ARGUMENT_NOT_MATCHING_BOUNDS);
@@ -963,6 +965,16 @@ public class StaticTypeWarningCodeTest extends ResolverTestCase {
     assertErrors(source, StaticTypeWarningCode.UNDEFINED_GETTER);
   }
 
+  public void test_undefinedGetter_void() throws Exception {
+    Source source = addSource(createSource(//
+        "class T {",
+        "  void m() {}",
+        "}",
+        "f(T e) { return e.m().f; }"));
+    resolve(source);
+    assertErrors(source, StaticTypeWarningCode.UNDEFINED_GETTER);
+  }
+
   public void test_undefinedMethod() throws Exception {
     Source source = addSource(createSource(//
         "class A {",
@@ -1096,6 +1108,16 @@ public class StaticTypeWarningCodeTest extends ResolverTestCase {
     assertErrors(source, StaticTypeWarningCode.UNDEFINED_SETTER);
   }
 
+  public void test_undefinedSetter_void() throws Exception {
+    Source source = addSource(createSource(//
+        "class T {",
+        "  void m() {}",
+        "}",
+        "f(T e) { e.m().f = 0; }"));
+    resolve(source);
+    assertErrors(source, StaticTypeWarningCode.UNDEFINED_SETTER);
+  }
+
   public void test_undefinedSuperMethod() throws Exception {
     Source source = addSource(createSource(//
         "class A {}",
@@ -1148,6 +1170,15 @@ public class StaticTypeWarningCodeTest extends ResolverTestCase {
         "}"));
     resolve(source);
     assertErrors(source, StaticTypeWarningCode.UNQUALIFIED_REFERENCE_TO_NON_LOCAL_STATIC_MEMBER);
+    verify(source);
+  }
+
+  public void test_wrongNumberOfTypeArguments_classAlias() throws Exception {
+    Source source = addSource(createSource(//
+        "class A {}",
+        "class B<F extends num> = A<F>;"));
+    resolve(source);
+    assertErrors(source, StaticTypeWarningCode.WRONG_NUMBER_OF_TYPE_ARGUMENTS);
     verify(source);
   }
 

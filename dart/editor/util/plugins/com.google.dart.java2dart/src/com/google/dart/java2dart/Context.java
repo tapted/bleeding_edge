@@ -19,8 +19,8 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.io.Files;
-import com.google.dart.engine.ast.ASTNode;
 import com.google.dart.engine.ast.ArgumentList;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.Block;
 import com.google.dart.engine.ast.BlockFunctionBody;
 import com.google.dart.engine.ast.ClassDeclaration;
@@ -42,9 +42,9 @@ import com.google.dart.engine.ast.SuperConstructorInvocation;
 import com.google.dart.engine.ast.ThisExpression;
 import com.google.dart.engine.ast.VariableDeclaration;
 import com.google.dart.engine.ast.VariableDeclarationList;
-import com.google.dart.engine.ast.visitor.GeneralizingASTVisitor;
-import com.google.dart.engine.ast.visitor.RecursiveASTVisitor;
-import com.google.dart.engine.ast.visitor.UnifyingASTVisitor;
+import com.google.dart.engine.ast.visitor.GeneralizingAstVisitor;
+import com.google.dart.engine.ast.visitor.RecursiveAstVisitor;
+import com.google.dart.engine.ast.visitor.UnifyingAstVisitor;
 import com.google.dart.engine.scanner.Keyword;
 import com.google.dart.engine.scanner.KeywordToken;
 import com.google.dart.engine.scanner.TokenType;
@@ -53,21 +53,22 @@ import com.google.dart.java2dart.processor.LocalVariablesSemanticProcessor;
 import com.google.dart.java2dart.util.Bindings;
 import com.google.dart.java2dart.util.JavaUtils;
 
-import static com.google.dart.java2dart.util.ASTFactory.assignmentExpression;
-import static com.google.dart.java2dart.util.ASTFactory.block;
-import static com.google.dart.java2dart.util.ASTFactory.blockFunctionBody;
-import static com.google.dart.java2dart.util.ASTFactory.compilationUnit;
-import static com.google.dart.java2dart.util.ASTFactory.constructorDeclaration;
-import static com.google.dart.java2dart.util.ASTFactory.expressionStatement;
-import static com.google.dart.java2dart.util.ASTFactory.formalParameterList;
-import static com.google.dart.java2dart.util.ASTFactory.identifier;
-import static com.google.dart.java2dart.util.ASTFactory.propertyAccess;
-import static com.google.dart.java2dart.util.ASTFactory.thisExpression;
+import static com.google.dart.java2dart.util.AstFactory.assignmentExpression;
+import static com.google.dart.java2dart.util.AstFactory.block;
+import static com.google.dart.java2dart.util.AstFactory.blockFunctionBody;
+import static com.google.dart.java2dart.util.AstFactory.compilationUnit;
+import static com.google.dart.java2dart.util.AstFactory.constructorDeclaration;
+import static com.google.dart.java2dart.util.AstFactory.expressionStatement;
+import static com.google.dart.java2dart.util.AstFactory.formalParameterList;
+import static com.google.dart.java2dart.util.AstFactory.identifier;
+import static com.google.dart.java2dart.util.AstFactory.propertyAccess;
+import static com.google.dart.java2dart.util.AstFactory.thisExpression;
 import static com.google.dart.java2dart.util.TokenFactory.token;
 
 import org.apache.commons.io.Charsets;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.eclipse.core.runtime.Assert;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.dom.AST;
@@ -126,8 +127,8 @@ public class Context {
   private final Map<SimpleIdentifier, String> identifierToName = Maps.newHashMap();
   private final Map<String, Object> signatureToBinding = Maps.newHashMap();
   private final Map<Object, List<SimpleIdentifier>> bindingToIdentifiers = Maps.newHashMap();
-  private final Map<ASTNode, IBinding> nodeToBinding = Maps.newHashMap();
-  private final Map<ASTNode, ITypeBinding> nodeToTypeBinding = Maps.newHashMap();
+  private final Map<AstNode, IBinding> nodeToBinding = Maps.newHashMap();
+  private final Map<AstNode, ITypeBinding> nodeToTypeBinding = Maps.newHashMap();
   private final Map<InstanceCreationExpression, ClassDeclaration> anonymousDeclarations = Maps.newHashMap();
   private final Set<SimpleIdentifier> innerClassNames = Sets.newHashSet();
   // information about constructors
@@ -216,13 +217,13 @@ public class Context {
   }
 
   /**
-   * Clears information about the given {@link ASTNode} and its children.
+   * Clears information about the given {@link AstNode} and its children.
    */
-  public void clearNodes(ASTNode node) {
+  public void clearNodes(AstNode node) {
     if (node != null) {
-      node.accept(new UnifyingASTVisitor<Void>() {
+      node.accept(new UnifyingAstVisitor<Void>() {
         @Override
-        public Void visitNode(ASTNode node) {
+        public Void visitNode(AstNode node) {
           clearNode(node);
           return super.visitNode(node);
         }
@@ -231,7 +232,7 @@ public class Context {
   }
 
   public void ensureUniqueClassMemberNames(CompilationUnit unit) {
-    unit.accept(new RecursiveASTVisitor<Void>() {
+    unit.accept(new RecursiveAstVisitor<Void>() {
       private final Set<ClassMember> untouchableMethods = Sets.newHashSet();
       private final Map<String, ClassMember> usedClassMembers = Maps.newHashMap();
       private final Set<String> superNames = Sets.newHashSet();
@@ -394,6 +395,7 @@ public class Context {
    * @return the not <code>null</code> {@link ConstructorDescription}, may be just added.
    */
   public ConstructorDescription getConstructorDescription(IMethodBinding binding) {
+    binding = (IMethodBinding) Bindings.getDeclaration(binding);
     ConstructorDescription description = bindingToConstructor.get(binding);
     if (description == null) {
       description = new ConstructorDescription(binding);
@@ -422,16 +424,16 @@ public class Context {
   }
 
   /**
-   * @return some Java binding for the given Dart {@link ASTNode}.
+   * @return some Java binding for the given Dart {@link AstNode}.
    */
-  public IBinding getNodeBinding(ASTNode node) {
+  public IBinding getNodeBinding(AstNode node) {
     return nodeToBinding.get(node);
   }
 
   /**
-   * @return some Java {@link ITypeBinding} for the given Dart {@link ASTNode}.
+   * @return some Java {@link ITypeBinding} for the given Dart {@link AstNode}.
    */
-  public ITypeBinding getNodeTypeBinding(ASTNode node) {
+  public ITypeBinding getNodeTypeBinding(AstNode node) {
     return nodeToTypeBinding.get(node);
   }
 
@@ -455,7 +457,7 @@ public class Context {
    * @return the name of member declared in enclosing {@link ClassDeclaration} and its super
    *         classes.
    */
-  public Set<String> getSuperMembersNames(ASTNode node) {
+  public Set<String> getSuperMembersNames(AstNode node) {
     Set<String> hierarchyNames = Sets.newHashSet();
     ClassDeclaration classDeclaration = node.getAncestor(ClassDeclaration.class);
     org.eclipse.jdt.core.dom.ITypeBinding binding = getNodeTypeBinding(classDeclaration);
@@ -474,7 +476,7 @@ public class Context {
     return hierarchyNames;
   }
 
-  public boolean isFieldBinding(ASTNode node) {
+  public boolean isFieldBinding(AstNode node) {
     IBinding binding = getNodeBinding(node);
     if (binding instanceof IVariableBinding) {
       return ((IVariableBinding) binding).isField();
@@ -482,7 +484,7 @@ public class Context {
     return false;
   }
 
-  public boolean isMethodBinding(ASTNode node) {
+  public boolean isMethodBinding(AstNode node) {
     IBinding binding = getNodeBinding(node);
     return binding instanceof IMethodBinding;
   }
@@ -594,6 +596,7 @@ public class Context {
       ensureFieldInitializers(dartUniverse);
       dontUseThisInFieldInitializers(dartUniverse);
       ensureUniqueClassMemberNames(dartUniverse);
+      renameAnonymousClassDeclarations();
       applyLocalVariableSemanticChanges(dartUniverse);
       new ConstructorSemanticProcessor(this).process(dartUniverse);
       renameConstructors(dartUniverse);
@@ -639,6 +642,7 @@ public class Context {
    * {@link ConstructorDeclaration} is reference to the given Java signature.
    */
   void putConstructorBinding(ConstructorDeclaration node, IMethodBinding binding) {
+    binding = (IMethodBinding) Bindings.getDeclaration(binding);
     constructorToBinding.put(node, binding);
   }
 
@@ -651,16 +655,16 @@ public class Context {
   }
 
   /**
-   * Remembers some Java binding for the given Dart {@link ASTNode}.
+   * Remembers some Java binding for the given Dart {@link AstNode}.
    */
-  void putNodeBinding(ASTNode node, IBinding binding) {
+  void putNodeBinding(AstNode node, IBinding binding) {
     nodeToBinding.put(node, binding);
   }
 
   /**
-   * Remembers Java {@link ITypeBinding} for the given Dart {@link ASTNode}.
+   * Remembers Java {@link ITypeBinding} for the given Dart {@link AstNode}.
    */
-  void putNodeTypeBinding(ASTNode node, ITypeBinding binding) {
+  void putNodeTypeBinding(AstNode node, ITypeBinding binding) {
     nodeToTypeBinding.put(node, binding);
   }
 
@@ -672,9 +676,9 @@ public class Context {
   }
 
   /**
-   * Clears information about the given {@link ASTNode}.
+   * Clears information about the given {@link AstNode}.
    */
-  private void clearNode(ASTNode node) {
+  private void clearNode(AstNode node) {
     if (node instanceof SimpleIdentifier) {
       removeReference((SimpleIdentifier) node);
     }
@@ -683,7 +687,7 @@ public class Context {
   }
 
   private void dontUseThisInFieldInitializers(CompilationUnit unit) {
-    unit.accept(new RecursiveASTVisitor<Void>() {
+    unit.accept(new RecursiveAstVisitor<Void>() {
       @Override
       public Void visitClassDeclaration(ClassDeclaration node) {
         processClass(node);
@@ -705,7 +709,7 @@ public class Context {
       private void processClass(final ClassDeclaration classDeclaration) {
         final Map<SimpleIdentifier, Expression> thisInitializers = Maps.newLinkedHashMap();
         // find field initializers which use "this"
-        classDeclaration.accept(new RecursiveASTVisitor<Void>() {
+        classDeclaration.accept(new RecursiveAstVisitor<Void>() {
           @Override
           public Void visitVariableDeclaration(VariableDeclaration node) {
             if (node.getParent().getParent() instanceof FieldDeclaration) {
@@ -717,9 +721,9 @@ public class Context {
             return super.visitVariableDeclaration(node);
           }
 
-          private boolean hasThisExpression(ASTNode node) {
+          private boolean hasThisExpression(AstNode node) {
             final AtomicBoolean result = new AtomicBoolean();
-            node.accept(new GeneralizingASTVisitor<Void>() {
+            node.accept(new GeneralizingAstVisitor<Void>() {
               @Override
               public Void visitThisExpression(ThisExpression node) {
                 result.set(true);
@@ -759,7 +763,7 @@ public class Context {
   }
 
   private void ensureFieldInitializers(CompilationUnit unit) {
-    unit.accept(new RecursiveASTVisitor<Void>() {
+    unit.accept(new RecursiveAstVisitor<Void>() {
       @Override
       public Void visitFieldDeclaration(FieldDeclaration node) {
         VariableDeclarationList fields = node.getFields();
@@ -786,7 +790,7 @@ public class Context {
   }
 
   private void insertEnclosingTypeForInstanceCreationArguments(CompilationUnit unit) {
-    unit.accept(new RecursiveASTVisitor<Void>() {
+    unit.accept(new RecursiveAstVisitor<Void>() {
       @Override
       public Void visitInstanceCreationExpression(InstanceCreationExpression node) {
         IMethodBinding binding = (IMethodBinding) getNodeBinding(node);
@@ -835,6 +839,9 @@ public class Context {
     parser.createASTs(paths, null, ArrayUtils.EMPTY_STRING_ARRAY, new FileASTRequestor() {
       @Override
       public void acceptAST(String sourceFilePath, org.eclipse.jdt.core.dom.CompilationUnit javaUnit) {
+//        for (IProblem problem : javaUnit.getProblems()) {
+//          System.out.println(problem);
+//        }
         try {
           File astFile = pathToFile.get(sourceFilePath);
           String javaSource = Files.toString(astFile, Charsets.UTF_8);
@@ -849,8 +856,70 @@ public class Context {
     return units;
   }
 
+  /**
+   * Improves names for anonymous {@link ClassDeclaration}s.
+   */
+  private void renameAnonymousClassDeclarations() {
+    // prepare unused top-level names
+    Set<String> usedTopNames = Sets.newHashSet();
+    for (CompilationUnitMember unitMember : dartUniverse.getDeclarations()) {
+      if (unitMember instanceof ClassDeclaration) {
+        ClassDeclaration classDeclaration = (ClassDeclaration) unitMember;
+        String name = classDeclaration.getName().getName();
+        usedTopNames.add(name);
+      }
+    }
+    // rename anonymous types
+    for (Entry<InstanceCreationExpression, ClassDeclaration> entry : anonymousDeclarations.entrySet()) {
+      // prepare enclosing information
+      InstanceCreationExpression creation = entry.getKey();
+      ClassDeclaration enclosingClass = creation.getAncestor(ClassDeclaration.class);
+      //
+      SimpleIdentifier enclosingClassMemberName = null;
+      if (enclosingClassMemberName == null) {
+        MethodDeclaration enclosingMethod = creation.getAncestor(MethodDeclaration.class);
+        if (enclosingMethod != null) {
+          enclosingClassMemberName = enclosingMethod.getName();
+        }
+      }
+      if (enclosingClassMemberName == null) {
+        VariableDeclaration enclosingField = creation.getAncestor(VariableDeclaration.class);
+        if (enclosingField != null) {
+          enclosingClassMemberName = enclosingField.getName();
+        }
+      }
+      // prepare new name for anonymous class
+      ClassDeclaration classDeclaration = entry.getValue();
+      SimpleIdentifier nameNode = classDeclaration.getName();
+      String name = nameNode.getName();
+      name = StringUtils.substringBeforeLast(name, "_");
+      {
+        String enclosingClassName = enclosingClass.getName().getName();
+        if (!enclosingClassName.equals(name)) {
+          name = name + "_" + enclosingClassName;
+        }
+      }
+      if (enclosingClassMemberName != null) {
+        name += "_" + enclosingClassMemberName.getName();
+      }
+      // ensure unique name
+      if (!usedTopNames.add(name)) {
+        int index = 2;
+        while (true) {
+          String newName = name + "_" + index++;
+          if (usedTopNames.add(newName)) {
+            name = newName;
+            break;
+          }
+        }
+      }
+      // rename
+      renameIdentifier(nameNode, name);
+    }
+  }
+
   private void renameConstructors(CompilationUnit unit) {
-    unit.accept(new RecursiveASTVisitor<Void>() {
+    unit.accept(new RecursiveAstVisitor<Void>() {
       private final Set<String> memberNamesInClass = Sets.newHashSet();
       private int numConstructors;
 
@@ -944,7 +1013,7 @@ public class Context {
   }
 
   private void unwrapVarArgIfAlreadyArray(CompilationUnit unit) {
-    unit.accept(new RecursiveASTVisitor<Void>() {
+    unit.accept(new RecursiveAstVisitor<Void>() {
       @Override
       public Void visitInstanceCreationExpression(InstanceCreationExpression node) {
         process(node, node.getArgumentList());
@@ -963,7 +1032,7 @@ public class Context {
         return super.visitSuperConstructorInvocation(node);
       }
 
-      private void process(ASTNode node, ArgumentList argumentList) {
+      private void process(AstNode node, ArgumentList argumentList) {
         Object binding = nodeToBinding.get(node);
         if (binding instanceof IMethodBinding) {
           IMethodBinding methodBinding = (IMethodBinding) binding;

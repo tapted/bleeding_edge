@@ -27,6 +27,7 @@ import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.isA;
 import static org.mockito.Matchers.same;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,8 +53,14 @@ public class IndexUnitOperationTest extends EngineTestCase {
 
   public void test_performOperation() throws Exception {
     operation.performOperation();
-    verify(store).aboutToIndex(context, unitElement);
+    verify(store).aboutToIndexDart(context, unitElement);
     verify(unit).accept(isA(IndexContributor.class));
+  }
+
+  public void test_performOperation_aboutToIndex_false() throws Exception {
+    when(store.aboutToIndexDart(context, unitElement)).thenReturn(false);
+    operation.performOperation();
+    verify(unit, never()).accept(isA(IndexContributor.class));
   }
 
   public void test_performOperation_whenException() throws Exception {
@@ -81,13 +88,13 @@ public class IndexUnitOperationTest extends EngineTestCase {
 
   public void test_toString() throws Exception {
     when(unitSource.getFullName()).thenReturn("mySource");
-    assertEquals("IndexResource(mySource)", operation.toString());
+    assertEquals("IndexUnitOperation(mySource)", operation.toString());
   }
 
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-    when(store.aboutToIndex(context, unitElement)).thenReturn(true);
+    when(store.aboutToIndexDart(context, unitElement)).thenReturn(true);
     when(unit.getElement()).thenReturn(unitElement);
     when(unitElement.getSource()).thenReturn(unitSource);
     operation = new IndexUnitOperation(store, context, unit);

@@ -5,9 +5,10 @@ library dart.dom.web_audio;
 
 import 'dart:async';
 import 'dart:collection';
-import 'dart:_collection-dev' hide deprecated;
+import 'dart:_internal' hide deprecated;
 import 'dart:html';
 import 'dart:html_common';
+import 'dart:_native_typed_data';
 import 'dart:typed_data';
 import 'dart:_js_helper' show Creates, JSName, Returns, convertDartClosureToJS;
 import 'dart:_foreign_helper' show JS;
@@ -956,11 +957,11 @@ class OscillatorNode extends AudioSourceNode native "OscillatorNode,Oscillator" 
 
   @DomName('OscillatorNode.start')
   @DocsEditable()
-  void start(num when) native;
+  void start([num when]) native;
 
   @DomName('OscillatorNode.stop')
   @DocsEditable()
-  void stop(num when) native;
+  void stop([num when]) native;
 
   /// Stream of `ended` events handled by this [OscillatorNode].
   @DomName('OscillatorNode.onended')

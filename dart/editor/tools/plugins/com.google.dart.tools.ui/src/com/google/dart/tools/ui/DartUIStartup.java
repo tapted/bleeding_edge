@@ -13,6 +13,7 @@
  */
 package com.google.dart.tools.ui;
 
+import com.google.dart.engine.internal.context.InstrumentedAnalysisContextImpl;
 import com.google.dart.engine.utilities.instrumentation.Instrumentation;
 import com.google.dart.engine.utilities.instrumentation.InstrumentationBuilder;
 import com.google.dart.tools.core.CmdLineOptions;
@@ -21,9 +22,11 @@ import com.google.dart.tools.core.DartCoreDebug;
 import com.google.dart.tools.core.instrumentation.InstrumentationLogger;
 import com.google.dart.tools.core.model.DartSdkManager;
 import com.google.dart.tools.ui.feedback.FeedbackUtils;
+import com.google.dart.tools.ui.internal.text.dart.DartPrioritySourcesHelper;
 import com.google.dart.tools.ui.internal.text.editor.AutoSaveHelper;
 
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IStartup;
 
 import java.io.File;
@@ -50,9 +53,17 @@ public class DartUIStartup implements IStartup {
     InstrumentationLogger.ensureLoggerStarted();
     InstrumentationBuilder instrumentation = Instrumentation.builder("DartUIStartup.earlyStartup");
 
+    Display.getDefault().asyncExec(new Runnable() {
+      @Override
+      public void run() {
+        InstrumentedAnalysisContextImpl.setUIThread(Display.getCurrent().getThread());
+      }
+    });
+
     try {
       reportPlatformStatistics();
       reportDartCoreDebug();
+      DartPrioritySourcesHelper.start();
 
       CmdLineFileProcessor.process(CmdLineOptions.getOptions());
       instrumentation.metric("OpenInitialFilesAndFolders", "Complete");

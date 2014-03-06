@@ -65,6 +65,7 @@ public class PubspecEditor extends FormEditor {
     public void elementDirtyStateChanged(Object element, boolean isDirty) {
       if (!model.isDirty()) {
         model.setValuesFromString(yamlEditor.getDocument().get());
+        updateModelAnnotations();
       }
     }
 
@@ -105,6 +106,7 @@ public class PubspecEditor extends FormEditor {
 
   public void doRevert() {
     model.setValuesFromString(getContents((IFileEditorInput) getEditorInput()));
+    updateModelAnnotations();
   }
 
   @Override
@@ -115,6 +117,7 @@ public class PubspecEditor extends FormEditor {
     }
     if (getActivePage() == 1 || yamlEditor.isDirty()) {
       model.setValuesFromString(yamlEditor.getDocument().get());
+      updateModelAnnotations();
       if (model.getName().equals("null")) {
         updateDocumentContents();
       }
@@ -201,6 +204,7 @@ public class PubspecEditor extends FormEditor {
       if (yamlEditor.isDirty()) {
         if (model != null) {
           model.setValuesFromString(yamlEditor.getDocument().get());
+          updateModelAnnotations();
         }
       }
     }
@@ -220,9 +224,14 @@ public class PubspecEditor extends FormEditor {
     String contents = null;
     if (input instanceof IFileEditorInput) {
       IFile file = ((IFileEditorInput) input).getFile();
-      contents = getContents(file.getLocation().toFile());
-      editable = true;
-      model = new PubspecModel(file, contents);
+      if (file != null && file.exists()) {
+        contents = getContents(file.getLocation().toFile());
+        editable = true;
+        model = new PubspecModel(file, contents);
+      } else {
+        model = new PubspecModel(contents);
+      }
+
     } else if (input instanceof FileStoreEditorInput) {
       File file = new File(((FileStoreEditorInput) input).getURI());
       if (file.exists()) {
@@ -274,6 +283,10 @@ public class PubspecEditor extends FormEditor {
     if (contents != null) {
       yamlEditor.getDocument().set(contents);
     }
+  }
+
+  private void updateModelAnnotations() {
+    yamlEditor.updateExceptionAnnotations(model.getExceptions());
   }
 
   private void updateTitleImage() {

@@ -228,7 +228,7 @@ void solo_test(String description, void body()) =>
   _test(description, body, unittest.solo_test);
 
 void _test(String description, void body(), Function testFn) {
-  _ensureInitialized();
+  unittest.ensureInitialized();
   _ensureSetUpForTopLevel();
   testFn(description, () {
     var completer = new Completer();
@@ -238,17 +238,16 @@ void _test(String description, void body(), Function testFn) {
       return currentSchedule.run(() {
         if (_setUpFn != null) _setUpFn();
         body();
+      }).catchError((error, stackTrace) {
+        if (error is ScheduleError) {
+          assert(error.schedule.errors.contains(error));
+          assert(error.schedule == currentSchedule);
+          unittest.registerException(error.schedule.errorString());
+        } else {
+          unittest.registerException(error, new Chain.forTrace(stackTrace));
+        }
       }).then(completer.complete);
-    }, onError: (e, chain) {
-      if (e is ScheduleError) {
-        assert(e.schedule.errors.contains(e));
-        assert(e.schedule == currentSchedule);
-        unittest.registerException(e.schedule.errorString());
-      } else {
-        unittest.registerException(e, chain);
-      }
-      completer.complete();
-    });
+    }, onError: (error, chain) => currentSchedule.signalError(error, chain));
 
     return completer.future;
   });
@@ -261,7 +260,7 @@ bool _inGroup = false;
 /// Creates a new named group of tests. This has the same semantics as
 /// [unittest.group].
 void group(String description, void body()) {
-  _ensureInitialized();
+  unittest.ensureInitialized();
   _ensureSetUpForTopLevel();
   unittest.group(description, () {
     var wasInGroup = _inGroup;
@@ -317,11 +316,22 @@ void _ensureSetUpForTopLevel() {
 void _setUpScheduledTest([void setUpFn()]) {
   if (!_inGroup) {
     _setUpForTopLevel = true;
+    var oldWrapAsync = unittest.wrapAsync;
     unittest.setUp(() {
       if (currentSchedule != null) {
         throw new StateError('There seems to be another scheduled test '
             'still running.');
       }
+
+      unittest.wrapAsync = (f, [description]) {
+        // It's possible that this setup is run before a vanilla unittest test
+        // if [unittest.test] is run in the same context as
+        // [scheduled_test.test]. In that case, [currentSchedule] will never be
+        // set and we should forward to the [unittest.wrapAsync].
+        if (currentSchedule == null) return oldWrapAsync(f, description);
+        return currentSchedule.wrapAsync(f, description);
+      };
+
       if (_setUpFn != null) {
         var parentFn = _setUpFn;
         _setUpFn = () { parentFn(); setUpFn(); };
@@ -331,6 +341,7 @@ void _setUpScheduledTest([void setUpFn()]) {
     });
 
     unittest.tearDown(() {
+      unittest.wrapAsync = oldWrapAsync;
       _currentSchedule = null;
       _setUpFn = null;
     });
@@ -344,20 +355,6 @@ void _setUpScheduledTest([void setUpFn()]) {
       }
     });
   }
-}
-
-/// Ensures that the global configuration for `scheduled_test` has been
-/// initialized.
-void _ensureInitialized() {
-  unittest.ensureInitialized();
-  unittest.wrapAsync = (f, [description]) {
-    if (currentSchedule == null) {
-      throw new StateError("Unexpected call to wrapAsync with no current "
-          "schedule.");
-    }
-
-    return currentSchedule.wrapAsync(f, description);
-  };
 }
 
 /// Like [wrapAsync], this ensures that the current task queue waits for

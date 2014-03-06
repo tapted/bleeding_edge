@@ -43,7 +43,8 @@ public class NamedArgumentCompletionProposal extends AbstractDartCompletionPropo
     setCursorPosition(completion.length());
     name = proxy.getParameterName();
     type = proxy.getParameterType();
-    setImage(DartPluginImages.get(DartPluginImages.IMG_MISC_PRIVATE));
+    setImage(DartPluginImages.get(DartPluginImages.IMG_MISC_PROTECTED));
+    setRelevance(proxy.getRelevance() * 100); // needs to be higher than computeRelevance()
   }
 
   @Override
@@ -64,7 +65,12 @@ public class NamedArgumentCompletionProposal extends AbstractDartCompletionPropo
 
   @Override
   public boolean validate(IDocument document, int offset, DocumentEvent event) {
-    return true;
+    return super.validate(document, offset, event);
+  }
+
+  @Override
+  protected boolean isValidPrefix(String prefix) {
+    return isPrefix(prefix, name);
   }
 
   private void showValueProposals(ITextViewer viewer) {

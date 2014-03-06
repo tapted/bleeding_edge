@@ -21,6 +21,7 @@ import com.google.dart.engine.source.FileBasedSource;
 import com.google.dart.engine.source.Source;
 import com.google.dart.engine.source.SourceContainer;
 import com.google.dart.engine.source.SourceFactory;
+import com.google.dart.engine.utilities.io.FileUtilities2;
 import com.google.dart.tools.core.CmdLineOptions;
 import com.google.dart.tools.core.DartCore;
 import com.google.dart.tools.core.analysis.model.IFileInfo;
@@ -33,6 +34,7 @@ import com.google.dart.tools.core.mock.MockContainer;
 import com.google.dart.tools.core.mock.MockFile;
 import com.google.dart.tools.core.mock.MockFolder;
 import com.google.dart.tools.core.mock.MockProject;
+import com.google.dart.tools.core.test.util.TestProject;
 import com.google.dart.tools.core.utilities.io.FileUtilities;
 
 import static com.google.dart.engine.element.ElementFactory.library;
@@ -80,6 +82,7 @@ public class ProjectImplTest extends ContextManagerImplTest {
   private File[] packageRoots = new File[0];
 
   private Index index;
+  private TestProject testProject;
 
   public void assertUriResolvedToPackageRoot(Project project, IPath expectedPackageRoot) {
     IPath expected = expectedPackageRoot != null ? expectedPackageRoot.append("foo").append(
@@ -90,6 +93,33 @@ public class ProjectImplTest extends ContextManagerImplTest {
     IPath actual = new Path(source.getFullName());
 
     assertEquals(expected.setDevice(null), actual.setDevice(null));
+  }
+
+  // TODO(keertip): fix test, disable till then
+  //  java.lang.AssertionError: Expected 0 log entries, but found 1
+  //  found:
+  //  Status ERROR: com.google.dart.tools.core code=0 Resource '/test_project_0' 
+  //  does not exist. org.eclipse.core.internal.resources.ResourceException: 
+  //  Resource '/test_project_0' does not exist.
+  //  at org.junit.Assert.fail(Assert.java:93)
+  public void no_test_resolveUriToFileInfoResourceInLib_Windows() throws Exception {
+    if (DartCore.isWindows()) {
+      testProject = new TestProject();
+      if (testProject.getProject().exists()) {
+        testProject.createFolder("lib");
+        testProject.setFileContent("lib/stuff.dart", "library stuff;");
+        testProject.setFileContent(PUBSPEC_FILE_NAME, "name:  myapp");
+        testProject.createFolder(PACKAGES_DIRECTORY_NAME + "/myapp");
+        testProject.setFileContent(PACKAGES_DIRECTORY_NAME + "/myapp/stuff.dart", "library stuff;");
+        ProjectImpl projectimpl = new ProjectImpl(testProject.getProject(), sdk);
+        IFileInfo info = projectimpl.resolveUriToFileInfo(
+            testProject.getProject(),
+            "package:myapp/stuff.dart");
+        assertNotNull(info);
+        assertNotNull(info.getResource());
+        assertTrue(info.getResource().getFullPath().toString().contains("/lib/"));
+      }
+    }
   }
 
   public void test_AnalysisContextFactory() throws Exception {
@@ -268,9 +298,7 @@ public class ProjectImplTest extends ContextManagerImplTest {
     ProjectImpl project = newTarget();
     IResource resource = projectContainer.getFolder("web").getFile("other.dart");
     File file = resource.getLocation().toFile();
-    Source source = new FileBasedSource(
-        project.getDefaultContext().getSourceFactory().getContentCache(),
-        file);
+    Source source = new FileBasedSource(file);
     assertSame(resource, project.getResource(source));
   }
 
@@ -282,9 +310,7 @@ public class ProjectImplTest extends ContextManagerImplTest {
   public void test_getResource_Source_outside() {
     ProjectImpl project = newTarget();
     File file = new File("/does/not/exist.dart");
-    Source source = new FileBasedSource(
-        project.getDefaultContext().getSourceFactory().getContentCache(),
-        file);
+    Source source = new FileBasedSource(file);
     assertNull(project.getResource(source));
   }
 
@@ -546,6 +572,12 @@ public class ProjectImplTest extends ContextManagerImplTest {
     assertUriResolvedToPackageRoot(project, new Path(packageRoots[0].getPath()));
   }
 
+  public void test_resolvePathToPackage() {
+    //TODO(keertip): implement project with ExplicitUriResolver and package map
+    // use that to verify path to package
+    // ProjectImpl project = newTarget();
+  }
+
   public void test_resolveUriTofileInfoFile() throws IOException {
     projectContainer.remove(PUBSPEC_FILE_NAME);
     File parent = projectContainer.getLocation().toFile().getParentFile();
@@ -595,6 +627,25 @@ public class ProjectImplTest extends ContextManagerImplTest {
 
   }
 
+  public void test_resolveUriToFileInfoResourceInLib() throws IOException {
+    if (!DartCore.isWindows()) {
+      ProjectImpl project = newTarget();
+      File packages = projectContainer.getFolder("packages").getLocation().toFile();
+      File lib = projectContainer.getFolder("lib").getLocation().toFile();
+
+      FileUtilities.createDirectory(packages);
+      FileUtilities.createDirectory(lib);
+      FileUtilities2.createSymLink(lib, new File(packages, "myapp"));
+
+      IFileInfo info = project.resolveUriToFileInfo(webContainer, "package:myapp/stuff.dart");
+      assertNotNull(info);
+      assertNotNull(info.getResource());
+      assertEquals(
+          info.getResource().getFullPath(),
+          projectContainer.getFile("lib/stuff.dart").getFullPath());
+    }
+  }
+
   @Override
   protected ProjectImpl newTarget() {
     return new ProjectImpl(projectContainer, sdk, index, new AnalysisContextFactory() {
@@ -621,10 +672,27 @@ public class ProjectImplTest extends ContextManagerImplTest {
     index = mock(Index.class);
   }
 
+  @Override
+  protected void tearDown() throws Exception {
+    File packages = projectContainer.getFolder("packages").getLocation().toFile();
+    File lib = projectContainer.getFolder("lib").getLocation().toFile();
+
+    if (packages.exists()) {
+      FileUtilities.delete(packages);
+    }
+    if (lib.exists()) {
+      FileUtilities.delete(lib);
+    }
+
+    if (testProject != null && testProject.getProject().exists()) {
+      testProject.dispose();
+    }
+  }
+
   private void assertDartSdkFactoryInitialized(MockContainer container, AnalysisContext context) {
     SourceFactory factory = context.getSourceFactory();
     File file1 = container.getFile(new Path("doesNotExist1.dart")).getLocation().toFile();
-    Source source1 = new FileBasedSource(factory.getContentCache(), file1);
+    Source source1 = new FileBasedSource(file1);
 
     Source source2 = factory.resolveUri(source1, "doesNotExist2.dart");
     File file2 = new File(source2.getFullName());
@@ -638,7 +706,7 @@ public class ProjectImplTest extends ContextManagerImplTest {
   private void assertFactoryInitialized(MockContainer container, AnalysisContext context) {
     SourceFactory factory = context.getSourceFactory();
     File file1 = container.getFile(new Path("doesNotExist1.dart")).getLocation().toFile();
-    Source source1 = new FileBasedSource(factory.getContentCache(), file1);
+    Source source1 = new FileBasedSource(file1);
 
     Source source2 = factory.resolveUri(source1, "doesNotExist2.dart");
     File file2 = new File(source2.getFullName());

@@ -63,11 +63,11 @@ public class AnalysisCacheTest extends EngineTestCase {
     });
     int size = 6;
     for (int i = 0; i < size; i++) {
-      Source source = new TestSource(null, createFile("/test" + i + ".dart"), "");
+      Source source = new TestSource(createFile("/test" + i + ".dart"), "");
       DartEntryImpl entry = new DartEntryImpl();
       entry.setValue(DartEntry.PARSED_UNIT, null);
       cache.put(source, entry);
-      cache.accessed(source);
+      cache.accessedAst(source);
     }
     assertNonFlushedCount(size, cache);
     int newSize = size - 2;
@@ -79,9 +79,9 @@ public class AnalysisCacheTest extends EngineTestCase {
     AnalysisCache cache = new AnalysisCache(8, null);
     int size = 4;
     for (int i = 0; i < size; i++) {
-      Source source = new TestSource(null, createFile("/test" + i + ".dart"), "");
+      Source source = new TestSource(createFile("/test" + i + ".dart"), "");
       cache.put(source, new DartEntryImpl());
-      cache.accessed(source);
+      cache.accessedAst(source);
     }
     assertEquals(size, cache.size());
   }

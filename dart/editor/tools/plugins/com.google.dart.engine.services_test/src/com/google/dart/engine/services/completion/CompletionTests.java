@@ -578,6 +578,21 @@ public class CompletionTests extends CompletionTestCase {
     test("class X{}var x = null as !1X;", "1+X", "1-void");
   }
 
+  public void test040() throws Exception {
+    // test arg lists with named params
+    test("m(){f(a, b, {x1, x2, y}) {};f(1, 2, !1)!2;}", "1+x1", "2-x2");
+  }
+
+  public void test041() throws Exception {
+    // test arg lists with named params
+    test("m(){f(a, b, {x1, x2, y}) {};f(1, 2, !1", "1+x1", "1+x2", "1+y");
+  }
+
+  public void test042() throws Exception {
+    // test arg lists with named params
+    test("m(){f(a, b, {x1, x2, y}) {};f(1, 2, !1;!2", "1+x1", "1+x2", "2-y");
+  }
+
   public void testCommentSnippets001() throws Exception {
     test(
         "class X {static final num MAX = 0;num yc,xc;mth() {xc = yc = MA!1X;x!2c.abs();num f = M!3AX;}}",
@@ -1481,6 +1496,52 @@ public class CompletionTests extends CompletionTestCase {
     test("typedef int fnint(int k); fn!1int x;", "1+fnint");
   }
 
+  public void testCompletion_annotation_argumentList() throws Exception {
+    test(src(//
+        "class AAA {",
+        "  const AAA({int aaa, int bbb});",
+        "}",
+        "",
+        "@AAA(!1)",
+        "main() {",
+        "}"), "1+AAA:" + ProposalKind.ARGUMENT_LIST, "1+aaa", "1+bbb");
+  }
+
+  public void testCompletion_annotation_topLevelVar() throws Exception {
+    test(src(//
+        "const fooConst = null;",
+        "final fooNotConst = null;",
+        "const bar = null;",
+        "",
+        "@foo!1",
+        "main() {",
+        "}"), "1+fooConst", "1-fooNotConst", "1-bar");
+  }
+
+  public void testCompletion_annotation_type() throws Exception {
+    test(src(//
+        "class AAA {",
+        "  const AAA({int a, int b});",
+        "  const AAA.nnn(int c, int d);",
+        "}",
+        "",
+        "",
+        "@AAA!1",
+        "main() {",
+        "}"), "1+AAA:" + ProposalKind.CONSTRUCTOR, "1+AAA.nnn:" + ProposalKind.CONSTRUCTOR);
+  }
+
+  public void testCompletion_annotation_type_inClass_withoutMember() throws Exception {
+    test(src(//
+        "class AAA {",
+        "  const AAA();",
+        "}",
+        "",
+        "class C {",
+        "  @A!1",
+        "}"), "1+AAA:" + ProposalKind.CONSTRUCTOR);
+  }
+
   public void testCompletion_arguments_ignoreEmpty() throws Exception {
     test(src(//
         "class A {",
@@ -1558,6 +1619,95 @@ public class CompletionTests extends CompletionTestCase {
         "}"), "1+A.first", "1-A.second");
   }
 
+  public void testCompletion_constructorArguments_whenPrefixedType() throws Exception {
+    test(src(//
+        "import 'dart:math' as m;",
+        "main() {",
+        "  new m.Random(!1);",
+        "}"), "1+Random:ARGUMENT_LIST");
+  }
+
+  public void testCompletion_dartDoc_reference_forClass() throws Exception {
+    test(src(//
+        "/**",
+        " * [int!1]",
+        " * [method!2]",
+        " */",
+        "class AAA {",
+        "  methodA() {}",
+        "}",
+        ""), "1+int", "1-method", "2+methodA", "2-int");
+  }
+
+  public void testCompletion_dartDoc_reference_forConstructor() throws Exception {
+    test(src(//
+        "class A {",
+        "  /**",
+        "   * [aa!1]",
+        "   * [int!2]",
+        "   * [method!3]",
+        "   */",
+        "  A.named(aaa, bbb) {}",
+        "  methodA() {}",
+        "}"), "1+aaa", "1-bbb", "2+int", "2-double", "3+methodA");
+  }
+
+  public void testCompletion_dartDoc_reference_forFunction() throws Exception {
+    test(src(//
+        "/**",
+        " * [aa!1]",
+        " * [int!2]",
+        " * [function!3]",
+        " */",
+        "functionA(aaa, bbb) {}",
+        "functionB() {}",
+        ""), "1+aaa", "1-bbb", "2+int", "2-double", "3+functionA", "3+functionB", "3-int");
+  }
+
+  public void testCompletion_dartDoc_reference_forFunctionTypeAlias() throws Exception {
+    test(src(//
+        "/**",
+        " * [aa!1]",
+        " * [int!2]",
+        " * [Function!3]",
+        " */",
+        "typedef FunctionA(aaa, bbb) {}",
+        "typedef FunctionB() {}",
+        ""), "1+aaa", "1-bbb", "2+int", "2-double", "3+FunctionA", "3+FunctionB", "3-int");
+  }
+
+  public void testCompletion_dartDoc_reference_forMethod() throws Exception {
+    test(src(//
+        "class A {",
+        "  /**",
+        "   * [aa!1]",
+        "   * [int!2]",
+        "   * [method!3]",
+        "   */",
+        "  methodA(aaa, bbb) {}",
+        "  methodB() {}",
+        "}"), "1+aaa", "1-bbb", "2+int", "2-double", "3+methodA", "3+methodB", "3-int");
+  }
+
+  public void testCompletion_dartDoc_reference_incomplete() throws Exception {
+    test(src(//
+        "/**",
+        " * [doubl!1 some text",
+        " * other text",
+        " */",
+        "class A {}",
+        "/**",
+        " * [!2 some text",
+        " * other text",
+        " */",
+        "class B {}",
+        "/**",
+        " * [!3] some text",
+        " */",
+        "class C {}",
+        ""), "1+double", "1-int", "2+int", "2+String", "3+int", "3+String");
+  }
+
   public void testCompletion_double_inFractionPart() throws Exception {
     test(src(//
         "main() {",
@@ -1596,6 +1746,13 @@ public class CompletionTests extends CompletionTestCase {
         "1-dart:_collection.dev");
   }
 
+  public void testCompletion_export_noStringLiteral_noSemicolon() throws Exception {
+    test(src(//
+        "import !1",
+        "",
+        "class A {}"), resultWithCursor("1+'dart:!';"), resultWithCursor("1+'package:!';"));
+  }
+
   public void testCompletion_forStmt_vars() throws Exception {
     test(
         "class int{}class Foo { mth() { for (in!1t i = 0; i!2 < 5; i!3++); }}",
@@ -1616,6 +1773,14 @@ public class CompletionTests extends CompletionTestCase {
     test(
         "class String{}class Foo { int boo = 7; mth() { PNGS.sort((String a, Str!1)); }}",
         "1+String");
+  }
+
+  public void testCompletion_functionTypeParameter_namedArgument() throws Exception {
+    test(src(//
+        "typedef FFF(a, b, {x1, x2, y});",
+        "main(FFF fff) {",
+        "  fff(1, 2, !1)!2;",
+        "}"), "1+x1", "2-x2");
   }
 
   public void testCompletion_ifStmt_field1() throws Exception {
@@ -1654,6 +1819,13 @@ public class CompletionTests extends CompletionTestCase {
     test("topValue = 7; class Foo { mth() { if (t!1) {}}}", "1+topValue");
   }
 
+  public void testCompletion_import() throws Exception {
+    test(src(//
+        "import '!1';"),
+        resultWithCursor("1+dart:!"),
+        resultWithCursor("1+package:!"));
+  }
+
   public void testCompletion_import_dart() throws Exception {
     test(
         src(//
@@ -1665,6 +1837,26 @@ public class CompletionTests extends CompletionTestCase {
         "1+dart:math",
         "1-dart:_chrome",
         "1-dart:_collection.dev");
+  }
+
+  public void testCompletion_import_noSpace() throws Exception {
+    test(src(//
+        "import!1",
+        ""), resultWithCursor("1+ 'dart:!';"), resultWithCursor("1+ 'package:!';"));
+  }
+
+  public void testCompletion_import_noStringLiteral() throws Exception {
+    test(src(//
+        "import !1;"),
+        resultWithCursor("1+'dart:!'"),
+        resultWithCursor("1+'package:!'"));
+  }
+
+  public void testCompletion_import_noStringLiteral_noSemicolon() throws Exception {
+    test(src(//
+        "import !1",
+        "",
+        "class A {}"), resultWithCursor("1+'dart:!';"), resultWithCursor("1+'package:!';"));
   }
 
   public void testCompletion_incompleteClassMember() throws Exception {
@@ -1683,6 +1875,17 @@ public class CompletionTests extends CompletionTestCase {
         "  f1((Str!1));",
         "  f2((Str!2));",
         "}"), "1+String", "1-bool", "2-String");
+  }
+
+  public void testCompletion_instanceCreation_unresolved() throws Exception {
+    test(src(//
+        "class A {",
+        "}",
+        "main() {",
+        "  new NoSuchClass(!1);",
+        "  new A.noSuchConstructor(!2);",
+        "}"), "1-int", "2-int");
+    // no checks, but no exceptions
   }
 
   // TODO(scheglov)
@@ -1752,6 +1955,16 @@ public class CompletionTests extends CompletionTestCase {
         "  var otherVar;",
         "  var v = case!1",
         "}"), "1+caseVar", "1-otherVar");
+  }
+
+  public void testCompletion_libraryIdentifier_atEOF() throws Exception {
+    test("library int.!1", "1-parse", "1-bool");
+  }
+
+  public void testCompletion_libraryIdentifier_notEOF() throws Exception {
+    test(src(//
+        "library int.!1",
+        ""), "1-parse", "1-bool");
   }
 
   public void testCompletion_methodRef_asArg_incompatibleFunctionType() throws Exception {
@@ -1918,6 +2131,30 @@ public class CompletionTests extends CompletionTestCase {
         "    super.!1",
         "  }",
         "}"), "1+fa", "1-fb", "1+ma", "1-mb");
+  }
+
+  public void testCompletion_superConstructorInvocation_noNamePrefix() throws Exception {
+    test(src(//
+        "class A {",
+        "  A.fooA();",
+        "  A.fooB();",
+        "  A.bar();",
+        "}",
+        "class B extends A {",
+        "  B() : super.!1",
+        "}"), "1+fooA", "1+fooB", "1+bar");
+  }
+
+  public void testCompletion_superConstructorInvocation_withNamePrefix() throws Exception {
+    test(src(//
+        "class A {",
+        "  A.fooA();",
+        "  A.fooB();",
+        "  A.bar();",
+        "}",
+        "class B extends A {",
+        "  B() : super.f!1",
+        "}"), "1+fooA", "1+fooB", "1-bar");
   }
 
   public void testCompletion_this() throws Exception {

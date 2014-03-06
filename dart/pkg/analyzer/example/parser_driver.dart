@@ -6,7 +6,6 @@
 
 import 'dart:io';
 
-import 'package:analyzer/src/generated/java_core.dart' show CharSequence;
 import 'package:analyzer/src/generated/ast.dart';
 import 'package:analyzer/src/generated/error.dart';
 import 'package:analyzer/src/generated/parser.dart';
@@ -31,7 +30,7 @@ main(List<String> args) {
 _parse(File file) {
   var src = file.readAsStringSync();
   var errorListener = new _ErrorCollector();
-  var reader = new CharSequenceReader(new CharSequence(src));
+  var reader = new CharSequenceReader(src);
   var scanner = new Scanner(null, reader, errorListener);
   var token = scanner.tokenize();
   var parser = new Parser(null, errorListener);
@@ -51,8 +50,8 @@ class _ErrorCollector extends AnalysisErrorListener {
   onError(error) => errors.add(error);
 }
 
-class _ASTVisitor extends GeneralizingASTVisitor {
-  visitNode(ASTNode node) {
+class _ASTVisitor extends GeneralizingAstVisitor {
+  visitNode(AstNode node) {
     print('${node.runtimeType} : <"${node.toString()}">');
     return super.visitNode(node);
   }

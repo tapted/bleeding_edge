@@ -81,6 +81,32 @@ public enum HintCode implements ErrorCode {
       "When compiled to JS, this test might return false when the left hand side is a double"),
 
   /**
+   * Generate a hint for methods or functions that have a return type, but do not have a non-void
+   * return statement on all branches. At the end of methods or functions with no return, Dart
+   * implicitly returns {@code null}, avoiding these implicit returns is considered a best practice.
+   * 
+   * @param returnType the name of the declared return type
+   */
+  MISSING_RETURN(
+      "This function declares a return type of '%s', but does not end with a return statement",
+      "Either add a return statement or change the return type to 'void'"),
+
+  /**
+   * A getter with the override annotation does not override an existing getter.
+   */
+  OVERRIDE_ON_NON_OVERRIDING_GETTER("Getter does not override an inherited getter"),
+
+  /**
+   * A method with the override annotation does not override an existing method.
+   */
+  OVERRIDE_ON_NON_OVERRIDING_METHOD("Method does not override an inherited method"),
+
+  /**
+   * A setter with the override annotation does not override an existing setter.
+   */
+  OVERRIDE_ON_NON_OVERRIDING_SETTER("Setter does not override an inherited setter"),
+
+  /**
    * It is not in best practice to declare a private method that happens to override the method in a
    * superclass- depending on where the superclass is (either in the same library, or out of the
    * same library), behavior can be different.
@@ -89,6 +115,7 @@ public enum HintCode implements ErrorCode {
    * @param memberName some private member name
    * @param className the class name where the member is overriding the functionality
    */
+  // This was determined to not be a good hint, see: dartbug.com/16029
   OVERRIDDING_PRIVATE_MEMBER(
       "The %s '%s' does not override the definition from '%s' because it is private and in a different library"),
 
@@ -171,7 +198,15 @@ public enum HintCode implements ErrorCode {
   /**
    * Unused imports are imports which are never not used.
    */
-  UNUSED_IMPORT("Unused import");
+  UNUSED_IMPORT("Unused import"),
+
+  /**
+   * Hint for cases where the source expects a method or function to return a non-void result, but
+   * the method or function signature returns void.
+   * 
+   * @param name the name of the method or function that returns void
+   */
+  USE_OF_VOID_RESULT("The result of '%s' is being used, even though it is declared to be 'void'");
 
   /**
    * The template used to create the message to be displayed for this error.

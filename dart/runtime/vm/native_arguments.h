@@ -131,11 +131,14 @@ class NativeArguments {
   static intptr_t retval_offset() {
     return OFFSET_OF(NativeArguments, retval_);
   }
+  static intptr_t AutoSetupScopeMask() {
+    return AutoSetupScopeBits::mask_in_place();
+  }
 
-  static int ParameterCountForResolution(const Function& function) {
+  static intptr_t ParameterCountForResolution(const Function& function) {
     ASSERT(function.is_native());
     ASSERT(!function.IsConstructor());  // Not supported.
-    int count = function.NumParameters();
+    intptr_t count = function.NumParameters();
     if (function.is_static() && function.IsClosureFunction()) {
       // The closure object is hidden and not accessible from native code.
       // However, if the function is an instance closure function, the captured
@@ -157,7 +160,11 @@ class NativeArguments {
     if (function.IsClosureFunction()) {
       function_bits |= kClosureFunctionBit;
     }
-    return FunctionBits::update(function_bits, tag);
+    tag = FunctionBits::update(function_bits, tag);
+    if (function.IsNativeAutoSetupScope()) {
+      tag = AutoSetupScopeBits::update(1, tag);
+    }
+    return tag;
   }
 
  private:
@@ -170,9 +177,11 @@ class NativeArguments {
     kArgcSize = 24,
     kFunctionBit = 24,
     kFunctionSize = 2,
+    kAutoSetupScopeBit = 26,
   };
   class ArgcBits : public BitField<int, kArgcBit, kArgcSize> {};
   class FunctionBits : public BitField<int, kFunctionBit, kFunctionSize> {};
+  class AutoSetupScopeBits : public BitField<int, kAutoSetupScopeBit, 1> {};
   friend class Api;
   friend class BootstrapNatives;
   friend class Simulator;

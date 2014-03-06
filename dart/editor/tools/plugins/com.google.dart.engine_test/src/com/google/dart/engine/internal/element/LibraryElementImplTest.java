@@ -15,18 +15,22 @@ package com.google.dart.engine.internal.element;
 
 import com.google.dart.engine.EngineTestCase;
 import com.google.dart.engine.context.AnalysisContext;
+import com.google.dart.engine.element.CompilationUnitElement;
 import com.google.dart.engine.element.ElementFactory;
 import com.google.dart.engine.element.ImportElement;
 import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.PrefixElement;
 import com.google.dart.engine.source.SourceFactory;
 
-import static com.google.dart.engine.ast.ASTFactory.identifier;
-import static com.google.dart.engine.ast.ASTFactory.libraryIdentifier;
+import static com.google.dart.engine.ast.AstFactory.identifier;
+import static com.google.dart.engine.ast.AstFactory.libraryIdentifier;
+import static com.google.dart.engine.element.ElementFactory.compilationUnit;
+import static com.google.dart.engine.element.ElementFactory.exportFor;
 import static com.google.dart.engine.element.ElementFactory.importFor;
 import static com.google.dart.engine.element.ElementFactory.library;
 
 public class LibraryElementImplTest extends EngineTestCase {
+
   public void test_creation() {
     assertNotNull(new LibraryElementImpl(createAnalysisContext(), libraryIdentifier("l")));
   }
@@ -67,14 +71,84 @@ public class LibraryElementImplTest extends EngineTestCase {
     }
   }
 
+  public void test_getUnits() throws Exception {
+    AnalysisContext context = createAnalysisContext();
+    LibraryElementImpl library = library(context, "test");
+    CompilationUnitElement unitLib = library.getDefiningCompilationUnit();
+    CompilationUnitElementImpl unitA = compilationUnit("unit_a.dart");
+    CompilationUnitElementImpl unitB = compilationUnit("unit_b.dart");
+    library.setParts(new CompilationUnitElement[] {unitA, unitB});
+    assertEqualsIgnoreOrder(
+        new CompilationUnitElement[] {unitLib, unitA, unitB},
+        library.getUnits());
+  }
+
+  public void test_getVisibleLibraries_cycle() {
+    AnalysisContext context = createAnalysisContext();
+    LibraryElementImpl library = library(context, "app");
+    LibraryElementImpl libraryA = library(context, "A");
+    libraryA.setImports(new ImportElementImpl[] {importFor(library, null),});
+    library.setImports(new ImportElementImpl[] {importFor(libraryA, null)});
+    LibraryElement[] libraries = library.getVisibleLibraries();
+    assertEqualsIgnoreOrder(new LibraryElement[] {library, libraryA}, libraries);
+  }
+
+  public void test_getVisibleLibraries_directExports() {
+    AnalysisContext context = createAnalysisContext();
+    LibraryElementImpl library = library(context, "app");
+    LibraryElementImpl libraryA = library(context, "A");
+    library.setExports(new ExportElementImpl[] {exportFor(libraryA),});
+    LibraryElement[] libraries = library.getVisibleLibraries();
+    assertEqualsIgnoreOrder(new LibraryElement[] {library}, libraries);
+  }
+
+  public void test_getVisibleLibraries_directImports() {
+    AnalysisContext context = createAnalysisContext();
+    LibraryElementImpl library = library(context, "app");
+    LibraryElementImpl libraryA = library(context, "A");
+    library.setImports(new ImportElementImpl[] {importFor(libraryA, null),});
+    LibraryElement[] libraries = library.getVisibleLibraries();
+    assertEqualsIgnoreOrder(new LibraryElement[] {library, libraryA}, libraries);
+  }
+
+  public void test_getVisibleLibraries_indirectExports() {
+    AnalysisContext context = createAnalysisContext();
+    LibraryElementImpl library = library(context, "app");
+    LibraryElementImpl libraryA = library(context, "A");
+    LibraryElementImpl libraryAA = library(context, "AA");
+    libraryA.setExports(new ExportElementImpl[] {exportFor(libraryAA),});
+    library.setImports(new ImportElementImpl[] {importFor(libraryA, null)});
+    LibraryElement[] libraries = library.getVisibleLibraries();
+    assertEqualsIgnoreOrder(new LibraryElement[] {library, libraryA, libraryAA}, libraries);
+  }
+
+  public void test_getVisibleLibraries_indirectImports() {
+    AnalysisContext context = createAnalysisContext();
+    LibraryElementImpl library = library(context, "app");
+    LibraryElementImpl libraryA = library(context, "A");
+    LibraryElementImpl libraryAA = library(context, "AA");
+    LibraryElementImpl libraryB = library(context, "B");
+    libraryA.setImports(new ImportElementImpl[] {importFor(libraryAA, null),});
+    library.setImports(new ImportElementImpl[] {
+        importFor(libraryA, null), importFor(libraryB, null),});
+    LibraryElement[] libraries = library.getVisibleLibraries();
+    assertEqualsIgnoreOrder(
+        new LibraryElement[] {library, libraryA, libraryAA, libraryB},
+        libraries);
+  }
+
+  public void test_getVisibleLibraries_noImports() {
+    AnalysisContext context = createAnalysisContext();
+    LibraryElementImpl library = library(context, "app");
+    assertEqualsIgnoreOrder(new LibraryElement[] {library}, library.getVisibleLibraries());
+  }
+
   public void test_isUpToDate() {
     AnalysisContext context = createAnalysisContext();
     context.setSourceFactory(new SourceFactory());
     LibraryElement library = ElementFactory.library(context, "foo");
 
-    context.getSourceFactory().setContents(
-        library.getDefiningCompilationUnit().getSource(),
-        "sdfsdff");
+    context.setContents(library.getDefiningCompilationUnit().getSource(), "sdfsdff");
 
     // Assert that we are not up to date if the target has an old time stamp.
     assertFalse(library.isUpToDate(0));

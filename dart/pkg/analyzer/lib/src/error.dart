@@ -7,7 +7,6 @@ import 'dart:collection';
 import 'dart:math' as math;
 
 import 'generated/error.dart';
-import 'generated/java_core.dart';
 import 'generated/source.dart';
 
 /// The maximum line length when printing extracted source code when converting
@@ -45,17 +44,16 @@ class AnalyzerError implements Exception {
 
   String toString() {
     var builder = new StringBuffer();
-    var receiver = new _ContentReceiver();
-    error.source.getContents(receiver);
-    var beforeError = receiver.result.substring(0, error.offset);
+    var content = error.source.contents.data;
+    var beforeError = content.substring(0, error.offset);
     var lineNumber = "\n".allMatches(beforeError).length + 1;
     builder.writeln("Error on line $lineNumber of ${error.source.fullName}: "
         "${error.message}");
 
     var errorLineIndex = beforeError.lastIndexOf("\n") + 1;
-    var errorEndOfLineIndex = receiver.result.indexOf("\n", error.offset);
-    if (errorEndOfLineIndex == -1) errorEndOfLineIndex = receiver.result.length;
-    var errorLine = receiver.result.substring(
+    var errorEndOfLineIndex = content.indexOf("\n", error.offset);
+    if (errorEndOfLineIndex == -1) errorEndOfLineIndex = content.length;
+    var errorLine = content.substring(
         errorLineIndex, errorEndOfLineIndex);
     var errorColumn = error.offset - errorLineIndex;
     var errorLength = error.length;
@@ -97,8 +95,6 @@ class _ContentReceiver implements Source_ContentReceiver {
 
   String get result => _buffer.toString();
 
-  void accept(CharBuffer contents, _) =>
-    _buffer.write(contents.subSequence(0, contents.length()));
-
-  void accept2(String contents, _) => _buffer.write(contents);
+  void accept(String contents, _) =>
+    _buffer.write(contents.substring(0, contents.length));
 }

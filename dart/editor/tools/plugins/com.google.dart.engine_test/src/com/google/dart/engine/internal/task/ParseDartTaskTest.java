@@ -17,6 +17,7 @@ import com.google.dart.engine.EngineTestCase;
 import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.internal.context.AnalysisContextImpl;
 import com.google.dart.engine.internal.context.InternalAnalysisContext;
+import com.google.dart.engine.internal.context.TimestampedData;
 import com.google.dart.engine.source.FileUriResolver;
 import com.google.dart.engine.source.Source;
 import com.google.dart.engine.source.SourceFactory;
@@ -50,26 +51,6 @@ public class ParseDartTaskTest extends EngineTestCase {
     assertNull(task.getException());
   }
 
-  public void test_getExportedSources() {
-    ParseDartTask task = new ParseDartTask(null, null);
-    assertLength(0, task.getExportedSources());
-  }
-
-  public void test_getImportedSources() {
-    ParseDartTask task = new ParseDartTask(null, null);
-    assertLength(0, task.getImportedSources());
-  }
-
-  public void test_getIncludedSources() {
-    ParseDartTask task = new ParseDartTask(null, null);
-    assertLength(0, task.getIncludedSources());
-  }
-
-  public void test_getLineInfo() {
-    ParseDartTask task = new ParseDartTask(null, null);
-    assertNull(task.getLineInfo());
-  }
-
   public void test_getModificationTime() {
     ParseDartTask task = new ParseDartTask(null, null);
     assertEquals(-1L, task.getModificationTime());
@@ -94,7 +75,7 @@ public class ParseDartTaskTest extends EngineTestCase {
   public void test_perform_exception() throws AnalysisException {
     final Source source = new TestSource() {
       @Override
-      public void getContents(ContentReceiver receiver) throws Exception {
+      public TimestampedData<CharSequence> getContents() throws Exception {
         throw new IOException();
       }
     };
@@ -118,7 +99,7 @@ public class ParseDartTaskTest extends EngineTestCase {
         "part 'part.dart';",
         "class A {}",
         ";"));
-    InternalAnalysisContext context = new AnalysisContextImpl();
+    final InternalAnalysisContext context = new AnalysisContextImpl();
     context.setSourceFactory(new SourceFactory(new FileUriResolver()));
     ParseDartTask task = new ParseDartTask(context, source);
     task.perform(new TestTaskVisitor<Boolean>() {
@@ -130,11 +111,7 @@ public class ParseDartTaskTest extends EngineTestCase {
         }
         assertNotNull(task.getCompilationUnit());
         assertLength(1, task.getErrors());
-        assertLength(1, task.getExportedSources());
-        assertLength(1, task.getImportedSources());
-        assertLength(1, task.getIncludedSources());
-        assertNotNull(task.getLineInfo());
-        assertEquals(source.getModificationStamp(), task.getModificationTime());
+        assertEquals(context.getModificationStamp(source), task.getModificationTime());
         assertSame(source, task.getSource());
         assertTrue(task.hasLibraryDirective());
         assertFalse(task.hasPartOfDirective());
@@ -147,7 +124,7 @@ public class ParseDartTaskTest extends EngineTestCase {
     final Source source = new TestSource(createSource(//
         "part of lib;",
         "class B {}"));
-    InternalAnalysisContext context = new AnalysisContextImpl();
+    final InternalAnalysisContext context = new AnalysisContextImpl();
     context.setSourceFactory(new SourceFactory(new FileUriResolver()));
     ParseDartTask task = new ParseDartTask(context, source);
     task.perform(new TestTaskVisitor<Boolean>() {
@@ -159,11 +136,7 @@ public class ParseDartTaskTest extends EngineTestCase {
         }
         assertNotNull(task.getCompilationUnit());
         assertLength(0, task.getErrors());
-        assertLength(0, task.getExportedSources());
-        assertLength(0, task.getImportedSources());
-        assertLength(0, task.getIncludedSources());
-        assertNotNull(task.getLineInfo());
-        assertEquals(source.getModificationStamp(), task.getModificationTime());
+        assertEquals(context.getModificationStamp(source), task.getModificationTime());
         assertSame(source, task.getSource());
         assertFalse(task.hasLibraryDirective());
         assertTrue(task.hasPartOfDirective());

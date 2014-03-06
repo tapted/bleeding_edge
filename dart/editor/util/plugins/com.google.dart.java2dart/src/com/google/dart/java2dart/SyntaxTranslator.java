@@ -17,10 +17,10 @@ package com.google.dart.java2dart;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import com.google.dart.engine.ast.ASTNode;
 import com.google.dart.engine.ast.ArgumentList;
 import com.google.dart.engine.ast.AsExpression;
 import com.google.dart.engine.ast.AssignmentExpression;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.BinaryExpression;
 import com.google.dart.engine.ast.Block;
 import com.google.dart.engine.ast.BlockFunctionBody;
@@ -51,6 +51,7 @@ import com.google.dart.engine.ast.Label;
 import com.google.dart.engine.ast.ListLiteral;
 import com.google.dart.engine.ast.MethodDeclaration;
 import com.google.dart.engine.ast.MethodInvocation;
+import com.google.dart.engine.ast.NodeList;
 import com.google.dart.engine.ast.NullLiteral;
 import com.google.dart.engine.ast.PrefixedIdentifier;
 import com.google.dart.engine.ast.PropertyAccess;
@@ -69,7 +70,7 @@ import com.google.dart.engine.ast.TypeParameterList;
 import com.google.dart.engine.ast.VariableDeclaration;
 import com.google.dart.engine.ast.VariableDeclarationList;
 import com.google.dart.engine.ast.WhileStatement;
-import com.google.dart.engine.ast.visitor.RecursiveASTVisitor;
+import com.google.dart.engine.ast.visitor.RecursiveAstVisitor;
 import com.google.dart.engine.scanner.Keyword;
 import com.google.dart.engine.scanner.StringToken;
 import com.google.dart.engine.scanner.Token;
@@ -77,63 +78,64 @@ import com.google.dart.engine.scanner.TokenType;
 import com.google.dart.java2dart.util.ExecutionUtils;
 import com.google.dart.java2dart.util.JavaUtils;
 import com.google.dart.java2dart.util.RunnableEx;
+import com.google.dart.java2dart.util.ToFormattedSourceVisitor;
 
-import static com.google.dart.java2dart.util.ASTFactory.asExpression;
-import static com.google.dart.java2dart.util.ASTFactory.assertStatement;
-import static com.google.dart.java2dart.util.ASTFactory.binaryExpression;
-import static com.google.dart.java2dart.util.ASTFactory.block;
-import static com.google.dart.java2dart.util.ASTFactory.booleanLiteral;
-import static com.google.dart.java2dart.util.ASTFactory.breakStatement;
-import static com.google.dart.java2dart.util.ASTFactory.catchClause;
-import static com.google.dart.java2dart.util.ASTFactory.classDeclaration;
-import static com.google.dart.java2dart.util.ASTFactory.compilationUnit;
-import static com.google.dart.java2dart.util.ASTFactory.conditionalExpression;
-import static com.google.dart.java2dart.util.ASTFactory.constructorDeclaration;
-import static com.google.dart.java2dart.util.ASTFactory.declaredIdentifier;
-import static com.google.dart.java2dart.util.ASTFactory.doStatement;
-import static com.google.dart.java2dart.util.ASTFactory.doubleLiteral;
-import static com.google.dart.java2dart.util.ASTFactory.emptyFunctionBody;
-import static com.google.dart.java2dart.util.ASTFactory.emptyStatement;
-import static com.google.dart.java2dart.util.ASTFactory.expressionFunctionBody;
-import static com.google.dart.java2dart.util.ASTFactory.expressionStatement;
-import static com.google.dart.java2dart.util.ASTFactory.extendsClause;
-import static com.google.dart.java2dart.util.ASTFactory.fieldDeclaration;
-import static com.google.dart.java2dart.util.ASTFactory.fieldFormalParameter;
-import static com.google.dart.java2dart.util.ASTFactory.forEachStatement;
-import static com.google.dart.java2dart.util.ASTFactory.forStatement;
-import static com.google.dart.java2dart.util.ASTFactory.formalParameterList;
-import static com.google.dart.java2dart.util.ASTFactory.identifier;
-import static com.google.dart.java2dart.util.ASTFactory.ifStatement;
-import static com.google.dart.java2dart.util.ASTFactory.implementsClause;
-import static com.google.dart.java2dart.util.ASTFactory.indexExpression;
-import static com.google.dart.java2dart.util.ASTFactory.instanceCreationExpression;
-import static com.google.dart.java2dart.util.ASTFactory.integer;
-import static com.google.dart.java2dart.util.ASTFactory.integerHex;
-import static com.google.dart.java2dart.util.ASTFactory.isExpression;
-import static com.google.dart.java2dart.util.ASTFactory.label;
-import static com.google.dart.java2dart.util.ASTFactory.labeledStatement;
-import static com.google.dart.java2dart.util.ASTFactory.listLiteral;
-import static com.google.dart.java2dart.util.ASTFactory.listType;
-import static com.google.dart.java2dart.util.ASTFactory.methodDeclaration;
-import static com.google.dart.java2dart.util.ASTFactory.methodInvocation;
-import static com.google.dart.java2dart.util.ASTFactory.nullLiteral;
-import static com.google.dart.java2dart.util.ASTFactory.parenthesizedExpression;
-import static com.google.dart.java2dart.util.ASTFactory.postfixExpression;
-import static com.google.dart.java2dart.util.ASTFactory.prefixExpression;
-import static com.google.dart.java2dart.util.ASTFactory.propertyAccess;
-import static com.google.dart.java2dart.util.ASTFactory.simpleFormalParameter;
-import static com.google.dart.java2dart.util.ASTFactory.string;
-import static com.google.dart.java2dart.util.ASTFactory.superConstructorInvocation;
-import static com.google.dart.java2dart.util.ASTFactory.thisExpression;
-import static com.google.dart.java2dart.util.ASTFactory.throwExpression;
-import static com.google.dart.java2dart.util.ASTFactory.tryStatement;
-import static com.google.dart.java2dart.util.ASTFactory.typeName;
-import static com.google.dart.java2dart.util.ASTFactory.typeParameter;
-import static com.google.dart.java2dart.util.ASTFactory.typeParameterList;
-import static com.google.dart.java2dart.util.ASTFactory.variableDeclaration;
-import static com.google.dart.java2dart.util.ASTFactory.variableDeclarationList;
-import static com.google.dart.java2dart.util.ASTFactory.variableDeclarationStatement;
-import static com.google.dart.java2dart.util.ASTFactory.whileStatement;
+import static com.google.dart.java2dart.util.AstFactory.asExpression;
+import static com.google.dart.java2dart.util.AstFactory.assertStatement;
+import static com.google.dart.java2dart.util.AstFactory.binaryExpression;
+import static com.google.dart.java2dart.util.AstFactory.block;
+import static com.google.dart.java2dart.util.AstFactory.booleanLiteral;
+import static com.google.dart.java2dart.util.AstFactory.breakStatement;
+import static com.google.dart.java2dart.util.AstFactory.catchClause;
+import static com.google.dart.java2dart.util.AstFactory.classDeclaration;
+import static com.google.dart.java2dart.util.AstFactory.compilationUnit;
+import static com.google.dart.java2dart.util.AstFactory.conditionalExpression;
+import static com.google.dart.java2dart.util.AstFactory.constructorDeclaration;
+import static com.google.dart.java2dart.util.AstFactory.declaredIdentifier;
+import static com.google.dart.java2dart.util.AstFactory.doStatement;
+import static com.google.dart.java2dart.util.AstFactory.doubleLiteral;
+import static com.google.dart.java2dart.util.AstFactory.emptyFunctionBody;
+import static com.google.dart.java2dart.util.AstFactory.emptyStatement;
+import static com.google.dart.java2dart.util.AstFactory.expressionFunctionBody;
+import static com.google.dart.java2dart.util.AstFactory.expressionStatement;
+import static com.google.dart.java2dart.util.AstFactory.extendsClause;
+import static com.google.dart.java2dart.util.AstFactory.fieldDeclaration;
+import static com.google.dart.java2dart.util.AstFactory.fieldFormalParameter;
+import static com.google.dart.java2dart.util.AstFactory.forEachStatement;
+import static com.google.dart.java2dart.util.AstFactory.forStatement;
+import static com.google.dart.java2dart.util.AstFactory.formalParameterList;
+import static com.google.dart.java2dart.util.AstFactory.identifier;
+import static com.google.dart.java2dart.util.AstFactory.ifStatement;
+import static com.google.dart.java2dart.util.AstFactory.implementsClause;
+import static com.google.dart.java2dart.util.AstFactory.indexExpression;
+import static com.google.dart.java2dart.util.AstFactory.instanceCreationExpression;
+import static com.google.dart.java2dart.util.AstFactory.integer;
+import static com.google.dart.java2dart.util.AstFactory.integerHex;
+import static com.google.dart.java2dart.util.AstFactory.isExpression;
+import static com.google.dart.java2dart.util.AstFactory.label;
+import static com.google.dart.java2dart.util.AstFactory.labeledStatement;
+import static com.google.dart.java2dart.util.AstFactory.listLiteral;
+import static com.google.dart.java2dart.util.AstFactory.listType;
+import static com.google.dart.java2dart.util.AstFactory.methodDeclaration;
+import static com.google.dart.java2dart.util.AstFactory.methodInvocation;
+import static com.google.dart.java2dart.util.AstFactory.nullLiteral;
+import static com.google.dart.java2dart.util.AstFactory.parenthesizedExpression;
+import static com.google.dart.java2dart.util.AstFactory.postfixExpression;
+import static com.google.dart.java2dart.util.AstFactory.prefixExpression;
+import static com.google.dart.java2dart.util.AstFactory.propertyAccess;
+import static com.google.dart.java2dart.util.AstFactory.simpleFormalParameter;
+import static com.google.dart.java2dart.util.AstFactory.string;
+import static com.google.dart.java2dart.util.AstFactory.superConstructorInvocation;
+import static com.google.dart.java2dart.util.AstFactory.thisExpression;
+import static com.google.dart.java2dart.util.AstFactory.throwExpression;
+import static com.google.dart.java2dart.util.AstFactory.tryStatement;
+import static com.google.dart.java2dart.util.AstFactory.typeName;
+import static com.google.dart.java2dart.util.AstFactory.typeParameter;
+import static com.google.dart.java2dart.util.AstFactory.typeParameterList;
+import static com.google.dart.java2dart.util.AstFactory.variableDeclaration;
+import static com.google.dart.java2dart.util.AstFactory.variableDeclarationList;
+import static com.google.dart.java2dart.util.AstFactory.variableDeclarationStatement;
+import static com.google.dart.java2dart.util.AstFactory.whileStatement;
 import static com.google.dart.java2dart.util.TokenFactory.token;
 
 import org.apache.commons.lang3.ArrayUtils;
@@ -146,6 +148,7 @@ import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.SynchronizedStatement;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 
@@ -169,8 +172,8 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
   /**
    * Replaces "node" with "replacement" in parent of "node".
    */
-  public static void replaceNode(ASTNode parent, ASTNode node, ASTNode replacement) {
-    Class<? extends ASTNode> parentClass = parent.getClass();
+  public static void replaceNode(AstNode parent, AstNode node, AstNode replacement) {
+    Class<? extends AstNode> parentClass = parent.getClass();
     // try get/set methods
     try {
       for (Method getMethod : parentClass.getMethods()) {
@@ -219,6 +222,15 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
         return;
       }
     }
+    if (parent instanceof Block) {
+      Block block = (Block) parent;
+      NodeList<Statement> statements = block.getStatements();
+      int index = statements.indexOf(node);
+      if (index != -1) {
+        statements.set(index, (Statement) replacement);
+        return;
+      }
+    }
     // not found
     throw new UnsupportedOperationException("" + parentClass);
   }
@@ -228,7 +240,7 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
    */
   public static CompilationUnit translate(Context context,
       org.eclipse.jdt.core.dom.CompilationUnit javaUnit, String javaSource) {
-    SyntaxTranslator translator = new SyntaxTranslator(context, javaSource);
+    SyntaxTranslator translator = new SyntaxTranslator(context, javaSource, javaUnit);
     javaUnit.accept(translator);
     return (CompilationUnit) translator.result;
   }
@@ -310,16 +322,19 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
     return superString.endsWith(subString);
   }
 
+  private final org.eclipse.jdt.core.dom.CompilationUnit javaUnit;
   private final Context context;
   private final String javaSource;
 
-  private ASTNode result;
+  private AstNode result;
 
   private final List<CompilationUnitMember> artificialUnitDeclarations = Lists.newArrayList();
 
   private MethodDeclaration constructorImpl;
 
-  private SyntaxTranslator(Context context, String javaSource) {
+  private SyntaxTranslator(Context context, String javaSource,
+      org.eclipse.jdt.core.dom.CompilationUnit javaUnit) {
+    this.javaUnit = javaUnit;
     this.context = context;
     this.javaSource = javaSource;
   }
@@ -421,11 +436,9 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
   @Override
   public boolean visit(org.eclipse.jdt.core.dom.Block node) {
     List<Statement> statements = Lists.newArrayList();
-    for (Iterator<?> I = node.statements().iterator(); I.hasNext();) {
-      org.eclipse.jdt.core.dom.Statement javaStatement = (org.eclipse.jdt.core.dom.Statement) I.next();
-      if (javaStatement instanceof org.eclipse.jdt.core.dom.SuperConstructorInvocation) {
-        continue;
-      }
+    List<org.eclipse.jdt.core.dom.Statement> javaStatements = Lists.newArrayList();
+    addJavaStatements(javaStatements, node);
+    for (org.eclipse.jdt.core.dom.Statement javaStatement : javaStatements) {
       statements.add((Statement) translate(javaStatement));
     }
     return done(block(statements));
@@ -475,26 +488,25 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
   @Override
   public boolean visit(org.eclipse.jdt.core.dom.ClassInstanceCreation node) {
     IMethodBinding binding = node.resolveConstructorBinding();
-    String signature = JavaUtils.getJdtSignature(binding);
     TypeName typeNameNode = (TypeName) translate(node.getType());
     final List<Expression> arguments = translateArguments(binding, node.arguments());
     final ClassDeclaration innerClass;
     {
       AnonymousClassDeclaration anoDeclaration = node.getAnonymousClassDeclaration();
       if (anoDeclaration != null) {
-        ITypeBinding superclass = anoDeclaration.resolveBinding().getSuperclass();
-        signature = superclass.getKey() + StringUtils.substringAfter(signature, ";");
         String name = typeNameNode.getName().getName().replace('.', '_');
         name = name + "_" + context.generateTechnicalAnonymousClassIndex();
         innerClass = declareInnerClass(binding, anoDeclaration, name, ArrayUtils.EMPTY_STRING_ARRAY);
         typeNameNode = typeName(name);
+        final SimpleIdentifier typeNameIdentifier = (SimpleIdentifier) typeNameNode.getName();
+        putReference(binding, typeNameIdentifier);
+        putReference(binding, innerClass.getName());
         // prepare enclosing type
         final ITypeBinding enclosingTypeBinding = getEnclosingTypeBinding(node);
         final SimpleIdentifier enclosingTypeRef = replaceEnclosingClassMemberReferences(
             innerClass,
             enclosingTypeBinding);
         // declare referenced final variables
-        final String finalName = name;
         anoDeclaration.accept(new ASTVisitor() {
           final Set<org.eclipse.jdt.core.dom.IVariableBinding> addedParameters = Sets.newHashSet();
           final List<FormalParameter> constructorParameters = Lists.newArrayList();
@@ -515,7 +527,7 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
               innerClass.getMembers().add(
                   index,
                   constructorDeclaration(
-                      identifier(finalName),
+                      typeNameIdentifier,
                       null,
                       formalParameterList(constructorParameters),
                       null));
@@ -563,6 +575,13 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
             return super.visit(node);
           }
         });
+        // replace constructor type with shared (and tracked) identifier
+        for (ClassMember classMember : innerClass.getMembers()) {
+          if (classMember instanceof ConstructorDeclaration) {
+            ConstructorDeclaration cd = (ConstructorDeclaration) classMember;
+            cd.setReturnType(typeNameIdentifier);
+          }
+        }
       } else {
         innerClass = null;
       }
@@ -1352,13 +1371,12 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
   }
 
   @Override
-  public boolean visit(org.eclipse.jdt.core.dom.SynchronizedStatement node) {
-    return visit(node.getBody());
-  }
-
-  @Override
   public boolean visit(org.eclipse.jdt.core.dom.ThisExpression node) {
-    return done(thisExpression());
+    ITypeBinding binding = node.resolveTypeBinding();
+    ThisExpression thisExpression = thisExpression();
+    context.putNodeBinding(thisExpression, binding);
+    context.putNodeTypeBinding(thisExpression, binding);
+    return done(thisExpression);
   }
 
   @Override
@@ -1599,13 +1617,51 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
     }
 
     // <ul>, </ul>
-    // TODO: even better would be to remove these lines -
-    str = str.replaceAll("<ul>", "").replaceAll("</ul>", "");
+    str = deleteLinesContaining(str, "<ul>", false);
+    str = deleteLinesContaining(str, "</ul>", false);
 
     // <li>
     str = str.replaceAll("<li>", "* ").replaceAll("</li>", "");
 
+    // @coverage
+    str = deleteLinesContaining(str, "@coverage", true);
+
     return str;
+  }
+
+  /**
+   * Adds Java statements of the given Java block. Unrolls {@link SynchronizedStatement}s.
+   */
+  private void addJavaStatements(List<org.eclipse.jdt.core.dom.Statement> statements,
+      org.eclipse.jdt.core.dom.Block block) {
+    for (Iterator<?> I = block.statements().iterator(); I.hasNext();) {
+      org.eclipse.jdt.core.dom.Statement javaStatement = (org.eclipse.jdt.core.dom.Statement) I.next();
+      if (javaStatement instanceof org.eclipse.jdt.core.dom.SuperConstructorInvocation) {
+        continue;
+      }
+      if (javaStatement instanceof org.eclipse.jdt.core.dom.SynchronizedStatement) {
+        addJavaStatements(
+            statements,
+            ((org.eclipse.jdt.core.dom.SynchronizedStatement) javaStatement).getBody());
+        continue;
+      }
+      statements.add(javaStatement);
+    }
+  }
+
+  private int backupOverBlankLine(String string, int first) {
+    int index = first - 1;
+    if (string.charAt(index) == '\r' && string.charAt(first) == '\n') {
+      index--;
+    }
+    char currentChar = string.charAt(index);
+    while (!isEol(currentChar)) {
+      if (!Character.isWhitespace(currentChar) && currentChar != '*') {
+        return first;
+      }
+      currentChar = string.charAt(--index);
+    }
+    return index;
   }
 
   private ClassDeclaration declareInnerClass(IMethodBinding constructorBinding,
@@ -1687,10 +1743,34 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
     return innerClass;
   }
 
+  private String deleteLineContaining(String string, int index, boolean includePreceeding) {
+    int first = index;
+    while (!isEol(string.charAt(first))) {
+      first--;
+    }
+    if (includePreceeding) {
+      first = backupOverBlankLine(string, first);
+    }
+    int last = index;
+    while (!isEol(string.charAt(last))) {
+      last++;
+    }
+    return string.substring(0, first + 1) + string.substring(last);
+  }
+
+  private String deleteLinesContaining(String string, String substring, boolean includePreceeding) {
+    int index = string.indexOf(substring);
+    while (index >= 0) {
+      string = deleteLineContaining(string, index, includePreceeding);
+      index = string.indexOf(substring);
+    }
+    return string;
+  }
+
   /**
    * Set {@link #result} and return <code>false</code> - we don't want normal JDT visiting.
    */
-  private boolean done(ASTNode node) {
+  private boolean done(AstNode node) {
     result = node;
     return false;
   }
@@ -1715,9 +1795,36 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
     return ref;
   }
 
+  /**
+   * There is a bug in the JDT, sometimes it produces wrong offsets for comments.
+   */
+  private String fixJdtCommentLine(String line) {
+    line = StringUtils.stripEnd(line, null);
+    String trimmed = line.trim();
+    if (!trimmed.startsWith("//") && !trimmed.startsWith("/*")) {
+      StringBuilder sb = new StringBuilder();
+      int i = 0;
+      while (i < line.length()) {
+        char c = line.charAt(i++);
+        if (Character.isWhitespace(c)) {
+          sb.append(c);
+        } else if (c == '/') {
+          return sb.toString() + "//" + line.substring(i);
+        } else {
+          return sb.toString() + "// " + c + line.substring(i);
+        }
+      }
+    }
+    return line;
+  }
+
   private String getJavaSource(org.eclipse.jdt.core.dom.ASTNode node) {
     int offset = node.getStartPosition();
     return javaSource.substring(offset, offset + node.getLength());
+  }
+
+  private boolean isEol(char character) {
+    return character == '\r' || character == '\n';
   }
 
   private boolean isNumberOrNull(Expression expression) {
@@ -1750,7 +1857,7 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
       if (enclosingTypeBinding != null) {
         enclosingTypeRef = identifier(enclosingTypeBinding.getName() + "_this");
         // add enclosing class references
-        innerClass.accept(new RecursiveASTVisitor<Void>() {
+        innerClass.accept(new RecursiveAstVisitor<Void>() {
           @Override
           public Void visitMethodInvocation(MethodInvocation node) {
             Expression target = node.getTarget();
@@ -1768,7 +1875,7 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
 
           @Override
           public Void visitSimpleIdentifier(SimpleIdentifier node) {
-            ASTNode target = null;
+            AstNode target = null;
             if (node.getParent() instanceof PrefixedIdentifier) {
               return null;
             }
@@ -1794,6 +1901,16 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
             }
             return super.visitSimpleIdentifier(node);
           }
+
+          @Override
+          public Void visitThisExpression(ThisExpression node) {
+            ITypeBinding binding = context.getNodeTypeBinding(node);
+            if (JavaUtils.isSubtype(enclosingTypeBinding, binding)) {
+              addEnclosingTypeRef.set(true);
+              replaceNode(node.getParent(), node, enclosingTypeRef);
+            }
+            return super.visitThisExpression(node);
+          }
         });
       } else {
         enclosingTypeRef = null;
@@ -1806,14 +1923,14 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
   }
 
   /**
-   * Recursively translates given {@link org.eclipse.jdt.core.dom.ASTNode} to Dart {@link ASTNode}.
+   * Recursively translates given {@link org.eclipse.jdt.core.dom.ASTNode} to Dart {@link AstNode}.
    * 
-   * @return the corresponding Dart {@link ASTNode}, may be <code>null</code> if <code>null</code>
+   * @return the corresponding Dart {@link AstNode}, may be <code>null</code> if <code>null</code>
    *         argument was given; not <code>null</code> if argument is not <code>null</code> (if
    *         translation is not implemented, exception will be thrown).
    */
   @SuppressWarnings("unchecked")
-  private <T extends ASTNode> T translate(final org.eclipse.jdt.core.dom.ASTNode node) {
+  private <T extends AstNode> T translate(final org.eclipse.jdt.core.dom.ASTNode node) {
     if (node == null) {
       return null;
     }
@@ -1830,11 +1947,31 @@ public class SyntaxTranslator extends org.eclipse.jdt.core.dom.ASTVisitor {
     });
     Assert.isNotNull(result, "No result for: " + node.getClass().getCanonicalName());
     T castedResult = (T) result;
+    // remember type for each Expression
     if (node instanceof org.eclipse.jdt.core.dom.Expression) {
       context.putNodeTypeBinding(
           result,
           ((org.eclipse.jdt.core.dom.Expression) node).resolveTypeBinding());
     }
+    // attach leading comments to Statement
+    if (node instanceof org.eclipse.jdt.core.dom.Statement) {
+      int index = javaUnit.firstLeadingCommentIndex(node);
+      if (index != -1) {
+        List<String> commentLines = Lists.newArrayList();
+        List<org.eclipse.jdt.core.dom.Comment> allComments = javaUnit.getCommentList();
+        while (index < allComments.size()) {
+          org.eclipse.jdt.core.dom.Comment comment = allComments.get(index++);
+          if (comment.getStartPosition() > node.getStartPosition()) {
+            break;
+          }
+          String commentLine = getJavaSource(comment);
+          commentLine = fixJdtCommentLine(commentLine);
+          commentLines.add(commentLine);
+        }
+        result.setProperty(ToFormattedSourceVisitor.COMMENTS_KEY, commentLines);
+      }
+    }
+    // done
     result = null;
     return castedResult;
   }

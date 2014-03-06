@@ -50,7 +50,7 @@ import java.util.Set;
 /**
  * Scans, parses, and analyzes a library.
  */
-class AnalyzerImpl {
+public class AnalyzerImpl {
   /**
    * The maximum number of sources for which AST structures should be kept in the cache.
    */
@@ -58,36 +58,25 @@ class AnalyzerImpl {
 
   private static final HashMap<File, DirectoryBasedDartSdk> sdkMap = new HashMap<File, DirectoryBasedDartSdk>();
 
-  private static ErrorSeverity getMaxErrorSeverity(List<AnalysisError> errors) {
-    ErrorSeverity status = ErrorSeverity.NONE;
-
-    for (AnalysisError error : errors) {
-      ErrorSeverity severity = error.getErrorCode().getErrorSeverity();
-
-      status = status.max(severity);
-    }
-
-    return status;
-  }
-
   /**
    * @return the new or cached instance of the {@link DartSdk} with the given directory.
    */
-  private static DirectoryBasedDartSdk getSdk(File sdkDirectory) {
+  private static DirectoryBasedDartSdk getSdk(File sdkDirectory, boolean useDart2jsPaths) {
     DirectoryBasedDartSdk sdk = sdkMap.get(sdkDirectory);
     if (sdk == null) {
-      sdk = new DirectoryBasedDartSdk(sdkDirectory);
+      sdk = new DirectoryBasedDartSdk(sdkDirectory, useDart2jsPaths);
       sdkMap.put(sdkDirectory, sdk);
     }
     return sdk;
   }
 
   private AnalyzerOptions options;
+
   private DirectoryBasedDartSdk sdk;
 
   public AnalyzerImpl(AnalyzerOptions options) {
     this.options = options;
-    this.sdk = getSdk(options.getDartSdkPath());
+    this.sdk = getSdk(options.getDartSdkPath(), options.getUseDart2jsPaths());
   }
 
   /**
@@ -106,31 +95,6 @@ class AnalyzerImpl {
       throw new IllegalArgumentException("sourceFile cannot be null");
     }
 
-    // prepare "packages" directory
-    File packageDirectory;
-    if (options.getPackageRootPath() != null) {
-      packageDirectory = options.getPackageRootPath();
-    } else {
-      packageDirectory = getPackageDirectoryFor(sourceFile);
-    }
-
-    // create SourceFactory
-    SourceFactory sourceFactory;
-
-    if (options.getUsePackageMap()) {
-      sourceFactory = new SourceFactory(
-          new DartUriResolver(sdk),
-          new FileUriResolver(),
-          new ExplicitPackageUriResolver(sdk, getPubDir(sourceFile)));
-    } else if (packageDirectory != null) {
-      sourceFactory = new SourceFactory(
-          new DartUriResolver(sdk),
-          new FileUriResolver(),
-          new PackageUriResolver(packageDirectory.getAbsoluteFile()));
-    } else {
-      sourceFactory = new SourceFactory(new DartUriResolver(sdk), new FileUriResolver());
-    }
-
     // create options for context
     AnalysisOptionsImpl contextOptions = new AnalysisOptionsImpl();
     contextOptions.setCacheSize(MAX_CACHE_SIZE);
@@ -138,14 +102,32 @@ class AnalyzerImpl {
 
     // prepare AnalysisContext
     AnalysisContext context = AnalysisEngine.getInstance().createAnalysisContext();
-    context.setSourceFactory(sourceFactory);
+    context.setSourceFactory(createSourceFactory(sourceFile));
     context.setAnalysisOptions(contextOptions);
 
     // prepare Source
     sourceFile = sourceFile.getAbsoluteFile();
     UriKind uriKind = getUriKind(sourceFile);
-    Source librarySource = new FileBasedSource(sourceFactory.getContentCache(), sourceFile, uriKind);
+    Source librarySource = new FileBasedSource(sourceFile, uriKind);
 
+    return performAnalysis(context, librarySource, sourceFile, lineInfoMap, errors);
+  }
+
+  protected ErrorSeverity getMaxErrorSeverity(List<AnalysisError> errors) {
+    ErrorSeverity status = ErrorSeverity.NONE;
+
+    for (AnalysisError error : errors) {
+      ErrorSeverity severity = error.getErrorCode().getErrorSeverity();
+
+      status = status.max(severity);
+    }
+
+    return status;
+  }
+
+  protected ErrorSeverity performAnalysis(AnalysisContext context, Source librarySource,
+      File sourceFile, Map<Source, LineInfo> lineInfoMap, List<AnalysisError> errors)
+      throws AnalysisException {
     // don't try to analyze parts
     CompilationUnit unit = context.parseCompilationUnit(librarySource);
     boolean hasLibraryDirective = false;
@@ -233,6 +215,29 @@ class AnalyzerImpl {
   }
 
   /**
+   * Create the source factory to be used in the analysis context.
+   * 
+   * @param sourceFile the file to be analyzed
+   * @return the source factory that was created
+   */
+  private SourceFactory createSourceFactory(File sourceFile) {
+    File packageDirectory = getPackageDirectory(sourceFile);
+    if (options.getUsePackageMap()) {
+      return new SourceFactory(
+          new DartUriResolver(sdk),
+          new FileUriResolver(),
+          new ExplicitPackageUriResolver(sdk, getPubDir(sourceFile)));
+    } else if (packageDirectory != null) {
+      return new SourceFactory(
+          new DartUriResolver(sdk),
+          new FileUriResolver(),
+          new PackageUriResolver(packageDirectory.getAbsoluteFile()));
+    } else {
+      return new SourceFactory(new DartUriResolver(sdk), new FileUriResolver());
+    }
+  }
+
+  /**
    * Remove any hints (ErrorType.HINT) from the passed list.
    */
   private void filterOutHints(List<AnalysisError> errors) {
@@ -268,6 +273,20 @@ class AnalyzerImpl {
         }
         lineInfoMap.put(source, lineInfo);
       }
+    }
+  }
+
+  /**
+   * Return the package directory to be used to resolve {@code package:} URI's.
+   * 
+   * @param sourceFile the file to be analyzed
+   * @return the package directory to be used to resolve {@code package:} URI's
+   */
+  private File getPackageDirectory(File sourceFile) {
+    if (options.getPackageRootPath() != null) {
+      return options.getPackageRootPath();
+    } else {
+      return getPackageDirectoryFor(sourceFile);
     }
   }
 

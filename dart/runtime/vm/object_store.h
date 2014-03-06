@@ -24,8 +24,8 @@ class ObjectStore {
     kAsync,
     kCore,
     kCollection,
-    kCollectionDev,
     kConvert,
+    kInternal,
     kIsolate,
     kMath,
     kMirrors,
@@ -208,6 +208,16 @@ class ObjectStore {
   RawType* int32x4_type() const { return int32x4_type_; }
   void set_int32x4_type(const Type& value) { int32x4_type_ = value.raw(); }
 
+  RawClass* float64x2_class() const {
+    return float64x2_class_;
+  }
+  void set_float64x2_class(const Class& value) {
+    float64x2_class_ = value.raw();
+  }
+
+  RawType* float64x2_type() const { return float64x2_type_; }
+  void set_float64x2_type(const Type& value) { float64x2_type_ = value.raw(); }
+
   RawArray* typed_data_classes() const {
     return typed_data_classes_;
   }
@@ -273,10 +283,8 @@ class ObjectStore {
   RawLibrary* builtin_library() const { return builtin_library_; }
   RawLibrary* core_library() const { return core_library_; }
   RawLibrary* collection_library() const { return collection_library_; }
-  RawLibrary* collection_dev_library() const {
-    return collection_dev_library_;
-  }
   RawLibrary* convert_library() const { return convert_library_; }
+  RawLibrary* internal_library() const { return internal_library_; }
   RawLibrary* isolate_library() const { return isolate_library_; }
   RawLibrary* math_library() const { return math_library_; }
   RawLibrary* mirrors_library() const { return mirrors_library_; }
@@ -292,11 +300,11 @@ class ObjectStore {
       case kCollection:
         collection_library_ = value.raw();
         break;
-      case kCollectionDev:
-        collection_dev_library_ = value.raw();
-        break;
       case kConvert:
         convert_library_ = value.raw();
+        break;
+      case kInternal:
+        internal_library_ = value.raw();
         break;
       case kIsolate:
         isolate_library_ = value.raw();
@@ -440,6 +448,7 @@ class ObjectStore {
   RawType* double_type_;
   RawType* float32x4_type_;
   RawType* int32x4_type_;
+  RawType* float64x2_type_;
   RawType* string_type_;
   RawClass* one_byte_string_class_;
   RawClass* two_byte_string_class_;
@@ -453,6 +462,7 @@ class ObjectStore {
   RawClass* growable_object_array_class_;
   RawClass* float32x4_class_;
   RawClass* int32x4_class_;
+  RawClass* float64x2_class_;
   RawArray* typed_data_classes_;
   RawClass* error_class_;
   RawClass* stacktrace_class_;
@@ -465,8 +475,8 @@ class ObjectStore {
   RawLibrary* builtin_library_;
   RawLibrary* core_library_;
   RawLibrary* collection_library_;
-  RawLibrary* collection_dev_library_;
   RawLibrary* convert_library_;
+  RawLibrary* internal_library_;
   RawLibrary* isolate_library_;
   RawLibrary* math_library_;
   RawLibrary* mirrors_library_;

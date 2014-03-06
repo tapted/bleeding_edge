@@ -19,13 +19,13 @@ import com.google.dart.engine.context.ChangeSet;
 import com.google.dart.engine.error.AnalysisError;
 import com.google.dart.engine.source.FileBasedSource;
 import com.google.dart.engine.source.Source;
-import com.google.dart.engine.source.SourceFactory;
 import com.google.dart.engine.utilities.source.LineInfo;
 import com.google.dart.tools.core.AbstractDartCoreTest;
 import com.google.dart.tools.core.analysis.model.AnalysisEvent;
 import com.google.dart.tools.core.analysis.model.AnalysisListener;
 import com.google.dart.tools.core.analysis.model.ContextManager;
 import com.google.dart.tools.core.analysis.model.ResolvedEvent;
+import com.google.dart.tools.core.analysis.model.ResolvedHtmlEvent;
 import com.google.dart.tools.core.mock.MockFile;
 import com.google.dart.tools.core.mock.MockProject;
 import com.google.dart.tools.core.mock.MockWorkspace;
@@ -57,6 +57,12 @@ public class AnalysisWorkerTest extends AbstractDartCoreTest {
 
     @Override
     public void resolved(ResolvedEvent event) {
+      resolved.add(event.getResource());
+      assertEquals(originalCacheSize * 2, event.getContext().getAnalysisOptions().getCacheSize());
+    }
+
+    @Override
+    public void resolvedHtml(ResolvedHtmlEvent event) {
       resolved.add(event.getResource());
       assertEquals(originalCacheSize * 2, event.getContext().getAnalysisOptions().getCacheSize());
     }
@@ -95,11 +101,9 @@ public class AnalysisWorkerTest extends AbstractDartCoreTest {
 
   public void test_performAnalysis() throws Exception {
     MockFile libFile = project.addFile("test.dart");
-    SourceFactory sourceFactory = analysisContext.getSourceFactory();
-    Source libSource = new FileBasedSource(sourceFactory.getContentCache(), libFile.toFile());
-    sourceFactory.setContents(libSource, "library a;\nmain() {}");
+    Source libSource = addSource(libFile, "library a;\nmain() {}");
     ChangeSet changeSet = new ChangeSet();
-    changeSet.added(libSource);
+    changeSet.addedSource(libSource);
     analysisContext.applyChanges(changeSet);
     when(contextManager.getResource(libSource)).thenReturn(libFile);
 
@@ -140,11 +144,9 @@ public class AnalysisWorkerTest extends AbstractDartCoreTest {
 
   public void test_performAnalysis_stop() throws Exception {
     MockFile libFile = project.addFile("test.dart");
-    SourceFactory sourceFactory = analysisContext.getSourceFactory();
-    Source libSource = new FileBasedSource(sourceFactory.getContentCache(), libFile.toFile());
-    sourceFactory.setContents(libSource, "library a;\nmain() {}");
+    Source libSource = addSource(libFile, "library a;\nmain() {}");
     ChangeSet changeSet = new ChangeSet();
-    changeSet.added(libSource);
+    changeSet.addedSource(libSource);
     analysisContext.applyChanges(changeSet);
     when(contextManager.getResource(libSource)).thenReturn(libFile);
 
@@ -173,5 +175,14 @@ public class AnalysisWorkerTest extends AbstractDartCoreTest {
   @Override
   protected void tearDown() throws Exception {
     AnalysisWorker.removeListener(listener);
+  }
+
+  private Source addSource(MockFile file, String contents) {
+    Source source = new FileBasedSource(file.toFile());
+    ChangeSet changeSet = new ChangeSet();
+    changeSet.addedSource(source);
+    analysisContext.applyChanges(changeSet);
+    analysisContext.setContents(source, contents);
+    return source;
   }
 }

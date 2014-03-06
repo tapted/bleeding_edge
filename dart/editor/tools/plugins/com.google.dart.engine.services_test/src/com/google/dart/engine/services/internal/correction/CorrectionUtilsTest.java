@@ -19,8 +19,8 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.google.dart.engine.ast.ASTFactory;
-import com.google.dart.engine.ast.ASTNode;
+import com.google.dart.engine.ast.AstFactory;
+import com.google.dart.engine.ast.AstNode;
 import com.google.dart.engine.ast.AsExpression;
 import com.google.dart.engine.ast.BinaryExpression;
 import com.google.dart.engine.ast.Block;
@@ -34,6 +34,7 @@ import com.google.dart.engine.ast.FunctionDeclaration;
 import com.google.dart.engine.ast.FunctionExpression;
 import com.google.dart.engine.ast.Identifier;
 import com.google.dart.engine.ast.IfStatement;
+import com.google.dart.engine.ast.InstanceCreationExpression;
 import com.google.dart.engine.ast.IntegerLiteral;
 import com.google.dart.engine.ast.MethodDeclaration;
 import com.google.dart.engine.ast.MethodInvocation;
@@ -53,37 +54,34 @@ import com.google.dart.engine.element.ExecutableElement;
 import com.google.dart.engine.element.FieldElement;
 import com.google.dart.engine.element.FunctionElement;
 import com.google.dart.engine.element.FunctionTypeAliasElement;
-import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.LocalVariableElement;
 import com.google.dart.engine.element.MethodElement;
 import com.google.dart.engine.element.ParameterElement;
 import com.google.dart.engine.element.PropertyAccessorElement;
 import com.google.dart.engine.element.TypeParameterElement;
+import com.google.dart.engine.internal.context.AnalysisContextImpl;
+import com.google.dart.engine.internal.context.TimestampedData;
 import com.google.dart.engine.scanner.TokenType;
 import com.google.dart.engine.services.change.Edit;
 import com.google.dart.engine.services.change.SourceChange;
 import com.google.dart.engine.services.internal.correction.CorrectionUtils.InsertDesc;
 import com.google.dart.engine.source.Source;
+import com.google.dart.engine.source.SourceFactory;
 import com.google.dart.engine.type.Type;
 import com.google.dart.engine.utilities.source.SourceRange;
 import com.google.dart.engine.utilities.source.SourceRangeFactory;
 
-import static com.google.dart.engine.ast.ASTFactory.binaryExpression;
-import static com.google.dart.engine.ast.ASTFactory.identifier;
-import static com.google.dart.engine.ast.ASTFactory.label;
-import static com.google.dart.engine.ast.ASTFactory.namedExpression;
-import static com.google.dart.engine.ast.ASTFactory.postfixExpression;
-import static com.google.dart.engine.ast.ASTFactory.prefixExpression;
-import static com.google.dart.engine.ast.ASTFactory.propertyAccess;
+import static com.google.dart.engine.ast.AstFactory.binaryExpression;
+import static com.google.dart.engine.ast.AstFactory.identifier;
+import static com.google.dart.engine.ast.AstFactory.label;
+import static com.google.dart.engine.ast.AstFactory.namedExpression;
+import static com.google.dart.engine.ast.AstFactory.postfixExpression;
+import static com.google.dart.engine.ast.AstFactory.prefixExpression;
+import static com.google.dart.engine.ast.AstFactory.propertyAccess;
 import static com.google.dart.engine.utilities.source.SourceRangeFactory.rangeStartEnd;
 import static com.google.dart.engine.utilities.source.SourceRangeFactory.rangeStartLength;
 
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
-
 import static org.fest.assertions.Assertions.assertThat;
-import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -114,7 +112,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
     // add Edit
     String description = "desc";
     try {
-      CorrectionUtils.addEdit(change, description, "234", edit);
+      CorrectionUtils.addEdit(getAnalysisContext(), change, description, "234", edit);
       fail();
     } catch (IllegalStateException e) {
     }
@@ -131,7 +129,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
     // add Edit
     String description = "desc";
     try {
-      CorrectionUtils.addEdit(change, description, "err", edit);
+      CorrectionUtils.addEdit(getAnalysisContext(), change, description, "err", edit);
       fail();
     } catch (IllegalStateException e) {
     }
@@ -147,7 +145,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
     when(change.getSource()).thenReturn(testSource);
     // add Edit
     String description = "desc";
-    CorrectionUtils.addEdit(change, description, "234", edit);
+    CorrectionUtils.addEdit(getAnalysisContext(), change, description, "234", edit);
     // verify
     verify(change).addEdit(description, edit);
   }
@@ -222,7 +220,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
     CorrectionUtils utils = getTestCorrectionUtils();
     // no any node
     {
-      ASTNode node = utils.findNode(Integer.MAX_VALUE, ASTNode.class);
+      AstNode node = utils.findNode(Integer.MAX_VALUE, AstNode.class);
       assertNull(node);
     }
     // "String" as SimpleIdentifier
@@ -767,7 +765,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
 
   public void test_getLocalOrParameterVariableElement_local() throws Exception {
     LocalVariableElement element = mock(LocalVariableElement.class);
-    SimpleIdentifier identifier = ASTFactory.identifier("name");
+    SimpleIdentifier identifier = AstFactory.identifier("name");
     identifier.setStaticElement(element);
     // check
     assertSame(element, CorrectionUtils.getLocalOrParameterVariableElement(identifier));
@@ -775,7 +773,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
 
   public void test_getLocalOrParameterVariableElement_method() throws Exception {
     Element element = mock(MethodElement.class);
-    SimpleIdentifier identifier = ASTFactory.identifier("name");
+    SimpleIdentifier identifier = AstFactory.identifier("name");
     identifier.setStaticElement(element);
     // check
     assertSame(null, CorrectionUtils.getLocalOrParameterVariableElement(identifier));
@@ -783,7 +781,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
 
   public void test_getLocalOrParameterVariableElement_parameter() throws Exception {
     ParameterElement element = mock(ParameterElement.class);
-    SimpleIdentifier identifier = ASTFactory.identifier("name");
+    SimpleIdentifier identifier = AstFactory.identifier("name");
     identifier.setStaticElement(element);
     // check
     assertSame(element, CorrectionUtils.getLocalOrParameterVariableElement(identifier));
@@ -791,7 +789,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
 
   public void test_getLocalVariableElement_local() throws Exception {
     LocalVariableElement element = mock(LocalVariableElement.class);
-    SimpleIdentifier identifier = ASTFactory.identifier("name");
+    SimpleIdentifier identifier = AstFactory.identifier("name");
     identifier.setStaticElement(element);
     // check
     assertSame(element, CorrectionUtils.getLocalVariableElement(identifier));
@@ -799,7 +797,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
 
   public void test_getLocalVariableElement_parameter() throws Exception {
     ParameterElement element = mock(ParameterElement.class);
-    SimpleIdentifier identifier = ASTFactory.identifier("name");
+    SimpleIdentifier identifier = AstFactory.identifier("name");
     identifier.setStaticElement(element);
     // check
     assertSame(null, CorrectionUtils.getLocalVariableElement(identifier));
@@ -817,14 +815,14 @@ public class CorrectionUtilsTest extends AbstractDartTest {
         "");
     SimpleIdentifier node1 = findIdentifier("print(2)");
     SimpleIdentifier node2 = findIdentifier("print(1)");
-    List<ASTNode> nodes = ImmutableList.<ASTNode> of(node1, node2);
-    ASTNode result = CorrectionUtils.getNearestCommonAncestor(nodes);
+    List<AstNode> nodes = ImmutableList.<AstNode> of(node1, node2);
+    AstNode result = CorrectionUtils.getNearestCommonAncestor(nodes);
     assertEquals("{print(1); {print(2);}}", result.toSource());
   }
 
   public void test_getNearestCommonAncestor_noNodes() throws Exception {
-    ImmutableList<ASTNode> nodes = ImmutableList.<ASTNode> of();
-    ASTNode result = CorrectionUtils.getNearestCommonAncestor(nodes);
+    ImmutableList<AstNode> nodes = ImmutableList.<AstNode> of();
+    AstNode result = CorrectionUtils.getNearestCommonAncestor(nodes);
     assertNull(result);
   }
 
@@ -838,8 +836,8 @@ public class CorrectionUtilsTest extends AbstractDartTest {
         "");
     SimpleIdentifier node1 = findIdentifier("print(1)");
     SimpleIdentifier node2 = findIdentifier("print(2)");
-    List<ASTNode> nodes = ImmutableList.<ASTNode> of(node1, node2);
-    ASTNode result = CorrectionUtils.getNearestCommonAncestor(nodes);
+    List<AstNode> nodes = ImmutableList.<AstNode> of(node1, node2);
+    AstNode result = CorrectionUtils.getNearestCommonAncestor(nodes);
     assertEquals("{print(1); print(2);}", result.toSource());
   }
 
@@ -851,8 +849,8 @@ public class CorrectionUtilsTest extends AbstractDartTest {
         "}",
         "");
     SimpleIdentifier node1 = findIdentifier("print(1)");
-    List<ASTNode> nodes = ImmutableList.<ASTNode> of(node1);
-    ASTNode result = CorrectionUtils.getNearestCommonAncestor(nodes);
+    List<AstNode> nodes = ImmutableList.<AstNode> of(node1);
+    AstNode result = CorrectionUtils.getNearestCommonAncestor(nodes);
     assertSame(node1.getParent(), result);
   }
 
@@ -913,24 +911,46 @@ public class CorrectionUtilsTest extends AbstractDartTest {
     assert_getNodePrefix("var a;", "");
   }
 
-  public void test_getNodeQualifier() throws Exception {
-    SimpleIdentifier name = ASTFactory.identifier("");
+  public void test_getNodeQualifier_PrefixedIdentifier() throws Exception {
+    SimpleIdentifier name = AstFactory.identifier("");
+    // no parent
+    assertSame(null, CorrectionUtils.getNodeQualifier(name));
+    // not PrefixedIdentifier
+    {
+      AstFactory.namedExpression("label", name);
+      assertSame(null, CorrectionUtils.getNodeQualifier(name));
+    }
+    // not "identifier" in PrefixedIdentifier
+    {
+      AstFactory.identifier(name, AstFactory.identifier("otherName"));
+      assertSame(null, CorrectionUtils.getNodeQualifier(name));
+    }
+    // OK, "identifier" in PrefixedIdentifier
+    {
+      SimpleIdentifier target = AstFactory.identifier("A");
+      AstFactory.identifier(target, name);
+      assertSame(target, CorrectionUtils.getNodeQualifier(name));
+    }
+  }
+
+  public void test_getNodeQualifier_PropertyAccess() throws Exception {
+    SimpleIdentifier name = AstFactory.identifier("");
     // no parent
     assertSame(null, CorrectionUtils.getNodeQualifier(name));
     // not PropertyAccess
     {
-      ASTFactory.namedExpression("label", name);
+      AstFactory.namedExpression("label", name);
       assertSame(null, CorrectionUtils.getNodeQualifier(name));
     }
     // not "name" in PropertyAccess
     {
-      ASTFactory.propertyAccess(name, "otherName");
+      AstFactory.propertyAccess(name, "otherName");
       assertSame(null, CorrectionUtils.getNodeQualifier(name));
     }
     // OK, "name" in PropertyAccess
     {
-      Expression target = ASTFactory.thisExpression();
-      ASTFactory.propertyAccess(target, name);
+      Expression target = AstFactory.thisExpression();
+      AstFactory.propertyAccess(target, name);
       assertSame(target, CorrectionUtils.getNodeQualifier(name));
     }
   }
@@ -948,7 +968,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
 
   public void test_getParameterElement_local() throws Exception {
     LocalVariableElement element = mock(LocalVariableElement.class);
-    SimpleIdentifier identifier = ASTFactory.identifier("name");
+    SimpleIdentifier identifier = AstFactory.identifier("name");
     identifier.setStaticElement(element);
     // check
     assertSame(null, CorrectionUtils.getParameterElement(identifier));
@@ -956,7 +976,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
 
   public void test_getParameterElement_parameter() throws Exception {
     ParameterElement element = mock(ParameterElement.class);
-    SimpleIdentifier identifier = ASTFactory.identifier("name");
+    SimpleIdentifier identifier = AstFactory.identifier("name");
     identifier.setStaticElement(element);
     // check
     assertSame(element, CorrectionUtils.getParameterElement(identifier));
@@ -1018,7 +1038,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
         "");
     SimpleIdentifier node = findIdentifier("print(0)");
     // prepare parents
-    List<ASTNode> parents = CorrectionUtils.getParents(node);
+    List<AstNode> parents = CorrectionUtils.getParents(node);
     // check first/last nodes
     assertThat(parents).hasSize(7);
     assertSame(testUnit, parents.get(0));
@@ -1056,7 +1076,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
 
   public void test_getPropertyAccessorElement_accessor() throws Exception {
     PropertyAccessorElement element = mock(PropertyAccessorElement.class);
-    SimpleIdentifier identifier = ASTFactory.identifier("name");
+    SimpleIdentifier identifier = AstFactory.identifier("name");
     identifier.setStaticElement(element);
     // check
     assertSame(element, CorrectionUtils.getPropertyAccessorElement(identifier));
@@ -1064,7 +1084,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
 
   public void test_getPropertyAccessorElement_local() throws Exception {
     LocalVariableElement element = mock(LocalVariableElement.class);
-    SimpleIdentifier identifier = ASTFactory.identifier("name");
+    SimpleIdentifier identifier = AstFactory.identifier("name");
     identifier.setStaticElement(element);
     // check
     assertSame(null, CorrectionUtils.getPropertyAccessorElement(identifier));
@@ -1098,51 +1118,6 @@ public class CorrectionUtilsTest extends AbstractDartTest {
         "my_super_test.dart",
         CorrectionUtils.getRecommentedFileNameForClass("MySuperTest"));
     assertEquals("http_server.dart", CorrectionUtils.getRecommentedFileNameForClass("HTTPServer"));
-  }
-
-  public void test_getResolvedNode_class() throws Exception {
-    parseTestUnit(
-        "// filler filler filler filler filler filler filler filler filler filler",
-        "class A {}",
-        "");
-    {
-      ClassElement element = findIdentifierElement("A {}");
-      ClassDeclaration node = CorrectionUtils.getResolvedNode(element);
-      assertNotNull(node);
-      assertEquals("A", node.getName().getName());
-    }
-  }
-
-  public void test_getResolvedNode_notSupported() throws Exception {
-    parseTestUnit(
-        "// filler filler filler filler filler filler filler filler filler filler",
-        "class A {}",
-        "");
-    {
-      Element element = mock(Element.class);
-      when(element.getContext()).thenReturn(analysisContext);
-      when(element.getSource()).thenReturn(testSource);
-      when(element.getKind()).thenReturn(ElementKind.ERROR);
-      try {
-        CorrectionUtils.getResolvedNode(element);
-        fail();
-      } catch (IllegalArgumentException e) {
-      }
-    }
-  }
-
-  public void test_getResolvedUnit() throws Exception {
-    Source source = mock(Source.class);
-    CompilationUnit compilationUnit = mock(CompilationUnit.class);
-    Element element = mock(Element.class);
-    LibraryElement library = mock(LibraryElement.class);
-    AnalysisContext analysisContext = mock(AnalysisContext.class);
-    when(element.getContext()).thenReturn(analysisContext);
-    when(element.getSource()).thenReturn(source);
-    when(element.getLibrary()).thenReturn(library);
-    when(analysisContext.resolveCompilationUnit(source, library)).thenReturn(compilationUnit);
-    //
-    assertSame(compilationUnit, CorrectionUtils.getResolvedUnit(element));
   }
 
   public void test_getSingleStatement() throws Exception {
@@ -1222,11 +1197,11 @@ public class CorrectionUtilsTest extends AbstractDartTest {
   }
 
   /**
-   * Test for {@link CorrectionUtils#getText(ASTNode)}.
+   * Test for {@link CorrectionUtils#getText(AstNode)}.
    */
   public void test_getText_ASTNode() throws Exception {
     parseTestUnit("class AAA {}");
-    ASTNode node = findNode("AAA {", Identifier.class);
+    AstNode node = findNode("AAA {", Identifier.class);
     CorrectionUtils utils = getTestCorrectionUtils();
     assertEquals("AAA", utils.getText(node));
   }
@@ -1577,6 +1552,33 @@ public class CorrectionUtilsTest extends AbstractDartTest {
         formatLines("sortedNodes", "nodes"));
   }
 
+  public void test_getVariableNameSuggestions_Node_unresolvedInstanceCreation() throws Exception {
+    verifyNoTestUnitErrors = false;
+    parseTestUnit(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "import 'dart:math' as p;",
+        "main() {",
+        "  new NoSuchClass();",
+        "  new p.NoSuchClass();",
+        "  new NoSuchClass.named();",
+        "}");
+    assert_getVariableNameSuggestions(
+        null,
+        findNode("new NoSuchClass()", InstanceCreationExpression.class),
+        ImmutableSet.of(""),
+        formatLines("noSuchClass", "suchClass", "class"));
+    assert_getVariableNameSuggestions(
+        null,
+        findNode("new p.NoSuchClass()", InstanceCreationExpression.class),
+        ImmutableSet.of(""),
+        formatLines("noSuchClass", "suchClass", "class"));
+    assert_getVariableNameSuggestions(
+        null,
+        findNode("new NoSuchClass.named()", InstanceCreationExpression.class),
+        ImmutableSet.of(""),
+        formatLines("noSuchClass", "suchClass", "class"));
+  }
+
   public void test_getVariableNameSuggestions_Node_withExclude() throws Exception {
     parseTestUnit(
         "// filler filler filler filler filler filler filler filler filler filler",
@@ -1700,25 +1702,22 @@ public class CorrectionUtilsTest extends AbstractDartTest {
   }
 
   public void test_new_withCharBuffer() throws Exception {
+    AnalysisContext context = new AnalysisContextImpl();
+    context.setSourceFactory(new SourceFactory());
     Source source = mock(Source.class);
     CompilationUnit unit = mock(CompilationUnit.class);
     CompilationUnitElement unitElement = mock(CompilationUnitElement.class);
+    when(unitElement.getContext()).thenReturn(context);
     when(unit.getElement()).thenReturn(unitElement);
     when(unitElement.getSource()).thenReturn(source);
     // mock content
     final CharBuffer charBuffer = mock(CharBuffer.class);
     when(charBuffer.toString()).thenReturn("// 0123");
-    doAnswer(new Answer<Void>() {
-      @Override
-      public Void answer(InvocationOnMock invocation) throws Throwable {
-        ((Source.ContentReceiver) invocation.getArguments()[0]).accept(charBuffer, 0L);
-        return null;
-      }
-    }).when(source).getContents(any(Source.ContentReceiver.class));
+    when(source.getContents()).thenReturn(new TimestampedData<CharSequence>(0L, charBuffer));
     // create CorrectionUtils, ask content
     CorrectionUtils utils = new CorrectionUtils(unit);
     // verify that content was requested
-    verify(source).getContents(any(Source.ContentReceiver.class));
+    verify(source).getContents();
     assertEquals("// 0123", utils.getText());
   }
 
@@ -1728,7 +1727,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
         "var v = 111 + 222 + 333;",
         "");
     CorrectionUtils utils = getTestCorrectionUtils();
-    ASTNode node = findNode("222", IntegerLiteral.class);
+    AstNode node = findNode("222", IntegerLiteral.class);
     // "selection" does not cover node
     {
       SourceRange selection = rangeStartEnd(findOffset("22 "), findEnd("22 "));
@@ -1901,7 +1900,7 @@ public class CorrectionUtilsTest extends AbstractDartTest {
   }
 
   @SuppressWarnings("unchecked")
-  private <T extends ASTNode> T findVariableInitializer(String pattern) {
+  private <T extends AstNode> T findVariableInitializer(String pattern) {
     return (T) findNode(pattern, VariableDeclaration.class).getInitializer();
   }
 

@@ -33,6 +33,12 @@ import com.google.dart.engine.element.ParameterElement;
 import com.google.dart.engine.element.PropertyAccessorElement;
 import com.google.dart.engine.element.TopLevelVariableElement;
 import com.google.dart.engine.element.TypeParameterElement;
+import com.google.dart.engine.element.angular.AngularComponentElement;
+import com.google.dart.engine.element.angular.AngularControllerElement;
+import com.google.dart.engine.element.angular.AngularFilterElement;
+import com.google.dart.engine.element.angular.AngularPropertyElement;
+import com.google.dart.engine.element.angular.AngularScopePropertyElement;
+import com.google.dart.engine.element.angular.AngularSelectorElement;
 import com.google.dart.engine.index.Index;
 import com.google.dart.engine.index.IndexFactory;
 import com.google.dart.engine.index.IndexStore;
@@ -344,6 +350,129 @@ public class SearchEngineImplTest extends EngineTestCase {
     }
   }
 
+  public void test_searchReferences_AngularComponentElement() throws Exception {
+    AngularComponentElement referencedElement = mockElement(
+        AngularComponentElement.class,
+        ElementKind.ANGULAR_COMPONENT);
+    {
+      Location locationA = new Location(elementA, 1, 2);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationA);
+    }
+    {
+      Location locationB = new Location(elementB, 10, 20);
+      indexStore.recordRelationship(
+          referencedElement,
+          IndexConstants.ANGULAR_CLOSING_TAG_REFERENCE,
+          locationB);
+    }
+    // search matches
+    List<SearchMatch> matches = searchReferencesSync(Element.class, referencedElement);
+    assertMatches(
+        matches,
+        new ExpectedMatch(elementA, MatchKind.ANGULAR_REFERENCE, 1, 2),
+        new ExpectedMatch(elementB, MatchKind.ANGULAR_CLOSING_TAG_REFERENCE, 10, 20));
+  }
+
+  public void test_searchReferences_AngularControllerElement() throws Exception {
+    AngularControllerElement referencedElement = mockElement(
+        AngularControllerElement.class,
+        ElementKind.ANGULAR_CONTROLLER);
+    {
+      Location locationA = new Location(elementA, 1, 2);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationA);
+    }
+    {
+      Location locationB = new Location(elementB, 10, 20);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationB);
+    }
+    // search matches
+    List<SearchMatch> matches = searchReferencesSync(Element.class, referencedElement);
+    assertMatches(
+        matches,
+        new ExpectedMatch(elementA, MatchKind.ANGULAR_REFERENCE, 1, 2),
+        new ExpectedMatch(elementB, MatchKind.ANGULAR_REFERENCE, 10, 20));
+  }
+
+  public void test_searchReferences_AngularFilterElement() throws Exception {
+    AngularFilterElement referencedElement = mockElement(
+        AngularFilterElement.class,
+        ElementKind.ANGULAR_FILTER);
+    {
+      Location locationA = new Location(elementA, 1, 2);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationA);
+    }
+    {
+      Location locationB = new Location(elementB, 10, 20);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationB);
+    }
+    // search matches
+    List<SearchMatch> matches = searchReferencesSync(Element.class, referencedElement);
+    assertMatches(
+        matches,
+        new ExpectedMatch(elementA, MatchKind.ANGULAR_REFERENCE, 1, 2),
+        new ExpectedMatch(elementB, MatchKind.ANGULAR_REFERENCE, 10, 20));
+  }
+
+  public void test_searchReferences_AngularPropertyElement() throws Exception {
+    AngularPropertyElement referencedElement = mockElement(
+        AngularPropertyElement.class,
+        ElementKind.ANGULAR_PROPERTY);
+    {
+      Location locationA = new Location(elementA, 1, 2);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationA);
+    }
+    {
+      Location locationB = new Location(elementB, 10, 20);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationB);
+    }
+    // search matches
+    List<SearchMatch> matches = searchReferencesSync(Element.class, referencedElement);
+    assertMatches(
+        matches,
+        new ExpectedMatch(elementA, MatchKind.ANGULAR_REFERENCE, 1, 2),
+        new ExpectedMatch(elementB, MatchKind.ANGULAR_REFERENCE, 10, 20));
+  }
+
+  public void test_searchReferences_AngularScopePropertyElement() throws Exception {
+    AngularScopePropertyElement referencedElement = mockElement(
+        AngularScopePropertyElement.class,
+        ElementKind.ANGULAR_SCOPE_PROPERTY);
+    {
+      Location locationA = new Location(elementA, 1, 2);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationA);
+    }
+    {
+      Location locationB = new Location(elementB, 10, 20);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationB);
+    }
+    // search matches
+    List<SearchMatch> matches = searchReferencesSync(Element.class, referencedElement);
+    assertMatches(
+        matches,
+        new ExpectedMatch(elementA, MatchKind.ANGULAR_REFERENCE, 1, 2),
+        new ExpectedMatch(elementB, MatchKind.ANGULAR_REFERENCE, 10, 20));
+  }
+
+  public void test_searchReferences_AngularSelectorElement() throws Exception {
+    AngularSelectorElement referencedElement = mockElement(
+        AngularSelectorElement.class,
+        ElementKind.ANGULAR_SELECTOR);
+    {
+      Location locationA = new Location(elementA, 1, 2);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationA);
+    }
+    {
+      Location locationB = new Location(elementB, 10, 20);
+      indexStore.recordRelationship(referencedElement, IndexConstants.ANGULAR_REFERENCE, locationB);
+    }
+    // search matches
+    List<SearchMatch> matches = searchReferencesSync(Element.class, referencedElement);
+    assertMatches(
+        matches,
+        new ExpectedMatch(elementA, MatchKind.ANGULAR_REFERENCE, 1, 2),
+        new ExpectedMatch(elementB, MatchKind.ANGULAR_REFERENCE, 10, 20));
+  }
+
   public void test_searchReferences_ClassElement() throws Exception {
     ClassElement referencedElement = mockElement(ClassElement.class, ElementKind.CLASS);
     {
@@ -631,6 +760,12 @@ public class SearchEngineImplTest extends EngineTestCase {
         new ExpectedMatch(elementB, MatchKind.METHOD_INVOCATION, 2, 20, true),
         new ExpectedMatch(elementC, MatchKind.METHOD_REFERENCE, 3, 30, false),
         new ExpectedMatch(elementD, MatchKind.METHOD_REFERENCE, 4, 40, true));
+  }
+
+  public void test_searchReferences_notSupported() throws Exception {
+    Element referencedElement = mockElement(Element.class, ElementKind.UNIVERSE);
+    List<SearchMatch> matches = searchReferencesSync(Element.class, referencedElement);
+    assertThat(matches).isEmpty();
   }
 
   public void test_searchReferences_ParameterElement() throws Exception {

@@ -26,13 +26,14 @@ const char* DartUtils::kDartScheme = "dart:";
 const char* DartUtils::kDartExtensionScheme = "dart-ext:";
 const char* DartUtils::kAsyncLibURL = "dart:async";
 const char* DartUtils::kBuiltinLibURL = "dart:builtin";
-const char* DartUtils::kCollectionDevLibURL = "dart:_collection-dev";
 const char* DartUtils::kCoreLibURL = "dart:core";
+const char* DartUtils::kInternalLibURL = "dart:_internal";
 const char* DartUtils::kIsolateLibURL = "dart:isolate";
 const char* DartUtils::kIOLibURL = "dart:io";
 const char* DartUtils::kIOLibPatchURL = "dart:io-patch";
 const char* DartUtils::kUriLibURL = "dart:uri";
 const char* DartUtils::kHttpScheme = "http:";
+const char* DartUtils::kVMServiceLibURL = "dart:vmservice";
 
 const char* DartUtils::kIdFieldName = "_id";
 
@@ -126,20 +127,11 @@ bool DartUtils::GetBooleanValue(Dart_Handle bool_obj) {
 
 void DartUtils::SetIntegerField(Dart_Handle handle,
                                 const char* name,
-                                intptr_t val) {
+                                int64_t val) {
   Dart_Handle result = Dart_SetField(handle,
                                      NewString(name),
                                      Dart_NewInteger(val));
   if (Dart_IsError(result)) Dart_PropagateError(result);
-}
-
-
-intptr_t DartUtils::GetIntegerField(Dart_Handle handle,
-                                    const char* name) {
-  Dart_Handle result = Dart_GetField(handle, NewString(name));
-  if (Dart_IsError(result)) Dart_PropagateError(result);
-  intptr_t value = DartUtils::GetIntegerValue(result);
-  return value;
 }
 
 
@@ -223,19 +215,24 @@ void* DartUtils::OpenFile(const char* name, bool write) {
 
 
 void DartUtils::ReadFile(const uint8_t** data,
-                         intptr_t* file_len,
+                         intptr_t* len,
                          void* stream) {
   ASSERT(data != NULL);
-  ASSERT(file_len != NULL);
+  ASSERT(len != NULL);
   ASSERT(stream != NULL);
   File* file_stream = reinterpret_cast<File*>(stream);
-  *file_len = file_stream->Length();
-  ASSERT(*file_len > 0);
-  uint8_t* text_buffer = reinterpret_cast<uint8_t*>(malloc(*file_len));
-  ASSERT(text_buffer != NULL);
-  if (!file_stream->ReadFully(text_buffer, *file_len)) {
+  int64_t file_len = file_stream->Length();
+  if ((file_len < 0) || (file_len > kIntptrMax)) {
     *data = NULL;
-    *file_len = -1;  // Indicates read was not successful.
+    *len = -1;  // Indicates read was not successful.
+    return;
+  }
+  *len = static_cast<intptr_t>(file_len);
+  uint8_t* text_buffer = reinterpret_cast<uint8_t*>(malloc(*len));
+  ASSERT(text_buffer != NULL);
+  if (!file_stream->ReadFully(text_buffer, *len)) {
+    *data = NULL;
+    *len = -1;  // Indicates read was not successful.
     return;
   }
   *data = text_buffer;
@@ -299,7 +296,7 @@ Dart_Handle MakeHttpRequest(Dart_Handle uri, Dart_Handle builtin_lib,
   if (Dart_IsError(result)) {
     return result;
   }
-  intptr_t responseCode = DartUtils::GetIntegerValue(result);
+  int64_t responseCode = DartUtils::GetIntegerValue(result);
   if (responseCode != HttpResponseCodeOK) {
     // Return error.
     Dart_Handle responseStatus =
@@ -443,6 +440,18 @@ Dart_Handle DartUtils::FilePathFromUri(Dart_Handle script_uri,
 }
 
 
+Dart_Handle DartUtils::ExtensionPathFromUri(Dart_Handle extension_uri,
+                                            Dart_Handle builtin_lib) {
+  const int kNumArgs = 1;
+  Dart_Handle dart_args[kNumArgs];
+  dart_args[0] = extension_uri;
+  return Dart_Invoke(builtin_lib,
+                     NewString("_extensionPathFromUri"),
+                     kNumArgs,
+                     dart_args);
+}
+
+
 Dart_Handle DartUtils::ResolveUri(Dart_Handle library_url,
                                   Dart_Handle url,
                                   Dart_Handle builtin_lib) {
@@ -478,7 +487,6 @@ Dart_Handle DartUtils::LibraryTagHandler(Dart_LibraryTag tag,
 
   bool is_dart_scheme_url = DartUtils::IsDartSchemeURL(url_string);
   bool is_io_library = DartUtils::IsDartIOLibURL(library_url_string);
-  bool is_dart_extension_url = DartUtils::IsDartExtensionSchemeURL(url_string);
 
   // Handle URI canonicalization requests.
   if (tag == Dart_kCanonicalizeUrl) {
@@ -523,27 +531,44 @@ Dart_Handle DartUtils::LibraryTagHandler(Dart_LibraryTag tag,
     }
   }
 
-  // Handle 'import' or 'part' requests for all other URIs.
-  // Get the file path out of the url.
   Dart_Handle builtin_lib =
       Builtin::LoadAndCheckLibrary(Builtin::kBuiltinLibrary);
-  Dart_Handle file_path = FilePathFromUri(url, builtin_lib);
-  if (Dart_IsError(file_path)) {
-    return file_path;
-  }
-  Dart_StringToCString(file_path, &url_string);
-  if (is_dart_extension_url) {
+  if (DartUtils::IsDartExtensionSchemeURL(url_string)) {
+    // Load a native code shared library to use in a native extension
     if (tag != Dart_kImportTag) {
       return NewError("Dart extensions must use import: '%s'", url_string);
     }
-    return Extensions::LoadExtension(url_string, library);
+    Dart_Handle path_parts = DartUtils::ExtensionPathFromUri(url, builtin_lib);
+    if (Dart_IsError(path_parts)) {
+      return path_parts;
+    }
+    const char* extension_directory = NULL;
+    Dart_StringToCString(Dart_ListGetAt(path_parts, 0), &extension_directory);
+    const char* extension_filename = NULL;
+    Dart_StringToCString(Dart_ListGetAt(path_parts, 1), &extension_filename);
+    const char* extension_name = NULL;
+    Dart_StringToCString(Dart_ListGetAt(path_parts, 2), &extension_name);
+
+    return Extensions::LoadExtension(extension_directory,
+                                     extension_filename,
+                                     extension_name,
+                                     library);
+  } else {
+    // Handle 'import' or 'part' requests for all other URIs.
+    // Get the file path out of the url.
+    Dart_Handle file_path = DartUtils::FilePathFromUri(url, builtin_lib);
+    if (Dart_IsError(file_path)) {
+      return file_path;
+    }
+    const char* final_path = NULL;
+    Dart_StringToCString(file_path, &final_path);
+    result = DartUtils::LoadSource(NULL,
+                                   library,
+                                   url,
+                                   tag,
+                                   final_path);
+    return result;
   }
-  result = DartUtils::LoadSource(NULL,
-                                 library,
-                                 url,
-                                 tag,
-                                 url_string);
-  return result;
 }
 
 
@@ -629,7 +654,7 @@ Dart_Handle DartUtils::LoadScript(const char* script_uri,
   } else {
     Dart_Handle source = Dart_NewStringFromUTF8(buffer, len);
     if (Dart_IsError(source)) {
-      returnValue = source;
+      returnValue = NewError("%s is not a valid UTF-8 script", script_uri);
     } else {
       returnValue = Dart_LoadScript(resolved_script_uri, source, 0, 0);
     }
@@ -682,11 +707,11 @@ Dart_Handle DartUtils::PrepareForScriptLoading(const char* package_root,
   // Setup the internal library's 'internalPrint' function.
   Dart_Handle print = Dart_Invoke(
       builtin_lib, NewString("_getPrintClosure"), 0, NULL);
-  Dart_Handle url = NewString(kCollectionDevLibURL);
+  Dart_Handle url = NewString(kInternalLibURL);
   DART_CHECK_VALID(url);
-  Dart_Handle collection_dev_lib = Dart_LookupLibrary(url);
-  DART_CHECK_VALID(collection_dev_lib);
-  Dart_Handle result = Dart_SetField(collection_dev_lib,
+  Dart_Handle internal_lib = Dart_LookupLibrary(url);
+  DART_CHECK_VALID(internal_lib);
+  Dart_Handle result = Dart_SetField(internal_lib,
                                      NewString("_printClosure"),
                                      print);
   DART_CHECK_VALID(result);
@@ -810,6 +835,15 @@ bool DartUtils::PostInt32(Dart_Port port_id, int32_t value) {
   Dart_CObject object;
   object.type = Dart_CObject_kInt32;
   object.value.as_int32 = value;
+  return Dart_PostCObject(port_id, &object);
+}
+
+
+bool DartUtils::PostInt64(Dart_Port port_id, int64_t value) {
+  // Post a message with the integer value.
+  Dart_CObject object;
+  object.type = Dart_CObject_kInt64;
+  object.value.as_int64 = value;
   return Dart_PostCObject(port_id, &object);
 }
 
@@ -1034,10 +1068,10 @@ Dart_CObject* CObject::NewIOBuffer(int64_t length) {
   // Make sure that we do not have an integer overflow here. Actual check
   // against max elements will be done at the time of writing, as the constant
   // is not part of the public API.
-  if (length > kIntptrMax) {
+  if ((length < 0) || (length > kIntptrMax)) {
     return NULL;
   }
-  uint8_t* data = IOBuffer::Allocate(length);
+  uint8_t* data = IOBuffer::Allocate(static_cast<intptr_t>(length));
   ASSERT(data != NULL);
   return NewExternalUint8Array(
       static_cast<intptr_t>(length), data, data, IOBuffer::Finalizer);
@@ -1047,7 +1081,9 @@ Dart_CObject* CObject::NewIOBuffer(int64_t length) {
 void CObject::FreeIOBufferData(Dart_CObject* cobject) {
   ASSERT(cobject->type == Dart_CObject_kExternalTypedData);
   cobject->value.as_external_typed_data.callback(
-      NULL, cobject->value.as_external_typed_data.peer);
+      NULL,
+      NULL,
+      cobject->value.as_external_typed_data.peer);
   cobject->value.as_external_typed_data.data = NULL;
 }
 

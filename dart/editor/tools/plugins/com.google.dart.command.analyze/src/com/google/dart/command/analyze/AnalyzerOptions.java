@@ -135,6 +135,10 @@ public class AnalyzerOptions {
   // usage = "The path to the Dart SDK") // don't show in help
   private File dartSdkPath = null;
 
+  @Option(name = "--use-dart2js-libraries")
+  // usage = "Use the same resolution of dart: URI's as dart2js (defaults to the resolution used by the VM)") // don't show in help
+  private boolean useDart2jsPaths = false;
+
   @Option(name = "--verbose", //
   aliases = {"-v"})
   // TODO(devoncarew): document this flag when it is supported
@@ -182,7 +186,6 @@ public class AnalyzerOptions {
   usage = "Print performance statistics")
   private boolean perf = false;
 
-  @SuppressWarnings("unused")
   @Option(name = "--diagnostic-colors")
   private boolean diagnosticColors = false; // ignored for now
 
@@ -190,7 +193,7 @@ public class AnalyzerOptions {
   private final String sourceFile = null;
 
   public AnalyzerOptions() {
-
+    super();
   }
 
   /**
@@ -255,6 +258,16 @@ public class AnalyzerOptions {
   }
 
   /**
+   * Return {@code true} if the analyzer should use the same resolution of dart: URI's as dart2js,
+   * or {@code false} if it should use the resolution used by the VM.
+   * 
+   * @return {@code true} if the analyzer should use the dart2js paths when they are available
+   */
+  public boolean getUseDart2jsPaths() {
+    return useDart2jsPaths;
+  }
+
+  /**
    * Return whether package: urls should be resolved by querying pub for a package map. This uses
    * pub's list-package-dirs command.
    * 
@@ -271,6 +284,34 @@ public class AnalyzerOptions {
    */
   public boolean getWarningsAreFatal() {
     return warningsAreFatal;
+  }
+
+  /**
+   * Initialize the SDK path.
+   */
+  public void initializeSdkPath() {
+    // current directory, one level up, and a "sdk" directory below us
+    final String[] searchPath = new String[] {".", "..", "sdk"};
+
+    if (dartSdkPath == null) {
+      try {
+        File cwd = new File(".").getCanonicalFile();
+
+        for (String path : searchPath) {
+          File dir = new File(cwd, path);
+
+          dir = dir.getCanonicalFile();
+
+          if (isSDKPath(dir)) {
+            dartSdkPath = dir;
+
+            return;
+          }
+        }
+      } catch (IOException ioe) {
+        ioe.printStackTrace();
+      }
+    }
   }
 
   public void setDartSdkPath(File dartSdkPath) {
@@ -296,34 +337,6 @@ public class AnalyzerOptions {
    */
   public boolean showHelp() {
     return showHelp;
-  }
-
-  /**
-   * Initialize the SDK path.
-   */
-  protected void initializeSdkPath() {
-    // current directory, one level up, and a "sdk" directory below us
-    final String[] searchPath = new String[] {".", "..", "sdk"};
-
-    if (dartSdkPath == null) {
-      try {
-        File cwd = new File(".").getCanonicalFile();
-
-        for (String path : searchPath) {
-          File dir = new File(cwd, path);
-
-          dir = dir.getCanonicalFile();
-
-          if (isSDKPath(dir)) {
-            dartSdkPath = dir;
-
-            return;
-          }
-        }
-      } catch (IOException ioe) {
-        ioe.printStackTrace();
-      }
-    }
   }
 
   private boolean isSDKPath(File sdkDirectory) {
@@ -352,8 +365,6 @@ public class AnalyzerOptions {
         }
       }
     }
-
     return false;
   }
-
 }

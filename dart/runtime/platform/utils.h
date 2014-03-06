@@ -45,38 +45,38 @@ class Utils {
   }
 
   template<typename T>
-  static inline bool IsAligned(T x, int n) {
+  static inline bool IsAligned(T x, intptr_t n) {
     ASSERT(IsPowerOfTwo(n));
     return (x & (n - 1)) == 0;
   }
 
   template<typename T>
-  static inline bool IsAligned(T* x, int n) {
+  static inline bool IsAligned(T* x, intptr_t n) {
     return IsAligned(reinterpret_cast<uword>(x), n);
   }
 
   template<typename T>
-  static inline T RoundDown(T x, int n) {
+  static inline T RoundDown(T x, intptr_t n) {
     ASSERT(IsPowerOfTwo(n));
     return (x & -n);
   }
 
   template<typename T>
-  static inline T* RoundDown(T* x, int n) {
+  static inline T* RoundDown(T* x, intptr_t n) {
     return reinterpret_cast<T*>(RoundDown(reinterpret_cast<uword>(x), n));
   }
 
   template<typename T>
-  static inline T RoundUp(T x, int n) {
+  static inline T RoundUp(T x, intptr_t n) {
     return RoundDown(x + n - 1, n);
   }
 
   template<typename T>
-  static inline T* RoundUp(T* x, int n) {
+  static inline T* RoundUp(T* x, intptr_t n) {
     return reinterpret_cast<T*>(RoundUp(reinterpret_cast<uword>(x), n));
   }
 
-  static uint32_t RoundUpToPowerOfTwo(uint32_t x);
+  static uintptr_t RoundUpToPowerOfTwo(uintptr_t x);
   static int CountOneBits(uint32_t x);
 
   static int HighestBit(int64_t v);

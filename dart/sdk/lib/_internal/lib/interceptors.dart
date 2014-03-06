@@ -5,8 +5,8 @@
 library _interceptors;
 
 import 'dart:collection';
-import 'dart:_collection-dev' hide Symbol;
-import "dart:_collection-dev" as _symbol_dev show Symbol;
+import 'dart:_internal' hide Symbol;
+import "dart:_internal" as _symbol_dev show Symbol;
 import 'dart:_js_helper' show allMatchesInStringUnchecked,
                               Null,
                               JSSyntaxRegExp,
@@ -180,8 +180,7 @@ var interceptedNames;
 var mapTypeToInterceptor;
 
 int findIndexForNativeSubclassType(Type type) {
-  JS_EFFECT((_){ mapTypeToInterceptor = _; });
-  if (mapTypeToInterceptor == null) return null;
+  if (JS('bool', '# == null', mapTypeToInterceptor)) return null;
   List map = JS('JSFixedArray', '#', mapTypeToInterceptor);
   for (int i = 0; i + 1 < map.length; i += 3) {
     if (type == map[i]) {
@@ -195,7 +194,7 @@ findInterceptorConstructorForType(Type type) {
   var index = findIndexForNativeSubclassType(type);
   if (index == null) return null;
   List map = JS('JSFixedArray', '#', mapTypeToInterceptor);
-  return mapTypeToInterceptor[index + 1];
+  return map[index + 1];
 }
 
 /**
@@ -208,7 +207,7 @@ findConstructorForNativeSubclassType(Type type, String name) {
   var index = findIndexForNativeSubclassType(type);
   if (index == null) return null;
   List map = JS('JSFixedArray', '#', mapTypeToInterceptor);
-  var constructorMap = mapTypeToInterceptor[index + 2];
+  var constructorMap = map[index + 2];
   var constructorFn = JS('', '#[#]', constructorMap, name);
   return constructorFn;
 }

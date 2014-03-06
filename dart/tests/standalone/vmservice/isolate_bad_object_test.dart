@@ -10,7 +10,7 @@ import 'package:expect/expect.dart';
 
 class NullCollectionTest extends VmServiceRequestHelper {
   NullCollectionTest(port, id) :
-      super('http://127.0.0.1:$port/isolates/$id/objects/50');
+      super('http://127.0.0.1:$port/$id/objects/50');
 
   onRequestCompleted(Map reply) {
     Expect.equals('null', reply['type']);
@@ -19,22 +19,21 @@ class NullCollectionTest extends VmServiceRequestHelper {
 
 class BadCollectionTest extends VmServiceRequestHelper {
   BadCollectionTest(port, id) :
-      super('http://127.0.0.1:$port/isolates/$id/objects');
+      super('http://127.0.0.1:$port/$id/objects');
 
   onRequestCompleted(Map reply) {
-    Expect.equals('error', reply['type']);
+    Expect.equals('Error', reply['type']);
   }
 }
 
 class IsolateListTest extends VmServiceRequestHelper {
   IsolateListTest(port) : super('http://127.0.0.1:$port/isolates');
 
-  int _isolateId;
+  String _isolateId;
   onRequestCompleted(Map reply) {
     IsolateListTester tester = new IsolateListTester(reply);
     tester.checkIsolateCount(1);
-    tester.checkIsolateNameContains('unknown_isolate_command_script.dart');
-    _isolateId = reply['members'][0]['id'];
+    _isolateId = tester.getIsolateId(0);
   }
 }
 

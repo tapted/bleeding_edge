@@ -119,6 +119,7 @@ public class HTMLUIPlugin extends AbstractUIPlugin {
     node.putInt(HTMLCorePreferenceNames.ATTRIBUTE_UNDEFINED_NAME, ValidationMessage.IGNORE);
     node.putInt(HTMLCorePreferenceNames.ATTRIBUTE_UNDEFINED_VALUE, ValidationMessage.IGNORE);
     node.putInt(HTMLCorePreferenceNames.ATTRIBUTE_INVALID_NAME, ValidationMessage.IGNORE);
+    node.putInt(HTMLCorePreferenceNames.ATTRIBUTE_VALUE_EQUALS_MISSING, ValidationMessage.IGNORE);
     node.putInt(HTMLCorePreferenceNames.ELEM_INVALID_TEXT, ValidationMessage.IGNORE);
     node.putInt(HTMLCorePreferenceNames.ATTRIBUTE_NAME_MISMATCH, ValidationMessage.IGNORE);
     node.putInt(HTMLCorePreferenceNames.ELEM_UNKNOWN_NAME, ValidationMessage.IGNORE);
@@ -138,7 +139,7 @@ public class HTMLUIPlugin extends AbstractUIPlugin {
     int size = toolsPreferences.getInt(AbstractDecoratedTextEditorPreferenceConstants.EDITOR_TAB_WIDTH);
     String ch = useSpaces ? HTMLCorePreferenceNames.SPACE : HTMLCorePreferenceNames.TAB;
     Preferences preferences = HTMLCorePlugin.getDefault().getPluginPreferences();
-    preferences.setValue(HTMLCorePreferenceNames.INDENTATION_SIZE, size);
+    preferences.setValue(HTMLCorePreferenceNames.INDENTATION_SIZE, useSpaces ? size : 1);
     preferences.setValue(HTMLCorePreferenceNames.INDENTATION_CHAR, ch);
   }
 }

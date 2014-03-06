@@ -23,7 +23,8 @@ import com.google.dart.engine.ast.LibraryDirective;
 import com.google.dart.engine.ast.NodeList;
 import com.google.dart.engine.ast.PrefixedIdentifier;
 import com.google.dart.engine.ast.SimpleIdentifier;
-import com.google.dart.engine.ast.visitor.RecursiveASTVisitor;
+import com.google.dart.engine.ast.visitor.RecursiveAstVisitor;
+import com.google.dart.engine.element.CompilationUnitElement;
 import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ImportElement;
 import com.google.dart.engine.element.LibraryElement;
@@ -50,7 +51,7 @@ import java.util.HashMap;
  * 
  * @coverage dart.engine.resolver
  */
-public class ImportsVerifier extends RecursiveASTVisitor<Void> {
+public class ImportsVerifier extends RecursiveAstVisitor<Void> {
 
   /**
    * This is set to {@code true} if the current compilation unit which is being visited is the
@@ -133,7 +134,7 @@ public class ImportsVerifier extends RecursiveASTVisitor<Void> {
    */
   public void generateDuplicateImportHints(ErrorReporter errorReporter) {
     for (ImportDirective duplicateImport : duplicateImports) {
-      errorReporter.reportError(HintCode.DUPLICATE_IMPORT, duplicateImport.getUri());
+      errorReporter.reportErrorForNode(HintCode.DUPLICATE_IMPORT, duplicateImport.getUri());
     }
   }
 
@@ -155,7 +156,7 @@ public class ImportsVerifier extends RecursiveASTVisitor<Void> {
           continue;
         }
       }
-      errorReporter.reportError(HintCode.UNUSED_IMPORT, unusedImport.getUri());
+      errorReporter.reportErrorForNode(HintCode.UNUSED_IMPORT, unusedImport.getUri());
     }
   }
 
@@ -257,6 +258,9 @@ public class ImportsVerifier extends RecursiveASTVisitor<Void> {
 
   @Override
   public Void visitPrefixedIdentifier(PrefixedIdentifier node) {
+    if (unusedImports.isEmpty()) {
+      return null;
+    }
     // If the prefixed identifier references some A.B, where A is a library prefix, then we can
     // lookup the associated ImportDirective in prefixElementMap and remove it from the
     // unusedImports list.
@@ -272,6 +276,9 @@ public class ImportsVerifier extends RecursiveASTVisitor<Void> {
 
   @Override
   public Void visitSimpleIdentifier(SimpleIdentifier node) {
+    if (unusedImports.isEmpty()) {
+      return null;
+    }
     return visitIdentifier(node.getStaticElement(), node.getName());
   }
 
@@ -309,7 +316,7 @@ public class ImportsVerifier extends RecursiveASTVisitor<Void> {
       ImportElement importElement = importDirective.getElement();
       if (importElement != null) {
         NamespaceBuilder builder = new NamespaceBuilder();
-        namespace = builder.createImportNamespace(importElement);
+        namespace = builder.createImportNamespaceForDirective(importElement);
         namespaceMap.put(importDirective, namespace);
       }
     }
@@ -335,6 +342,7 @@ public class ImportsVerifier extends RecursiveASTVisitor<Void> {
     if (element == null) {
       return null;
     }
+
     // If the element is multiply defined then call this method recursively for each of the conflicting elements.
     if (element instanceof MultiplyDefinedElement) {
       MultiplyDefinedElement multiplyDefinedElement = (MultiplyDefinedElement) element;
@@ -344,6 +352,11 @@ public class ImportsVerifier extends RecursiveASTVisitor<Void> {
       return null;
     } else if (element instanceof PrefixElement) {
       unusedImports.remove(prefixElementMap.get(element));
+      return null;
+    } else if (!(element.getEnclosingElement() instanceof CompilationUnitElement)) {
+      // Identifiers that aren't a prefix element and whose enclosing element isn't a
+      // CompilationUnit are ignored- this covers the case the identifier is a relative-reference,
+      // a reference to an identifier not imported by this library.
       return null;
     }
     LibraryElement containingLibrary = element.getLibrary();

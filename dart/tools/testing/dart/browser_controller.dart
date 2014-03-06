@@ -145,28 +145,71 @@ abstract class Browser {
       Completer stdoutDone = new Completer();
       Completer stderrDone = new Completer();
 
-      process.stdout.transform(UTF8.decoder).listen((data) {
+      bool stdoutIsDone = false;
+      bool stderrIsDone = false;
+      StreamSubscription stdoutSubscription;
+      StreamSubscription stderrSubscription;
+
+      // This timer is used to close stdio to the subprocess once we got
+      // the exitCode. Sometimes descendants of the subprocess keep stdio
+      // handles alive even though the direct subprocess is dead.
+      Timer watchdogTimer;
+
+      void closeStdout([_]){
+        if (!stdoutIsDone) {
+          stdoutDone.complete();
+          stdoutIsDone = true;
+
+          if (stderrIsDone && watchdogTimer != null) {
+            watchdogTimer.cancel();
+          }
+        }
+      }
+
+      void closeStderr([_]) {
+        if (!stderrIsDone) {
+          stderrDone.complete();
+          stderrIsDone = true;
+
+          if (stdoutIsDone && watchdogTimer != null) {
+            watchdogTimer.cancel();
+          }
+        }
+      }
+
+      stdoutSubscription =
+        process.stdout.transform(UTF8.decoder).listen((data) {
         _addStdout(data);
       }, onError: (error) {
         // This should _never_ happen, but we really want this in the log
         // if it actually does due to dart:io or vm bug.
         _logEvent("An error occured in the process stdout handling: $error");
-      }, onDone: () {
-        stdoutDone.complete(true);
-      });
+      }, onDone: closeStdout);
 
-      process.stderr.transform(UTF8.decoder).listen((data) {
+      stderrSubscription =
+        process.stderr.transform(UTF8.decoder).listen((data) {
         _addStderr(data);
       }, onError: (error) {
         // This should _never_ happen, but we really want this in the log
         // if it actually does due to dart:io or vm bug.
         _logEvent("An error occured in the process stderr handling: $error");
-      },  onDone: () {
-        stderrDone.complete(true);
-      });
+      },  onDone: closeStderr);
 
       process.exitCode.then((exitCode) {
         _logEvent("Browser closed with exitcode $exitCode");
+
+        if (!stdoutIsDone || !stderrIsDone) {
+          watchdogTimer = new Timer(MAX_STDIO_DELAY, () {
+            DebugLogger.warning(
+                "$MAX_STDIO_DELAY_PASSED_MESSAGE (browser: $this)");
+            watchdogTimer = null;
+            stdoutSubscription.cancel();
+            stderrSubscription.cancel();
+            closeStdout();
+            closeStderr();
+          });
+        }
+
         Future.wait([stdoutDone.future, stderrDone.future]).then((_) {
           process = null;
           if (_cleanup != null) {
@@ -717,19 +760,27 @@ class BrowserTestRunner {
 
   BrowserTestingServer testingServer;
 
+  /**
+   * The TestRunner takes the testingServer in as a constructor parameter in
+   * case we wish to have a testing server with different behavior (such as the
+   * case for performance testing.
+   */
   BrowserTestRunner(this.globalConfiguration,
                     this.localIp,
                     this.browserName,
                     this.maxNumBrowsers,
-                    {bool this.checkedMode: false});
+                    {bool this.checkedMode: false,
+                    BrowserTestingServer this.testingServer});
 
   Future<bool> start() {
     // If [browserName] doesn't support opening new windows, we use new iframes
     // instead.
     bool useIframe =
         !Browser.BROWSERS_WITH_WINDOW_SUPPORT.contains(browserName);
-    testingServer = new BrowserTestingServer(
-        globalConfiguration, localIp, useIframe);
+    if (testingServer == null) {
+      testingServer = new BrowserTestingServer(
+          globalConfiguration, localIp, useIframe);
+    }
     return testingServer.start().then((_) {
       testingServer.testDoneCallBack = handleResults;
       testingServer.testStatusUpdateCallBack = handleStatusUpdate;
@@ -1116,7 +1167,7 @@ class BrowserTestingServer {
             print("Textresponse $textResponse");
             throw "Error returning content to browser: $error";
           }
-      });
+        });
       }
       void errorHandler(e) {
         if (!underTermination) print("Error occured in httpserver: $e");

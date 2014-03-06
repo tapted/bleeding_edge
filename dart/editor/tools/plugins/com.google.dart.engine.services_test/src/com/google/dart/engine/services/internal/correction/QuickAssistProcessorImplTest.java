@@ -67,7 +67,6 @@ public class QuickAssistProcessorImplTest extends RefactoringImplTest {
   }
 
   private int selectionOffset = 0;
-
   private int selectionLength = 0;
 
   private SourceCorrectionProposal resultProposal;
@@ -214,6 +213,35 @@ public class QuickAssistProcessorImplTest extends RefactoringImplTest {
         "}",
         "");
     assert_assignToLocalVariable(initial, "readBytes();", initial);
+  }
+
+  public void test_assignToLocalVariable_notExistingWithPrefix() throws Exception {
+    verifyNoTestUnitErrors = false;
+    String initial = makeSource(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "import 'dart:math' as p;",
+        "main() {",
+        "  new p.NoSuchClass();",
+        "}",
+        "");
+    assert_assignToLocalVariable(
+        initial,
+        "new p.NoSuchClass()",
+        makeSource(
+            "// filler filler filler filler filler filler filler filler filler filler",
+            "import 'dart:math' as p;",
+            "main() {",
+            "  var noSuchClass = new p.NoSuchClass();",
+            "}",
+            ""));
+    // linked positions
+    {
+      Map<String, List<SourceRange>> expected = Maps.newHashMap();
+      expected.put("NAME", getResultRanges("noSuchClass ="));
+      assertEquals(expected, resultProposal.getLinkedPositions());
+    }
+    // linked proposals
+    assertLinkedProposals("NAME", "noSuchClass", "suchClass", "class");
   }
 
   public void test_assignToLocalVariable_throw() throws Exception {
@@ -647,6 +675,7 @@ public class QuickAssistProcessorImplTest extends RefactoringImplTest {
     }
     // check Source(s)
     RefactoringImplTest.assertChangeResult(
+        getAnalysisContext(),
         proposalChange,
         testSource,
         makeSource(
@@ -658,6 +687,7 @@ public class QuickAssistProcessorImplTest extends RefactoringImplTest {
             "",
             "int varAfter;"));
     RefactoringImplTest.assertChangeResult(
+        getAnalysisContext(),
         proposalChange,
         libSource,
         makeSource(
@@ -687,6 +717,14 @@ public class QuickAssistProcessorImplTest extends RefactoringImplTest {
         "main() {",
         "  PI;",
         "}");
+    assert_importAddShow_BAD(initial, "import 'dart:math");
+  }
+
+  public void test_importAddShow_BAD_unused() throws Exception {
+    String initial = makeSource(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "import 'dart:math';",
+        "");
     assert_importAddShow_BAD(initial, "import 'dart:math");
   }
 
@@ -1729,6 +1767,18 @@ public class QuickAssistProcessorImplTest extends RefactoringImplTest {
       assert_splitAndCondition_wrong(initial, "&& 2 == 2");
       selectionLength = 0;
     }
+  }
+
+  public void test_splitAndCondition_wrong_notAnd() throws Exception {
+    String initial = makeSource(
+        "// filler filler filler filler filler filler filler filler filler filler",
+        "main() {",
+        "  if (1 == 1 || 2 == 2) {",
+        "    print(0);",
+        "  }",
+        "}");
+    // not &&
+    assert_splitAndCondition_wrong(initial, "|| 2 == 2");
   }
 
   public void test_splitAndCondition_wrong_notPartOfIf() throws Exception {

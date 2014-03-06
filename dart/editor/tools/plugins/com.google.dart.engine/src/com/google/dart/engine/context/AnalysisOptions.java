@@ -19,6 +19,13 @@ package com.google.dart.engine.context;
  */
 public interface AnalysisOptions {
   /**
+   * Return {@code true} if analysis is to analyze Angular.
+   * 
+   * @return {@code true} if analysis is to analyze Angular
+   */
+  public boolean getAnalyzeAngular();
+
+  /**
    * Return {@code true} if analysis is to parse and analyze function bodies.
    * 
    * @return {@code true} if analysis is to parse and analyzer function bodies
@@ -38,6 +45,14 @@ public interface AnalysisOptions {
    * @return {@code true} if analysis is to generate dart2js related hint results
    */
   public boolean getDart2jsHint();
+
+  /**
+   * Return {@code true} if errors, warnings and hints should be generated for sources in the SDK.
+   * The default value is {@code false}.
+   * 
+   * @return {@code true} if errors, warnings and hints should be generated for the SDK
+   */
+  public boolean getGenerateSdkErrors();
 
   /**
    * Return {@code true} if analysis is to generate hint results (e.g. type inference based

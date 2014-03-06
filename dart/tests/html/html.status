@@ -5,21 +5,19 @@
 event_test: Skip  # Issue 1996
 interactive_test: Skip # Must be run manually.
 dromaeo_smoke_test: Skip # Issue 14521, 8257
+custom/template_wrappers_test: Pass, Fail # Issue 16656 (Chrome 33 regression)
+[ $runtime == drt || $runtime == dartium ]
+custom/template_wrappers_test: Pass # Issue 16656 Override others
 
 [ $compiler == dart2js && $csp ]
 custom/js_custom_test: Fail # Issue 14643
 
 [ $compiler == dart2js && $browser ]
-element_offset_test/offset: Pass, Fail # Issue 13296
-custom/template_wrappers_test: Pass, Fail # Test is for Dartium GC issues
+custom/created_callback_test: Fail # Support for created constructor.
 
-[ $compiler == dart2js && $runtime != drt && $browser ]
-custom/document_register_type_extensions_test/namespaces: Fail # Polyfill does not support createElementNS
+[ $compiler == dart2js && ($runtime == safari || $runtime == ff || $runtime == chrome || $runtime == ie9 || $runtime == ie10) ]
 custom/entered_left_view_test/viewless_document: Fail # Polyfill does not handle this
 custom/attribute_changed_callback_test/unsupported_on_polyfill: Fail # Polyfill does not support
-
-[ $compiler == dart2js && $browser ]
-custom/created_callback_test: Fail # Support for created constructor.
 
 [ $compiler == none && ($runtime == drt || $runtime == dartium) && $mode == debug && $system == macos]
 audiobuffersourcenode_test: Pass, Fail, Crash # http://crbug.com/256601
@@ -38,6 +36,7 @@ isolates_test: Fail # Issue 13921
 
 [ $compiler == none && $runtime == drt && $system == windows ]
 worker_test/functional: Pass, Crash # Issue 9929.
+touchevent_test/supported: Pass, Fail # Issue 17061
 
 
 [ $compiler == dart2js && $runtime == chromeOnAndroid ]
@@ -64,28 +63,16 @@ xhr_test/json: Fail # TODO(dart2js-team): Please triage this failure.
 
 
 [ $compiler == dart2js && $runtime == ie10 ]
-async_test: Pass, Fail # timers test fails on ie10.
 indexeddb_5_test: Fail # Issue 12893
 js_test: Fail # Issue 14246
 
 [ $compiler == dart2js && ( $runtime == ie9 || $runtime == ie10 ) ]
 worker_api_test: Fail # IE does not support URL.createObjectURL in web workers.
 
-[ $compiler == dart2js && $browser && $checked ]
-postmessage_structured_test/typed_arrays: Fail # Issue 10097
-postmessage_structured_test/primitives: Fail # Issue 10097
-
-[ $compiler == dart2js && $runtime == chrome ]
-selectelement_test: Skip # http://dartbug.com/15516
-
 [ $runtime == chrome ]
-canvasrenderingcontext2d_test/drawImage_video_element: Pass,Fail # Issue 11836
-canvasrenderingcontext2d_test/drawImage_video_element_dataUrl: Pass,Fail # Issue 11836
-
-touchevent_test/supported: Fail
-
-xhr_test: Pass, Fail # Issue 11884
+touchevent_test/supported: Pass, Fail # Issue 17061
 xhr_cross_origin_test: Pass, Fail # Issue 11884
+xhr_test: Pass, Fail # Issue 11884
 
 [$runtime == drt || $runtime == dartium || $runtime == chrome || $runtime == chromeOnAndroid]
 webgl_1_test: Pass, Fail # Issue 8219
@@ -106,10 +93,7 @@ audiobuffersourcenode_test: Pass, Fail
 
 [$runtime == ie10 ]
 element_test/click: Fail                # IE does not support firing this event.
-history_test/history: Pass, Fail # issue 8183
-native_gc_test: Fail, Pass # BUG(7774): Untriaged.
 serialized_script_value_test: Fail
-storage_test: Fail, Pass
 transferables_test: Fail # Issue 9846
 websocket_test/websocket: Fail # TODO(efortuna): Issue 7875.
 canvasrenderingcontext2d_test/drawImage_video_element: Fail # IE does not support drawImage w/ video element
@@ -170,6 +154,7 @@ blob_constructor_test: Fail
 custom/document_register_type_extensions_test/namespaces: Fail # Issue 13193
 dom_constructors_test: Fail
 element_test/click: Fail                # IE does not support firing this event.
+filereader_test: Fail   # Not supported.
 form_element_test: Fail # Issue 4793.
 localstorage_test: Fail
 postmessage_structured_test: Skip   # BUG(5685): times out.
@@ -182,6 +167,8 @@ input_element_test/attributes: Fail # IE returns null while others ''
 xhr_cross_origin_test: Skip # Issue 12920
 xhr_test/json: Fail # IE9 returns null because of unsupported type
 js_test: RuntimeError # Issue 14645
+custom: Pass, Fail, Timeout # Issue 16717
+custom_elements_test: Pass, Fail, Timeout # Issue 16717
 
 # IE9 Feature support statuses-
 # All changes should be accompanied by platform support annotation changes.
@@ -268,7 +255,6 @@ xsltprocessor_test/supported: Fail
 [ $runtime == safari ]
 worker_test: Skip # Issue 13221
 worker_api_test: Skip # Issue 13221
-element_types_test/supported_track: Pass, Fail
 input_element_test/supported_month: RuntimeError
 input_element_test/supported_time: RuntimeError
 input_element_test/supported_week: RuntimeError
@@ -277,7 +263,6 @@ canvasrenderingcontext2d_test/drawImage_video_element: Fail # Safari does not su
 canvasrenderingcontext2d_test/drawImage_video_element_dataUrl: Fail # Safari does not support drawImage w/ video element
 audiocontext_test/functional: Fail # Issue 14354
 websql_test/functional: RuntimeError # Issue 14523
-
 
 # Safari Feature support statuses-
 # All changes should be accompanied by platform support annotation changes.
@@ -341,6 +326,7 @@ websql_test/supported: Fail
 [ $runtime == ff && $system == windows ]
 messageevent_test: RuntimeError # Issue 15651
 serialized_script_value_test: RuntimeError # Issue 15651
+client_rect_test: Fail # Issue 16890
 
 [ $runtime == ff ]
 xhr_test/xhr: Pass, Fail # Issue 11602
@@ -367,7 +353,6 @@ input_element_test/supported_date: Fail
 input_element_test/supported_datetime-local: Fail
 input_element_test/supported_month: Fail
 input_element_test/supported_number: Fail
-input_element_test/supported_range: Fail, Pass # FF 23 is introducing support.
 input_element_test/supported_time: Fail
 input_element_test/supported_week: Fail
 media_stream_test/supported_MediaStreamEvent: Fail
@@ -398,7 +383,6 @@ wheelevent_test: Fail # http://dartbug.com/12958
 [ $compiler == none && $runtime == dartium ]
 async_test: Timeout # Issue 13719: Please triage this failure.
 element_offset_test/offset: Pass, Fail # Issue 13719, 13296
-touchevent_test/supported: Fail # Issue 13719: Please triage this failure.
 
 [ $compiler == dartanalyzer || $compiler == dart2analyzer ]
 audiocontext_test: StaticWarning

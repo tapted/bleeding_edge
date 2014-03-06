@@ -109,12 +109,12 @@ main() {
   initPolymer();
 }
 
-@initMethod _init() {
+@initMethod init() {
   useHtmlConfiguration();
 
   setUp(() => Polymer.onReady);
   test('events handled', () {
-    XTest test = query('x-test');
+    XTest test = querySelector('x-test');
     expect(test._onTestDone, isNotNull, reason: 'ready was called');
     return test._onTestDone;
   });
