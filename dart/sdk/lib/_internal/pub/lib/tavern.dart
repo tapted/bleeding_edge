@@ -28,7 +28,7 @@ Future getDependencies(html.DirectoryEntry entry, [LogFunction extraLog]) {
       .then((cache) => Entrypoint.load(FileSystem.workingDirPath(), cache))
       .then((entrypoint) => entrypoint.acquireDependencies())
       .then((_) => log.fine("Got dependencies!"))
-      .catchError((error) => log.error("Could not get dependecies", error));
+      .catchError((error) => log.error("Could not get dependencies", error));
 }
 
 Future<List<String>> getAvailablePackageList() {
