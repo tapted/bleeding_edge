@@ -70,6 +70,6 @@ class PubHttpException implements Exception {
   
   const PubHttpException(this.statusCode);
   
-  String toString() => 'HTTP error';
+  String toString() => 'Http Error: ${statusCode}';
   
 }
